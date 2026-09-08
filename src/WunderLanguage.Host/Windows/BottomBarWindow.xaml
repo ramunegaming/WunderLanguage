@@ -1,0 +1,50 @@
+<Window x:Class="WunderLanguage.Host.Windows.BottomBarWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        AllowsTransparency="True"
+        Background="Transparent"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        RenderOptions.EdgeMode="Aliased">
+    
+    <Border BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Background="{StaticResource PanelBrush}">
+        
+        <Grid Margin="16,0">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <TextBlock Text="ROOM CODE"
+                           FontSize="10"
+                           Foreground="{StaticResource SubtleTextBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
+
+                <TextBlock Text="LOCAL"
+                           FontSize="13"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource AccentBrush}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center">
+                <Button x:Name="PauseButton"
+                        Content="Pause"
+                        Padding="14,6"
+                        Margin="0,0,8,0"
+                        Click="PauseButton_Click"/>
+
+                <Button x:Name="SettingsButton"
+                        Content="Settings"
+                        Padding="14,6"
+                        Click="SettingsButton_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
