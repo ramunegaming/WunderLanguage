@@ -1,0 +1,16 @@
+manga-ocr
+fastapi
+uvicorn[standard]
+pillow
+python-multipart
+opencv-python
+numpy
+easyocr
+transformers
+accelerate
+bitsandbytes
+fugashi
+unidic-lite
+torch
+torchvision
+torchaudio
