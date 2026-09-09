@@ -157,6 +157,11 @@ namespace WunderLanguage.Host.Capture
             ("ルビー", "ルピー"),
             ("とりせる", "とらせる"),
             ("ほっび", "ほうび"),
+            ("Ｘポダン", "Ｘボタン"),
+            ("出席ボタン", "Ｂボタン"),
+            ("おホタン", "Ｂボタン"),
+            ("ガギ", "カギ"),
+            ("ブーダラン", "ブーメラン"),
         };
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
