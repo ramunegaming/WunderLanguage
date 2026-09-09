@@ -25,11 +25,11 @@ namespace WunderLanguage.Host.Ocr
 
         public async Task<string> ExtractTextAsync(Bitmap bitmap)
         {
-            var (text, _) = await ExtractTextWithBlocksAsync(bitmap);
+            var (text, _, _, _) = await ExtractTextWithBlocksAsync(bitmap);
             return text;
         }
 
-        public async Task<(string Text, List<OcrBlock> Blocks)> ExtractTextWithBlocksAsync(Bitmap bitmap)
+        public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap)
         {
             using var ms = new MemoryStream();
             bitmap.Save(ms, ImageFormat.Png);
@@ -75,7 +75,17 @@ namespace WunderLanguage.Host.Ocr
                 }
             }
 
-            return (text, blocks);
+            int contentWords = 0, totalWords = 0;
+            try
+            {
+                if (root.TryGetProperty("words", out var w) && w.ValueKind == JsonValueKind.Object)
+                {
+                    if (w.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var ci)) contentWords = ci;
+                    if (w.TryGetProperty("total", out var t2) && t2.ValueKind == JsonValueKind.Number && t2.TryGetInt32(out var ti)) totalWords = ti;
+                }
+            }
+            catch { }
+            return (text, blocks, contentWords, totalWords);
         }
     }
 }

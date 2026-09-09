@@ -127,7 +127,26 @@ def detect_and_ocr(pil_image: Image.Image):
         pool = tall if tall else blocks
         primary_block = max(pool, key=lambda b: b["area"])
         primary_text = primary_block["text"]
-    return primary_text, blocks
+    words = {"content": 0, "total": 0}
+    try:
+        if primary_text and _fugashi_tagger is not None:
+            tot = 0
+            con = 0
+            for _w in _fugashi_tagger(primary_text.strip()):
+                try:
+                    _p = _w.feature.pos1 if hasattr(_w.feature, 'pos1') else ""
+                except Exception:
+                    continue
+                _s = _w.surface
+                if not _s or not _s.strip():
+                    continue
+                tot += 1
+                if _p in ("名詞", "動詞", "形容詞", "副詞"):
+                    con += 1
+            words = {"content": con, "total": tot}
+    except Exception:
+        pass
+    return primary_text, blocks, words
 
 CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
@@ -529,8 +548,8 @@ async def health():
 async def ocr_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    primary_text, blocks = detect_and_ocr(image)
-    return {"text": primary_text, "blocks": blocks}
+    primary_text, blocks, words = detect_and_ocr(image)
+    return {"text": primary_text, "blocks": blocks, "words": words}
 @app.post("/translate")
 async def translate_text(request: TranslateRequest):
     translated, unreliable, reason = cat_translate(request.text, request.source_lang, request.target_lang)
