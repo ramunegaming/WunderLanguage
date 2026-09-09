@@ -30,6 +30,7 @@ namespace WunderLanguage.Host.Capture
         private string _lastOcrText = string.Empty;
         private int _lastOcrContent;
         private int _lastOcrTotal;
+        private bool _focusHoldActive;
 
         public event Action<string, string>? TextTranslated;
         public event Action<string, string, string>? MenuTranslated; // (kind TITLE/MENU, jaJoined, enJoined)
@@ -333,10 +334,18 @@ namespace WunderLanguage.Host.Capture
                     IntPtr fgFocus = WindowCapture.GetForegroundWindowHandle();
                     if (fgFocus != _hWnd && !(_isCompanionWindow?.Invoke(fgFocus) ?? false))
                     {
+                        _focusHoldActive = true;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator not focused (fg=0x{fgFocus:X}), holding");
                         await Task.Delay(IdleDelayMs, token);
                         continue;
+                    }
+                    if (_focusHoldActive)
+                    {
+                        _focusHoldActive = false;
+                        _lastFrameHash = null;
+                        _pendingFrameHash = null;
+                        FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
                     using var bitmap = WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
                     _consecutiveCaptureFailures = 0;
@@ -559,6 +568,57 @@ namespace WunderLanguage.Host.Capture
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-growth (releasing long-held line)");
                             _candidateGrewThisRead = false;
+                            string breakthroughText = _candidateText;
+                            if (IsIncompleteSacrifice(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-sacrifice");
+                            }
+                            else if (EndsWithContinuation(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-continuation");
+                            }
+                            else if (IsScrollBlend(breakthroughText) || IsZeldaTransitionBlend(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-blend");
+                            }
+                            else if (IsEllipsisOnly(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-ellipsis");
+                            }
+                            else if (IsJunkOcr(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-junk");
+                            }
+                            else if (!HasJapanese(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-nonja");
+                            }
+                            else if (_frameIsTitle)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-title");
+                            }
+                            else if (!string.IsNullOrEmpty(_lastTranslatedText)
+                                && _lastTranslatedText.Contains(breakthroughText, StringComparison.Ordinal))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-subpart");
+                            }
+                            else if (ComputeSimilarity(breakthroughText, _lastTranslatedText) >= NearDuplicateSimilarityThreshold)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-dupe");
+                            }
+                            else if (_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                && !string.IsNullOrEmpty(_lastOcrText)
+                                && ComputeSimilarity(_lastOcrText, breakthroughText) >= 0.80)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-contentless");
+                            }
+                            else
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-publish");
+                                _lastTranslatedText = breakthroughText;
+                                string breakthroughFire = breakthroughText;
+                                _ = TranslateAndPublishAsync(breakthroughFire);
+                            }
                         }
                         else if (IsIncompleteSacrifice(_candidateText))
                         {
