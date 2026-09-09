@@ -49,7 +49,7 @@ MIN_BOX_WIDTH = 10
 MIN_BOX_HEIGHT = 10
 DETECTION_UPSCALE_FACTOR = 1
 RECOGNITION_UPSCALE_FACTOR = 2
-def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
+def merge_nearby_boxes(boxes, x_gap=100, y_gap=15):
     if not boxes:
         return []
     boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
@@ -191,7 +191,7 @@ _KANJI_RE = re.compile(r'[\u4E00-\u9FAF]')
 _JA_CHAR_RE = re.compile(r'[\u3040-\u30ff\u4e00-\u9faf]')
 _WS_RE = re.compile(r'\s+')
 _TRAIL_ELLIPSIS_RE = re.compile(r'[…\.。\s]+$')
-_JA_NEG_RE = re.compile(r'(なく|ない|ません|なかった|ではない|ぬ|ずに|ず)')
+_JA_NEG_RE = re.compile(r'(なく|ない|ません|なかった|ではない|ぬ|(?<!は)ずに|(?<!は)ず)')
 _EN_NEG_RE = re.compile(r'\b(no|not|never|none|nothing|neither|nor|without|isn\'t|aren\'t|wasn\'t|weren\'t|don\'t|doesn\'t|didn\'t|haven\'t|hasn\'t|hadn\'t|won\'t|wouldn\'t|couldn\'t|shouldn\'t|can\'t)\b', re.IGNORECASE)
 _REFUSAL_RE = re.compile(r'can.t help with that|ready to translate|provide the Japanese|need the Japanese passage|happy to help translate', re.IGNORECASE)
 _PROMPT_ECHO_RE = re.compile(r'(Translate|Transform) the following Japanese text into English', re.IGNORECASE)

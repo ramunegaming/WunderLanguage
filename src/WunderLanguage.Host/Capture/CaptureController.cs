@@ -64,7 +64,7 @@ namespace WunderLanguage.Host.Capture
         private static readonly (string from, string to)[] ZeldaOcrFixups =
         {
             ("Ｐ人", "７人"), ("『人", "７人"),
-            ("段者", "賢者"),
+            ("段者", "賢者"), 
             ("批印", "封印"), ("樹印", "封印"), ("針印", "封印"),
             ("計印", "封印"), ("打印", "封印"), ("朝印", "封印"), ("抽印", "封印"), ("納印", "封印"),
             ("掛印", "封印"), ("同祭", "司祭"),
@@ -154,7 +154,7 @@ namespace WunderLanguage.Host.Capture
             ("品はポタシ", "Ｂボタン"),
             ("ポタン", "ボタン"),
             ("ポタシ", "ボタン"),
-            ("昨日Ｐを手に入れた", "マップを手に入れた"),
+            ("昨日Ｐを手に入れた", "ＭＡＰを手に入れた"),
             ("ルビー", "ルピー"),
             ("とりせる", "とらせる"),
             ("ほっび", "ほうび"),
@@ -450,7 +450,7 @@ namespace WunderLanguage.Host.Capture
 
                     if (string.IsNullOrWhiteSpace(extractedText))
                     {
-                        if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText)
+                        if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText) && !_frameIsTitle
                             && _candidateText != _lastTranslatedText
                             && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
                             && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText) && !IsScrollBlend(_candidateText) && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText))
