@@ -90,18 +90,12 @@ namespace WunderLanguage.Host.Translation
             bool servedByPreferred = _preference != TranslationProviderPreference.DeepL
                 || ActiveProviderName == (_deepL?.Name ?? string.Empty);
             bool wasGuide = false;
+            // Guides are backend-only (future popup warms on this call).
+            // Feed shows translations, never [word guide] text. Blanks stay
+            // suppressed: silence over ugliness, never over accuracy.
             if (string.IsNullOrEmpty(result))
             {
-                try
-                {
-                    string guide = await TryWordGuideAsync(text);
-                    if (!string.IsNullOrEmpty(guide))
-                    {
-                        result = guide;
-                        wasGuide = true;
-                    }
-                }
-                catch { }
+                try { _ = TryWordGuideAsync(text); } catch { }
             }
             if (!wasUnreliable && servedByPreferred && !wasGuide)
                 _cache.Set(text, versionedLang, result);

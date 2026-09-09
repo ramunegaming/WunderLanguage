@@ -550,6 +550,30 @@ namespace WunderLanguage.Host.Capture
                         }
                         else
                         {
+                            // Ellipsis-dismissal flush: outgoing line was stable and clean,
+                            // incoming read is dots only. Publish the held line instead of
+                            // letting it die (same gates as breakthrough-publish).
+                            if (IsEllipsisOnly(extractedText)
+                                && _candidateStableCount >= RequiredStableReadings
+                                && !_candidateGrewThisRead
+                                && !string.IsNullOrEmpty(_candidateText)
+                                && HasJapanese(_candidateText)
+                                && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText)
+                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                                && !_frameIsTitle
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && !(_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                    && !string.IsNullOrEmpty(_lastOcrText)
+                                    && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-ellipsis (publishing dismissed line)");
+                                _lastTranslatedText = _candidateText;
+                                string ellipsisFlush = _candidateText;
+                                _ = TranslateAndPublishAsync(ellipsisFlush);
+                            }
                             // Genuinely new line: track the LATEST read fresh.
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
@@ -611,6 +635,10 @@ namespace WunderLanguage.Host.Capture
                                 && ComputeSimilarity(_lastOcrText, breakthroughText) >= 0.80)
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-contentless");
+                            }
+                            else if (StripForOverlap(breakthroughText).Length < 6)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-fragment");
                             }
                             else
                             {
@@ -748,6 +776,11 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
+                if (IsLatinChrome(text))
+                {
+                    FileLogger.Log($"[translate] suppressed latin-chrome for \"{Truncate(text)}\"");
+                    return;
+                }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
                 string translated = await _translationManager.TranslateAsync(text);
                 FileLogger.Log($"[translate-provider] {_translationManager.ActiveProviderName} for \"{Truncate(text)}\"");
@@ -824,6 +857,24 @@ namespace WunderLanguage.Host.Capture
             if (!hasHiragana && (fullWidthLatin >= 3 || (content > 0 && (double)fullWidthLatin / content > 0.3)))
                 return true;
             return false;
+        }
+
+        // Emulator chrome (ROM info, netplay, menu English): Latin-dominated
+        // lines are never dialogue. Zelda dialogue never exceeds ~15% Latin
+        // (MAP/PUSH lines), so this shape can't eat real lines.
+        private static bool IsLatinChrome(string text)
+        {
+            int latin = 0, other = 0;
+            foreach (char c in text)
+            {
+                if (char.IsWhiteSpace(c) || c == '…' || c == '．' || c == '.' || c == '、' || c == '。')
+                    continue;
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= 'Ａ' && c <= 'Ｚ') || (c >= 'ａ' && c <= 'ｚ'))
+                    latin++;
+                else
+                    other++;
+            }
+            return latin >= 4 && latin > other;
         }
 
         private static bool IsUnpublishable(string translated)
