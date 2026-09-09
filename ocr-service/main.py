@@ -49,7 +49,7 @@ MIN_BOX_WIDTH = 10
 MIN_BOX_HEIGHT = 10
 DETECTION_UPSCALE_FACTOR = 1
 RECOGNITION_UPSCALE_FACTOR = 2
-def merge_nearby_boxes(boxes, x_gap=100, y_gap=15):
+def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
     if not boxes:
         return []
     boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
@@ -126,7 +126,20 @@ def detect_and_ocr(pil_image: Image.Image):
         tall = [b for b in blocks if b["box"][3] >= 50]
         pool = tall if tall else blocks
         primary_block = max(pool, key=lambda b: b["area"])
-        primary_text = primary_block["text"]
+        # Same-row band join: small trailing blocks on the anchor's row
+        # (sign attributions like 国王) belong to the line. X-ordered.
+        # Tracker reads raw blocks, so menus/titles are untouched.
+        try:
+            _ax, _ay, _aw, _ah = primary_block["box"]
+            _band = [b for b in pool if b is not primary_block
+                     and abs(b["box"][1] - _ay) < min(_ah, 60) / 2 + 8]
+            if _band:
+                _row = sorted([primary_block] + _band, key=lambda b: b["box"][0])
+                primary_text = " ".join(b["text"] for b in _row)
+            else:
+                primary_text = primary_block["text"]
+        except Exception:
+            primary_text = primary_block["text"]
     words = {"content": 0, "total": 0}
     try:
         if primary_text and _fugashi_tagger is not None:
