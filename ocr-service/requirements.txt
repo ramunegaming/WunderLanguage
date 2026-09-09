@@ -11,6 +11,8 @@ accelerate
 bitsandbytes
 fugashi
 unidic-lite
+jamdict
+jamdict-data-fix
 torch
 torchvision
 torchaudio
