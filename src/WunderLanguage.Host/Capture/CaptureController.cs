@@ -158,6 +158,8 @@ namespace WunderLanguage.Host.Capture
             ("ルビー", "ルピー"),
             ("とりせる", "とらせる"),
             ("ほっび", "ほうび"),
+            ("４０人のイケニエ", "６人のイケニエ"),
+            ("４ ０人のイケニエ", "６人のイケニエ"),
             ("Ｘポダン", "Ｘボタン"),
             ("出席ボタン", "Ｂボタン"),
             ("おホタン", "Ｂボタン"),
@@ -781,6 +783,11 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[translate] suppressed latin-chrome for \"{Truncate(text)}\"");
                     return;
                 }
+                if (IsGameOverText(text))
+                {
+                    FileLogger.Log($"[translate] suppressed gameover-dupe for \"{Truncate(text)}\" (menu pack owns it)");
+                    return;
+                }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
                 string translated = await _translationManager.TranslateAsync(text);
                 FileLogger.Log($"[translate-provider] {_translationManager.ActiveProviderName} for \"{Truncate(text)}\"");
@@ -856,6 +863,14 @@ namespace WunderLanguage.Host.Capture
                 return true;
             if (!hasHiragana && (fullWidthLatin >= 3 || (content > 0 && (double)fullWidthLatin / content > 0.3)))
                 return true;
+            return false;
+        }
+
+        // GAME OVER dialogue-side: multi-セーブ text belongs to the menu pack.
+        private static bool IsGameOverText(string text)
+        {
+            int n = 0, k = 0;
+            while ((k = text.IndexOf("セーブ", k, StringComparison.Ordinal)) >= 0) { n++; k += 3; if (n >= 2) return true; }
             return false;
         }
 
@@ -1029,10 +1044,58 @@ namespace WunderLanguage.Host.Capture
             return dp[a.Length, b.Length];
         }
 
+        // GAME OVER pack: fixed screen (big GAME OVER + 3 セーブ rows, often
+        // merged into one OCR block). Shape: GAME*OVER present + 2+ セーブ rows.
+        private static bool TryBuildGameOverRows(List<OcrBlock> blocks, out List<(int y, string t, bool ja)> rows)
+        {
+            rows = new List<(int y, string t, bool ja)>();
+            bool hasGameOver = false;
+            foreach (var b in blocks)
+            {
+                string flat = ToHalfwidth(b.Text).Replace(" ", "").Replace("　", "");
+                if (flat.Contains("GAME", StringComparison.OrdinalIgnoreCase) && flat.Contains("OVER", StringComparison.OrdinalIgnoreCase))
+                { hasGameOver = true; break; }
+            }
+            if (!hasGameOver) return false;
+            var jaBlocks = new List<OcrBlock>();
+            foreach (var b in blocks)
+                if (HasJapanese(b.Text)) jaBlocks.Add(b);
+            jaBlocks.Sort((a, b2) => a.Y.CompareTo(b2.Y));
+            int y = 0;
+            foreach (var b in jaBlocks)
+            {
+                string t = b.Text.Trim();
+                if (!t.Contains("セーブ", StringComparison.Ordinal)) continue;
+                foreach (var part in Regex.Split(t, @"(?=セーブ)"))
+                {
+                    string p = part.Trim();
+                    if (p.Length >= 4) { rows.Add((y, p, true)); y += 10; }
+                }
+            }
+            return rows.Count >= 2;
+        }
+
         // Generic menu/title: small JA blocks, art filtered. No per-game strings.
         private void UpdateMenuTracker(List<OcrBlock> blocks)
         {
             _frameIsTitle = blocks.Count <= 3 && blocks.Any(b => b.Text.Contains("トライフォ"));
+            if (TryBuildGameOverRows(blocks, out var goRows))
+            {
+                string goSig = string.Join("\n", goRows.ConvertAll(o => o.t));
+                if (goSig == _lastPublishedMenu) return;
+                double goOverlap = MenuRowOverlap(goSig, _lastPublishedMenu);
+                if (!string.IsNullOrEmpty(_lastPublishedMenu) && (goOverlap >= 0.50 || goSig.Contains(_lastPublishedMenu) || _lastPublishedMenu.Contains(goSig)))
+                {
+                    string goPrev = _lastPublishedMenu;
+                    _lastPublishedMenu = goSig;
+                    _ = TranslateAndUpdateMenuAsync(goPrev, goRows);
+                    return;
+                }
+                _lastPublishedMenu = goSig;
+                FileLogger.Log($"[menu] publish MENU lines={goRows.Count} (gameover pack)");
+                _ = TranslateAndPublishMenuAsync("MENU", goRows);
+                return;
+            }
             if (IsInputGrid(blocks)) { _menuStableCount = 0; _menuSignature = ""; return; }
             // Group same-line blocks by Y overlap, top-to-bottom lines.
             var lines = new List<(int y, List<OcrBlock> parts)>();
@@ -1104,7 +1167,7 @@ namespace WunderLanguage.Host.Capture
                 }
                 // Zelda menu pack: arrows + title fill. OCR is fullwidth, packs check halfwidth.
                 string ascii = ToHalfwidth(joined);
-                if (ascii.Contains("PLAYER") && ascii.Contains("SELECT"))
+                if ((ascii.Contains("PLAYER") && ascii.Contains("SELECT")) || IsPlayerSelectHeader(ascii))
                     joined = "< PLAYER SELECT >";
                 if (joined == "◆ＰＬＡＹＥＲ" || joined == "ＳＥＬＥＣＴＡ" || joined == "ＳＥＬＥＣＴ＞") { /* merged below */ }
                 if (joined.Contains("神々のトライフォース") && !joined.Contains("ゼルダ"))
@@ -1164,14 +1227,17 @@ namespace WunderLanguage.Host.Capture
                 if (!headerOnly && (contentRows.Count < 2 || contentRows.Count(a => a.ja) < 2 || totalChars < 12)) { _menuStableCount = 0; _menuSignature = ""; return; }
             }
             string sig = string.Join("\n", jaRows.ConvertAll(o => o.t));
-            // Dialogue owns shared rows: menu duplicating just-shown text stays held.
-            if (!string.IsNullOrEmpty(_lastTranslatedText))
+            // Dialogue owns shared rows: menu duplicating shown OR held dialogue
+            // stays held, either direction (menu rows arrive junk-padded).
+            // Never lets menus pre-empt dialogue mid-growth.
+            string _refA = _lastTranslatedText ?? "";
+            string _refB = _candidateText ?? "";
+            foreach (var r in jaRows)
             {
-                foreach (var r in jaRows)
-                {
-                    if (!string.IsNullOrWhiteSpace(r.t) && r.t.Length >= 10 && _lastTranslatedText.Contains(r.t, StringComparison.Ordinal))
-                    { _menuStableCount = 0; _menuSignature = ""; return; }
-                }
+                if (string.IsNullOrWhiteSpace(r.t) || r.t.Length < 10) continue;
+                bool owned = (!string.IsNullOrEmpty(_refA) && (_refA.Contains(r.t, StringComparison.Ordinal) || r.t.Contains(_refA, StringComparison.Ordinal)))
+                    || (!string.IsNullOrEmpty(_refB) && (_refB.Contains(r.t, StringComparison.Ordinal) || r.t.Contains(_refB, StringComparison.Ordinal)));
+                if (owned) { _menuStableCount = 0; _menuSignature = ""; return; }
             }
             if (sig == _menuSignature) _menuStableCount++;
             else { _menuSignature = sig; _menuStableCount = 1; }
@@ -1251,6 +1317,15 @@ namespace WunderLanguage.Host.Capture
                 MenuUpdated?.Invoke(oldSig, kind2, newJa, newEn);
             }
             catch (Exception ex) { FileLogger.Log($"[menu] ERROR: {ex.Message}"); }
+        }
+
+        // Pixel-font header reads dirty (PLAVER/SELECPA when merged or small).
+        // Shape: leader + PLA…SELEC in order. Dialogue never matches this.
+        private static bool IsPlayerSelectHeader(string ascii)
+        {
+            string t = ascii.Replace(" ", "").Replace("　", "").TrimStart('◆', '<', '>', '＞');
+            return t.StartsWith("PLA", StringComparison.OrdinalIgnoreCase)
+                && t.Contains("SELEC", StringComparison.OrdinalIgnoreCase);
         }
 
         // Fullwidth Latin/digits to ASCII for pack matching only. Display keeps original.
