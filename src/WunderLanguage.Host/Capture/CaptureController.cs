@@ -27,6 +27,9 @@ namespace WunderLanguage.Host.Capture
         private readonly object _mineLock = new();
         private string _successorText = string.Empty;
         private int _successorCount;
+        private string _lastOcrText = string.Empty;
+        private int _lastOcrContent;
+        private int _lastOcrTotal;
 
         public event Action<string, string>? TextTranslated;
         public event Action<string, string, string>? MenuTranslated; // (kind TITLE/MENU, jaJoined, enJoined)
@@ -395,7 +398,10 @@ namespace WunderLanguage.Host.Capture
                     _lastFrameHash = frameHash;
                     FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
 
-                    var (rawText, ocrBlocks) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
+                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
+                    _lastOcrText = rawText.Trim();
+                    _lastOcrContent = contentWords;
+                    _lastOcrTotal = totalWords;
                     string rawTrim = rawText.Trim();
                     string? remembered = null;
                     try { remembered = LookupMined(rawTrim); } catch { }
@@ -615,8 +621,15 @@ namespace WunderLanguage.Host.Capture
                         }
                         else if (!isNearDuplicate)
                         {
-                            // S-gate: no Japanese anywhere -> skip, never pay DeepL for English chrome.
-                            if (!HasJapanese(_candidateText))
+                            // Density gate: 4+ words, zero content (POS), matching the
+                            // candidate -> chrome, not dialogue. Short lines exempt.
+                            if (_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                && !string.IsNullOrEmpty(_lastOcrText)
+                                && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-contentless (words {_lastOcrContent}/{_lastOcrTotal})");
+                            }
+                            else if (!HasJapanese(_candidateText))
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-non-ja");
                             }
