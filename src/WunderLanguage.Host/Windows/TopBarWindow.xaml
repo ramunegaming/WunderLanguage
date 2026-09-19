@@ -12,6 +12,7 @@
                        Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
                        HorizontalAlignment="Left"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button x:Name="ShotButton" Content="Shot" Padding="10,2" Margin="0,0,12,0" Click="ShotButton_Click"/>
                 <Ellipse Width="8" Height="8" Fill="LimeGreen" Margin="0,0,6,0"/>
                 <TextBlock Text="Connected to Emulator" Foreground="{StaticResource TextBrush}"/>
             </StackPanel>

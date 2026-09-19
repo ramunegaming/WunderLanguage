@@ -35,7 +35,7 @@ namespace WunderLanguage.Host.Windows
             UpdateKeyPanelVisibility();
 
             _topmostTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            _topmostTimer.Tick += (_, _) => Win32TopmostHelper.ForceTopmost(this);
+            _topmostTimer.Tick += (_, _) => { }; // Neutered: AppShell tick solely owns z-order.
             Loaded += (_, _) => _topmostTimer.Start();
             Closed += (_, _) => _topmostTimer.Stop();
         }

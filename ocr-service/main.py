@@ -13,6 +13,7 @@ try:
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+from packs import zelda_pack as _zelda_pack
 import hashlib as _hashlib
 import pathlib as _pathlib
 try:
@@ -52,6 +53,15 @@ RECOGNITION_UPSCALE_FACTOR = 2
 def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
     if not boxes:
         return []
+    # M6.2 (steadiness): horizontal gap scales with the frame's tallest
+    # block (split word-groups rejoin on tall dialogue); vertical gap
+    # stays 15 so menu rows, HUD stacking, and ASCII grouping never move.
+    try:
+        _max_h = max(b[3] - b[1] for b in boxes)
+    except Exception:
+        _max_h = 0
+    x_gap = max(20, min(40, int(_max_h * 0.2)))
+    y_gap = 15
     boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
     used = [False] * len(boxes)
     merged = []
@@ -85,7 +95,9 @@ def detect_and_ocr(pil_image: Image.Image):
         Image.LANCZOS,
     )
     img_np = np.array(detection_image)
+    _t_det0 = time.time()
     horizontal_list, free_list = reader.detect(img_np)
+    _det_ms = (time.time() - _t_det0) * 1000.0
     raw_boxes = []
     for x_min, x_max, y_min, y_max in horizontal_list[0]:
         raw_boxes.append((int(x_min), int(y_min), int(x_max), int(y_max)))
@@ -94,6 +106,18 @@ def detect_and_ocr(pil_image: Image.Image):
         ys = [pt[1] for pt in quad]
         raw_boxes.append((int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))))
     merged_boxes = merge_nearby_boxes(raw_boxes)
+    # M6 (steadiness): frame-dominant area. Dialogue scenes have one
+    # dominant block; HUD riders are short and tiny beside it. Menu
+    # scenes have no dominant block, so every row survives this.
+    _dom_area = 0.0
+    for _qx0, _qy0, _qx1, _qy1 in merged_boxes:
+        _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
+        if _qa > _dom_area:
+            _dom_area = _qa
+    _raw_n = len(raw_boxes)
+    _skipped = 0
+    _t_rec0 = time.time()
+    _crop_px = 0
     blocks = []
     for x_min, y_min, x_max, y_max in merged_boxes:
         orig_x_min = x_min / det_scale
@@ -104,6 +128,9 @@ def detect_and_ocr(pil_image: Image.Image):
         orig_height = orig_y_max - orig_y_min
         if orig_width < MIN_BOX_WIDTH or orig_height < MIN_BOX_HEIGHT:
             continue
+        if orig_height < 50 and (orig_width * orig_height) < 0.05 * _dom_area:
+            _skipped += 1
+            continue
         recognition_crop = pil_image.crop((orig_x_min, orig_y_min, orig_x_max, orig_y_max))
         recognition_crop = recognition_crop.resize(
             (
@@ -112,6 +139,7 @@ def detect_and_ocr(pil_image: Image.Image):
             ),
             Image.LANCZOS,
         )
+        _crop_px += recognition_crop.width * recognition_crop.height
         text = mocr(recognition_crop)
         if not text.strip():
             continue
@@ -120,6 +148,11 @@ def detect_and_ocr(pil_image: Image.Image):
             "box": [int(orig_x_min), int(orig_y_min), int(orig_width), int(orig_height)],
             "area": orig_width * orig_height,
         })
+    _rec_ms = (time.time() - _t_rec0) * 1000.0
+    try:
+        print(f"[ocr-timing] det={_det_ms:.0f}ms rec={_rec_ms:.0f}ms raw={_raw_n} merged={len(merged_boxes)} kept={len(blocks)} skip={_skipped} scal={det_scale:.2f} px={_crop_px}")
+    except Exception:
+        pass
     primary_text = ""
     if blocks:
         # HUD strips (tiny h) must never outrank dialogue for primary.
@@ -131,10 +164,25 @@ def detect_and_ocr(pil_image: Image.Image):
         # Tracker reads raw blocks, so menus/titles are untouched.
         try:
             _ax, _ay, _aw, _ah = primary_block["box"]
-            _band = [b for b in pool if b is not primary_block
-                     and abs(b["box"][1] - _ay) < min(_ah, 60) / 2 + 8]
-            if _band:
-                _row = sorted([primary_block] + _band, key=lambda b: b["box"][0])
+            _y_tol = min(_ah, 60) / 2 + 8
+            _row = [primary_block]
+            for b in blocks:
+                if b is primary_block:
+                    continue
+                _bx, _by, _bw, _bh = b["box"]
+                if abs(_by - _ay) >= _y_tol:
+                    continue
+                _t = (b["text"] or "").strip()
+                if not _t:
+                    continue
+                if _bh >= 50:
+                    _row.append(b)  # tall: existing behavior, unchanged
+                elif re.fullmatch(r'[．.…・… \u3000]+', _t):
+                    _row.append(b)  # dot rows: leading/trailing … (sleep/cell)
+                elif _bx < _ax + _aw + 150 and _bx + _bw > _ax - 150:
+                    _row.append(b)  # small but x-near: sign attributions (国王)
+            if len(_row) > 1:
+                _row = sorted(_row, key=lambda b: (b["box"][1] // 40, b["box"][0]))
                 primary_text = " ".join(b["text"] for b in _row)
             else:
                 primary_text = primary_block["text"]
@@ -159,7 +207,8 @@ def detect_and_ocr(pil_image: Image.Image):
             words = {"content": con, "total": tot}
     except Exception:
         pass
-    return primary_text, blocks, words
+    _timing = {"det_ms": round(_det_ms, 1), "rec_ms": round(_rec_ms, 1), "raw": _raw_n, "merged": len(merged_boxes), "kept": len(blocks), "skip": _skipped, "scale": round(det_scale, 3), "px": _crop_px}
+    return primary_text, blocks, words, _timing
 
 CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
@@ -206,11 +255,22 @@ _WS_RE = re.compile(r'\s+')
 _TRAIL_ELLIPSIS_RE = re.compile(r'[…\.。\s]+$')
 _JA_NEG_RE = re.compile(r'(なく|ない|ません|なかった|ではない|ぬ|(?<!は)ずに|(?<!は)ず)')
 _EN_NEG_RE = re.compile(r'\b(no|not|never|none|nothing|neither|nor|without|isn\'t|aren\'t|wasn\'t|weren\'t|don\'t|doesn\'t|didn\'t|haven\'t|hasn\'t|hadn\'t|won\'t|wouldn\'t|couldn\'t|shouldn\'t|can\'t)\b', re.IGNORECASE)
-_REFUSAL_RE = re.compile(r'can.t help with that|ready to translate|provide the Japanese|need the Japanese passage|happy to help translate', re.IGNORECASE)
-_PROMPT_ECHO_RE = re.compile(r'(Translate|Transform) the following Japanese text into English', re.IGNORECASE)
+_REFUSAL_RE = re.compile(r'can.t help with that|ready to translate|provide the Japanese|need the Japanese passage|happy to help translate|not sure if you.*familiar|do my best to translate it into English', re.IGNORECASE)
+_PROMPT_ECHO_RE = re.compile(r'(translat\w*|transform\w*).{0,25}following Japanese text.{0,30}english|following Japanese text.{0,40}translat\w+ into english|ready to translate|provide the Japanese (passage|text)', re.IGNORECASE)
 _RUN_RE = re.compile(r'([A-Za-z0-9])\1{6,}')
 _EN_STUTTER = [(r'\bTha\b', 'That'), (r'\btwas\b', 'was'), (r'\bTthe\b', 'The'), (r'\bteh\b', 'the')]
 _ZELDA_EN_NOUNS = [(r'\b[Hh]iranal\b', 'Hyrule'), (r'\bHilar\b', 'Hyrule'), (r'\bAgnim\b', 'Agahnim')]
+# Item-coverage family: JA katakana item present but EN lacks it = invention.
+# Shape, not instance: add rows, never new logic. Blank over misteach.
+_JA_EN_COVERAGE = [(r'ブーメラン', r'boomerang', 'boomerang-missing')]
+def _coverage_fail(src: str, out: str) -> str:
+    try:
+        for ja_pat, en_pat, reason in _JA_EN_COVERAGE:
+            if re.search(ja_pat, src) and not re.search(en_pat, out, re.IGNORECASE):
+                return reason
+    except Exception:
+        pass
+    return ""
 # Zelda intro script pack: fixed lines get reference translations instantly
 # (no GPU, deterministic). Template for per-game script packs later.
 _ZELDA_SCRIPT = [
@@ -344,7 +404,7 @@ def clean_for_translation(text: str) -> str:
     cleaned = text.replace("\u3000", " ")
     cleaned = _WS_RE.sub(" ", cleaned).strip()
     cleaned = re.sub(r'[・．\.＂"]+$', '…', cleaned)
-    cleaned = re.sub(r'！{2,}$', '…', cleaned)
+    cleaned = re.sub(r'！{2,}$', '！', cleaned)
     cleaned = re.sub(r'[…．\.]{2,}', '…', cleaned)
     return cleaned
 def normalize_for_translation(text: str) -> str:
@@ -374,31 +434,21 @@ def normalize_for_translation(text: str) -> str:
         print("[WunderLanguage] auto-normalize failed, using original.")
         text = original
     text = re.sub(r'.{1,3}をとこう', '封印をとこう', text)
-    text = text.replace('望月は', '２度と')
+    text = re.sub(r'[MＭｍｍ][AＡａａ][PＰｐｐ]', 'ＭＡＰ', text)
+    text = text.replace('昨年ＰＣ', 'ＭＡＰ')
+    # L1 mirror (universal, same as host): SEE and TRANSLATE must match.
+    # Button-token: <kanji/kana>ボタン → Ｂボタン. Latin A/B/X/Y/START never match here.
+    # Visit/seal: seals open, visits don't. True 訪問 without 開 passes through.
+    # Idempotent: outputs contain no match-input, so no rematch.
+    text = re.sub(r'[一-鿿ァ-ヶ]{1,3}ボタン', 'Ｂボタン', text)
+    text = re.sub(r'[一-鿿ァ-ヶ]{1,3}(?:オ)?(?<![ボポ])タン(?=.*押す)', 'Ｂボタン', text)
+    text = re.sub(r'[昨映][年午日]?ＰＣ?を手に入れた', 'ＭＡＰを手に入れた', text)
+    text = text.replace('訪問を再び開', '封印を再び開')
+    text = text.replace('訪問を開', '封印を開')
     text = re.sub(r'^[〈〉『』「」【】\'" ]+', '', text)
     text = re.sub(r'[〈〉『』「」【】]+', '', text)
-    text = text.replace('たくらも、', 'たくらむ、')
-    text = text.replace('カジの司祭', 'ナゾの司祭')
-    text = text.replace('運命の晩も', '運命の時も')
-    text = text.replace('ナツの同窓', 'ナゾの司祭')
-    text = text.replace('国王を戻ったのです。', '国王をほうむり…。')
-    text = text.replace('ほうむ丁寧', 'ほうむり…')
-    text = text.replace('ぽうむりゃ', 'ほうむり…')
-    text = text.replace('ぼうむリー', 'ほうむり…')
-    text = text.replace('ぽうむリー', 'ほうむり…')
-    text = text.replace('ぼうむすぎ', 'ほうむり…')
-    text = text.replace('ぼうなり', 'ほうむり')
-    text = text.replace('ほうむリー', 'ほうむり…')
-    text = text.replace('ぼうむりー', 'ほうむり…')
-    text = text.replace('ほうむりー', 'ほうむり…')
-    text = text.replace('運命の塊も', '運命の時も')
-    text = text.replace('ささがられる', 'ささげられる')
-    text = text.replace('ささがあられる', 'ささげられる')
-    text = text.replace('エ女セルダ', '王女ゼルダ')
-    text = text.replace('エケゼルダ', '王女ゼルダ')
-    text = text.replace('兵童', '兵達')
-    text = text.replace('１ヶ二工', 'イケニエ')
-    text = text.replace('作戦者の皿をひく物音', '７賢者の血をひく娘達')
+    # M8 moved: instances live in packs/zelda_pack.py. Same order (no bracket interaction).
+    text = _zelda_pack.apply_instance_fixups(text)
     text = re.sub(r'イケ[ァ-ヶー]+', '生け贄', text)
     if "イケニエ" in text:
         text = text.replace("イケニエ", "生け贄")
@@ -525,6 +575,8 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
     tgt_lang_name = LANGUAGE_CODE_NAMES.get(target_lang.lower(), target_lang)
     out = apply_english_fixups(_run_generation(src_text, src_lang_name, tgt_lang_name), src_text)
     bad = _is_bad_output(out) if target_lang.lower() == "en" else ""
+    if not bad and target_lang.lower() == "en":
+        bad = _coverage_fail(src_text, out)
     if bad in ("degenerate-loop", "wrong-language"):
         alt = strip_trailing_ellipsis(src_text)
         if alt and alt != src_text:
@@ -561,11 +613,12 @@ async def health():
 async def ocr_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    primary_text, blocks, words = detect_and_ocr(image)
-    return {"text": primary_text, "blocks": blocks, "words": words}
+    primary_text, blocks, words, timing = detect_and_ocr(image)
+    return {"text": primary_text, "blocks": blocks, "words": words, "timing": timing}
 @app.post("/translate")
 async def translate_text(request: TranslateRequest):
-    translated, unreliable, reason = cat_translate(request.text, request.source_lang, request.target_lang)
+    import asyncio as _aio
+    translated, unreliable, reason = await _aio.to_thread(cat_translate, request.text, request.source_lang, request.target_lang)
     return {"translated_text": translated, "unreliable": unreliable, "reason": reason, "code_version": CODE_VERSION}
 
 class ObserveRequest(BaseModel):

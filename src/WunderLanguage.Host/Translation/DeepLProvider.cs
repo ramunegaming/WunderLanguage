@@ -35,8 +35,8 @@ namespace WunderLanguage.Host.Translation
             try
             {
                 string shape = ShapeVersion + "|EN-US|ctx=prev|nouns:"
-                    + string.Join(",", ZeldaEnNouns.Select(n => n.pattern + "=>" + n.replacement))
-                    + "|titles:" + string.Join(",", ZeldaTitleMap.Select(t => t.ja + "=>" + t.en));
+                    + string.Join(",", new[] { @"\b[Hh]iranal\b=>Hyrule", @"\bHilar\b=>Hyrule", @"\bAgnim\b=>Agahnim" })
+                    + "|titles:" + string.Join(",", Packs.PackRegistry.Current.TitleMap.Select(t => t.ja + "=>" + t.en));
                 using var sha = SHA256.Create();
                 byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(shape));
                 string hex = Convert.ToHexString(hash).ToLowerInvariant();
@@ -98,41 +98,9 @@ namespace WunderLanguage.Host.Translation
             return ApplyZeldaTitleFixup(text) ?? ApplyZeldaNounFixups(english, text);
         }
 
-        private static readonly (string pattern, string replacement)[] ZeldaEnNouns =
-        {
-            (@"\b[Hh]iranal\b", "Hyrule"),
-            (@"\bHilar\b", "Hyrule"),
-            (@"\bAgnim\b", "Agahnim"),
-        };
-
-        // Per-game title pack: exact JA row -> pinned EN. Bypasses DeepL
-        // free-flow for known titles (never "Heroes"/"Dry Force" again).
-        private static readonly (string ja, string en)[] ZeldaTitleMap =
-        {
-            ("ゼルダの伝説 神々のトライフォース", "The Legend of Zelda: Triforce of the Gods"),
-            ("ゼルダの伝説", "The Legend of Zelda"),
-        };
-
-        private static string? ApplyZeldaTitleFixup(string japaneseSource)
-        {
-            string t = japaneseSource.Trim();
-            foreach (var (ja, en) in ZeldaTitleMap)
-                if (t == ja) return en;
-            return null;
-        }
-
-        private static string ApplyZeldaNounFixups(string english, string japaneseSource)
-        {
-            // Per-game Zelda gate: Block9 has アグニム but no ハイラル,
-            // Block11 has ゼルダ but no ハイラル. Any marker enables pack.
-            if (!(japaneseSource.Contains("ハイラル", StringComparison.Ordinal)
-                || japaneseSource.Contains("アグニム", StringComparison.Ordinal)
-                || japaneseSource.Contains("ゼルダ", StringComparison.Ordinal)))
-                return english;
-            foreach (var (pattern, replacement) in ZeldaEnNouns)
-                english = Regex.Replace(english, pattern, replacement);
-            return english;
-        }
+        // M8 moved: title/noun pack lives in Packs/Zelda/ZeldaPack.cs. Same pairs, same gate.
+        private static string? ApplyZeldaTitleFixup(string japaneseSource) => Packs.PackRegistry.Current.ApplyTitleFixup(japaneseSource);
+        private static string ApplyZeldaNounFixups(string english, string japaneseSource) => Packs.PackRegistry.Current.ApplyEnNounFixups(english, japaneseSource);
 
         public async Task<(long used, long limit)> GetUsageAsync()
         {

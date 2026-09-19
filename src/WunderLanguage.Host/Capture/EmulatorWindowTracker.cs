@@ -17,6 +17,7 @@ namespace WunderLanguage.Host.Capture
             IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
             int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
         private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+        private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
         private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
         private const int OBJID_WINDOW = 0;
         private const int CHILDID_SELF = 0;
@@ -25,6 +26,7 @@ namespace WunderLanguage.Host.Capture
         private Rectangle _lastBounds = Rectangle.Empty;
         private bool _lastMinimized;
         private IntPtr _hook;
+        private IntPtr _foregroundHook;
         // Must be kept alive as a field for as long as the hook is
         // installed - SetWinEventHook does not pin the managed delegate, so
         // if this were a local variable it could be garbage collected while
@@ -32,6 +34,7 @@ namespace WunderLanguage.Host.Capture
         // next time an event fires.
         private WinEventDelegate? _winEventDelegate;
         public event Action<Rectangle>? BoundsChanged;
+        public event Action<IntPtr>? ForegroundChanged;
         public event Action? Minimized;
         public event Action? Restored;
         public EmulatorWindowTracker(IntPtr hWnd)
@@ -80,6 +83,11 @@ namespace WunderLanguage.Host.Capture
                     IntPtr.Zero, _winEventDelegate, processId, 0, WINEVENT_OUTOFCONTEXT);
                 if (_hook == IntPtr.Zero)
                     FileLogger.Log("EmulatorWindowTracker: SetWinEventHook failed, relying on fallback timer only.");
+                _foregroundHook = SetWinEventHook(
+                    EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                    IntPtr.Zero, _winEventDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+                if (_foregroundHook == IntPtr.Zero)
+                    FileLogger.Log("EmulatorWindowTracker: foreground hook failed, z-pairing stays timer-only.");
             }
             catch (Exception ex)
             {
@@ -93,10 +101,20 @@ namespace WunderLanguage.Host.Capture
                 UnhookWinEvent(_hook);
                 _hook = IntPtr.Zero;
             }
+            if (_foregroundHook != IntPtr.Zero)
+            {
+                UnhookWinEvent(_foregroundHook);
+                _foregroundHook = IntPtr.Zero;
+            }
             _winEventDelegate = null;
         }
         private void OnWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
         {
+            if (eventType == EVENT_SYSTEM_FOREGROUND)
+            {
+                try { ForegroundChanged?.Invoke(hwnd); } catch { }
+                return;
+            }
             // Filter to the specific top-level emulator window only - the
             // hook is scoped to its process, but other windows/controls
             // belonging to that same process (e.g. dialogs) could otherwise

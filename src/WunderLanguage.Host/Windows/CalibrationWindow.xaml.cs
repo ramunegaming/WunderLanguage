@@ -39,7 +39,7 @@ namespace WunderLanguage.Host.Windows
             // continuously for as long as this window is open, faster than
             // the panels' own interval, means this always wins the race.
             _topmostTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            _topmostTimer.Tick += (_, _) => Win32TopmostHelper.ForceTopmost(this);
+            _topmostTimer.Tick += (_, _) => { }; // Neutered: AppShell tick solely owns z-order.
             Loaded += (_, _) => _topmostTimer.Start();
             Closed += (_, _) => _topmostTimer.Stop();
         }

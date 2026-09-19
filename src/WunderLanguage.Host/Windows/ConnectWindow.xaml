@@ -22,6 +22,7 @@
                  Margin="0,0,0,12"/>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="RefreshButton" Content="Refresh" Padding="14,8" Margin="0,0,8,0" Click="RefreshButton_Click"/>
             <Button x:Name="SettingsButton" Content="Settings" Padding="14,8" Margin="0,0,8,0" Click="SettingsButton_Click"/>
             <Button x:Name="ConnectButton" Content="Connect" Padding="18,8"
                     Background="{StaticResource AccentBrush}" Foreground="White" Click="ConnectButton_Click"/>

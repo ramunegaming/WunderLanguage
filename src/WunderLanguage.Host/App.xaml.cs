@@ -37,6 +37,32 @@ namespace WunderLanguage.Host
         {
             base.OnStartup(e);
             FileLogger.Log("App starting up");
+            // M7b offline replay: --replay <corpus.jsonl> refeeds recorded OCR through the real
+            // fixup/normalize/hold path. No emulator, no sidecar, no GPU. Revert: delete this block.
+            try
+            {
+                var args = e?.Args ?? System.Array.Empty<string>();
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i] == "--replay" && i + 1 < args.Length)
+                    {
+                        int mism = Capture.ReplayChecker.Run(args[i + 1]);
+                        FileLogger.Log($"[replay] exit mismatches={mism}");
+                        Shutdown(mism == 0 ? 0 : 1);
+                        return;
+                    }
+                }
+            }
+            catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
+            // Fresh troubleshoot bundle per launch (never on close, so crashes keep evidence).
+            try
+            {
+                string tsDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot");
+                if (System.IO.Directory.Exists(tsDir))
+                    foreach (var f in System.IO.Directory.GetFiles(tsDir))
+                        try { System.IO.File.Delete(f); } catch { }
+            }
+            catch { }
 
             var loading = new LoadingWindow();
             loading.Show();
@@ -76,8 +102,7 @@ namespace WunderLanguage.Host
 
         protected override void OnExit(ExitEventArgs e)
         {
-            FileLogger.Log("App exiting");
-            _sidecar.Stop();
+            FileLogger.Log("App exiting - sidecar kept alive for fast relaunch (stale versions auto-replaced by version check)");
             base.OnExit(e);
         }
     }
