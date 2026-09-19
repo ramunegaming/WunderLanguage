@@ -61,13 +61,15 @@ namespace WunderLanguage.Host.Sidecar
             _process.OutputDataReceived += (_, e) =>
             {
                 if (e.Data is null) return;
-                FileLogger.Log($"[sidecar stdout] {e.Data}");
+                if (ShouldLogSidecarLine(e.Data))
+                    FileLogger.Log($"[sidecar stdout] {e.Data}");
                 lock (_recentOutput) _recentOutput.Add(e.Data);
             };
             _process.ErrorDataReceived += (_, e) =>
             {
                 if (e.Data is null) return;
-                FileLogger.Log($"[sidecar stderr] {e.Data}");
+                if (ShouldLogSidecarLine(e.Data))
+                    FileLogger.Log($"[sidecar stderr] {e.Data}");
                 lock (_recentOutput) _recentOutput.Add(e.Data);
             };
 
@@ -79,6 +81,24 @@ namespace WunderLanguage.Host.Sidecar
             FileLogger.Log($"Sidecar process started, PID: {_process.Id}");
 
             await WaitForHealthyAsync(statusProgress);
+        }
+
+        // Log hygiene: tqdm progress bars, per-line transformers warnings,
+        // and observe/define/health chatter never diagnose anything but
+        // dominate every log. Crash diagnosis still gets everything via
+        // _recentOutput. POST /ocr + POST /translate stay (latency gaps).
+        private static bool ShouldLogSidecarLine(string data)
+        {
+            if (data.Contains("Loading weights:", StringComparison.Ordinal)) return false;
+            if (data.Contains("it/s]", StringComparison.Ordinal)) return false;
+            if (data.Contains("POST /observe", StringComparison.Ordinal)) return false;
+            if (data.Contains("POST /define", StringComparison.Ordinal)) return false;
+            if (data.Contains("GET /health", StringComparison.Ordinal)) return false;
+            if (data.Contains("Both `max_new_tokens`", StringComparison.Ordinal)) return false;
+            if (data.Contains("generation_config", StringComparison.Ordinal)) return false;
+            if (data.Contains("pipelines sequentially", StringComparison.Ordinal)) return false;
+            if (data.Contains("clean_up_tokenization", StringComparison.Ordinal)) return false;
+            return true;
         }
 
         private async Task WaitForHealthyAsync(IProgress<string>? statusProgress)

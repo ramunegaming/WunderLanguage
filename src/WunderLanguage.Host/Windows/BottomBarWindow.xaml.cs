@@ -12,6 +12,9 @@ namespace WunderLanguage.Host.Windows
         public BottomBarWindow()
         {
             InitializeComponent();
+            // Sole taskbar presence: right-click Close here must exit the app,
+            // not strand it headless (shutdown is explicit).
+            Closed += (_, _) => Application.Current.Shutdown();
         }
 
         private void PauseButton_Click(object sender, RoutedEventArgs e)

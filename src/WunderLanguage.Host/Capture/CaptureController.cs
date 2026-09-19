@@ -23,10 +23,37 @@ namespace WunderLanguage.Host.Capture
         private CancellationTokenSource? _cts;
         private readonly string _id = Guid.NewGuid().ToString("N")[..6];
         private volatile bool _stopped;
-        private readonly string _gameId;
+        private string _gameId;
+        // Quiet-title detector (FFVI textless logo): prolonged zero-substance frames + logo hints.
+        private int _quietCount;
+        private bool _quietHint;
+        private string _quietSeen = "";
         private readonly object _mineLock = new();
         private string _successorText = string.Empty;
         private int _successorCount;
+        private int _weakHoldCount;
+        private string _weakHoldFor = string.Empty;
+        // S1.2 honest min-spec: worst-case warmup timings pick the profile once per session.
+        // Full bar=12, reduced bar=18 (slower bubbles, never wrong ones). Omission-only if ever wrong.
+        private int _weakHoldThreshold = 12;
+        private double _warmDetSum;
+        private double _warmRecSum;
+        private int _warmSamples;
+        private bool _minSpecLogged;
+        private void MaybeEmitMinSpecVerdict()
+        {
+            try
+            {
+                if (_minSpecLogged || _settledOcrLoops < StartupWarmupOcrLoops || _warmSamples == 0) return;
+                _minSpecLogged = true;
+                double det = _warmDetSum / _warmSamples, rec = _warmRecSum / _warmSamples;
+                bool reduced = det > 250 || rec > 800;
+                if (reduced) _weakHoldThreshold = 18;
+                FileLogger.Log($"[min-spec] profile={(reduced ? "reduced" : "full")} (warmup-mean det={det:F0}ms rec={rec:F0}ms over {_warmSamples}, weak-hold bar={_weakHoldThreshold})");
+            }
+            catch { }
+        }
+        private bool _flashFired;
         private string _lastOcrText = string.Empty;
         private int _lastOcrContent;
         private int _lastOcrTotal;
@@ -39,6 +66,9 @@ namespace WunderLanguage.Host.Capture
         private int _menuStableCount;
         private bool _frameIsTitle;
         private string _lastPublishedMenu = "";
+        // Newest DECISION sig (choice screens). Dialogue yields to it (D2/D3);
+        // similarity-gated so no expiry bookkeeping needed.
+        private string _lastDecisionSig = "";
         public event Action<string, string, string>? TextUpdated; // (expectedOldJa, newJa, en)
         public event Action? WindowLost;
 
@@ -49,11 +79,22 @@ namespace WunderLanguage.Host.Capture
         private string? _pendingFrameHash;
         private int _pendingFrameStableCount;
         private const int RequiredPreOcrStablePolls = 1;
+        // S1.1 startup warmup: settled-OCR count since Start (not wall time, so tired
+        // laptops get the same loop-count warmup — slower in seconds, never wrong).
+        private int _settledOcrLoops;
+        private const int StartupWarmupOcrLoops = 8;
 
         private string _candidateText = string.Empty;
         private int _candidateStableCount;
         private bool _candidateGrewThisRead;
         private string _lastTranslatedText = string.Empty;
+        // R1 oscillation memory: previously shown line (one slot). A stable candidate matching _prev
+        // while another line is shown = same-box A-B-A flicker; the middle fire was the intruder.
+        // Updated on every new-bubble path below; update-in-place paths keep lineage (untouched).
+        private string _prevTranslatedText = string.Empty;
+        // R2a shown-age: loop index of the last new-bubble fire (-100 = none yet, first fire immediate).
+        // A held page flushing moments after a fire (corpus loops 457-458) is flicker, not a page turn.
+        private int _lastFireLoop = -100;
         private const int RequiredStableReadings = 3;
         private const int GrowthBreakthroughPolls = 10;
         private const int MinCandidateContentLength = 2;
@@ -61,111 +102,8 @@ namespace WunderLanguage.Host.Capture
         private const int IdleDelayMs = 400;
         private const int SettlingDelayMs = 150;
 
-        private static readonly (string from, string to)[] ZeldaOcrFixups =
-        {
-            ("Ｐ人", "７人"), ("『人", "７人"),
-            ("段者", "賢者"), 
-            ("批印", "封印"), ("樹印", "封印"), ("針印", "封印"),
-            ("計印", "封印"), ("打印", "封印"), ("朝印", "封印"), ("抽印", "封印"), ("納印", "封印"),
-            ("掛印", "封印"), ("同祭", "司祭"),
-            ("もルダ", "ゼルダ"),
-            ("ナジの同禁", "ナゾの司祭"), ("ナジの司祭", "ナゾの司祭"), ("ナツの司祭", "ナゾの司祭"),
-            ("アゲニム", "アグニム"),
-            ("させばられる", "ささげられる"),
-            ("わきでできた", "わきでてきた"),
-            ("みっかり", "みつかり"),
-            ("いまました", "いました"),
-            ("全知金能", "全知全能"),
-            ("持つ勇金が", "持つ黄金が"),
-            ("地かのとこかに", "地方のどこかに"),
-            ("土方ゼルダ", "王女ゼルダ"), ("王女もルダ", "王女ゼルダ"),
-            ("イケニュ", "イケニエ"), ("イケーエ", "イケニエ"),
-            ("理論の中", "運命の時"),
-            ("要しき", "悪しき"),
-            ("一旦度", "２度"), ("全知金結", "全知全能"), ("責金", "黄金"), ("遺金", "黄金"),
-            ("樹凪", "封印"), ("ナゾの同窓", "ナゾの司祭"), ("ナジの同窓", "ナゾの司祭"),
-            ("カップの司祭", "ナゾの司祭"),
-            ("カップの同窓", "ナゾの司祭"), ("仮説となった", "伝説となった"),
-            ("ひく披露を", "ひく娘達を"),
-            ("ひく焼きを", "ひく娘達を"), ("ささがあれる", "ささげられる"),
-            ("運命の時点", "運命の時も"), ("運命の明る", "運命の時も"),
-            ("ほうなり", "ほうむり"),
-            ("望月は", "２度と"),
-            ("たくらも、", "たくらむ、"), ("カジの司祭", "ナゾの司祭"),
-            ("姉の兵達", "城の兵達"), ("姉達", "娘達"),
-            ("ナゾの同禁", "ナゾの司祭"),
-            ("イグニエ", "イケニエ"),
-            ("全部全能", "全知全能"),
-            ("おやつって", "あやつって"),
-            ("こしかし", "しかし"),
-            ("出しかし", "しかし"),
-            ("ほうむ刀", "ほうむり"),
-            ("かみつかり", "がみつかり"),
-            ("どこがに", "どこかに"),
-            ("腎諸", "賢者"),
-            ("イゲニエ", "イケニエ"),
-            ("脱毛", "時も"),
-            ("習慣者", "７賢者"),
-            ("エスセルダ", "王女ゼルダ"),
-            ("理論の時", "運命の時"),
-            ("もうそう", "もうそこ"),
-            ("運命の嫌も", "運命の時も"),
-            ("運命の晩も", "運命の時も"),
-            ("ナツの同窓", "ナゾの司祭"),
-            ("国王を戻ったのです。", "国王をほうむり…。"),
-            ("ほうむ丁寧", "ほうむり…"),
-            ("ぽうむりゃ", "ほうむり…"),
-            ("ぼうむリー", "ほうむり…"),
-            ("ぽうむリー", "ほうむり…"),
-            ("ぼうむすぎ", "ほうむり…"),
-            ("ぼうなり", "ほうむり"),
-            ("ほうむリー", "ほうむり…"),
-            ("ぼうむりー", "ほうむり…"),
-            ("ほうむりー", "ほうむり…"),
-            ("運命の塊も", "運命の時も"),
-            ("ささがあられる", "ささげられる"),
-            ("エ女セルダ", "王女ゼルダ"),
-            ("エケゼルダ", "王女ゼルダ"),
-            ("兵童", "兵達"),
-            ("１ヶ二工", "イケニエ"),
-            ("作戦者の皿をひく物音", "７賢者の血をひく娘達"),
-            ("ほうをリー", "ほうむり"),
-            ("社仰", "封印"),
-            ("社印", "封印"),
-            ("封印を再び聞こう", "封印を再び開こう"),
-            ("人れんぞ", "入れんぞ"),
-            ("剣と眉", "剣と盾"),
-            ("ロボタンを", "Ｂボタンを"),
-            ("平日ボタンを", "Ｂボタンを"),
-            ("線をみつけた", "娘をみつけた"),
-            ("地下ろうに揃え", "地下ろうに捕え"),
-            ("姉にやって来た司祭", "城にやって来た司祭"),
-            ("カンララ", "カンテラ"),
-            ("Ｗボタンでとうろう", "Ｙボタンでとうろう"),
-            ("ゼルダ嫌", "ゼルダ姫"),
-            ("ほうびとして１０００ルピー", "ほうびとして１００ルピー"),
-            ("ドダンを押し続け", "Ｂボタンを押し続け"),
-            ("ＰＨＳＨ", "ＰＵＳＨ"),
-            ("セープ", "セーブ"),
-            ("セップ", "セーブ"),
-            ("もうそこまで止まっていました", "もうそこまでせまっていました"),
-            ("剣と首", "剣と盾"),
-            ("よくきげ", "よくきけ"),
-            ("品はポタシ", "Ｂボタン"),
-            ("ポタン", "ボタン"),
-            ("ポタシ", "ボタン"),
-            ("昨日Ｐを手に入れた", "ＭＡＰを手に入れた"),
-            ("ルビー", "ルピー"),
-            ("とりせる", "とらせる"),
-            ("ほっび", "ほうび"),
-            ("４０人のイケニエ", "６人のイケニエ"),
-            ("４ ０人のイケニエ", "６人のイケニエ"),
-            ("Ｘポダン", "Ｘボタン"),
-            ("出席ボタン", "Ｂボタン"),
-            ("おホタン", "Ｂボタン"),
-            ("ガギ", "カギ"),
-            ("ブーダラン", "ブーメラン"),
-        };
+        // M8-1 moved: table lives in Packs/Zelda/ZeldaPack.cs, delegate here. No behavior change.
+        // M8f: tables read live from CurrentPack every call (a static snapshot froze the first pack forever — fixed).
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int nMaxCount);
@@ -189,8 +127,36 @@ namespace WunderLanguage.Host.Capture
             return $"hwnd-{hWnd:X}";
         }
 
+        // Game identity heals mid-session (M8f): ctor may run pre-ROM-load ("Snes9x 1.60").
+        // Cheap string compare only while stable; on ROM change, switch pack + miner map + rotate corpus.
+        private void RefreshGameSession()
+        {
+            try
+            {
+                string fresh = ResolveGameId(_hWnd);
+                var content = Packs.PackRegistry.ScoreContent(_lastOcrText ?? "");
+                if (content != null && content.GameId != Packs.PackRegistry.Current.GameId)
+                {
+                    Packs.PackRegistry.SetCurrent(content);
+                    try { LoadMinedCorrections(); } catch { }
+                    _corpusPath = "";
+                    return;
+                }
+                if (fresh == _gameId) return;
+                FileLogger.Log($"[pack] game switch {_gameId} -> {fresh}");
+                _gameId = fresh;
+                try { Packs.PackRegistry.SetSession(_gameId); } catch { }
+                try { LoadMinedCorrections(); } catch { }
+                _corpusPath = "";
+            }
+            catch { }
+        }
+
         private Dictionary<string, string> _minedCorrections = new();
 
+        // M8 miner-as-pack-data: corrections/<gameId>.json is pack data (per-game, never core).
+        // Dedupe: entries the current pipeline already reproduces are dropped at load
+        // (universals absorb the rows — file preserved, effective map shrinks).
         private void LoadMinedCorrections()
         {
             try
@@ -198,10 +164,15 @@ namespace WunderLanguage.Host.Capture
                 string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corrections", _gameId + ".json");
                 if (File.Exists(path))
                     _minedCorrections = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? new Dictionary<string, string>();
+                int before = _minedCorrections.Count;
+                _minedCorrections = _minedCorrections
+                    .Where(kv => ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(kv.Key))) != kv.Value)
+                    .ToDictionary(kv => kv.Key, kv => kv.Value);
+                if (_minedCorrections.Count != before)
+                    FileLogger.Log($"[miner] deduped {before - _minedCorrections.Count}/{before} redundant rows (pipeline absorbs them)");
             }
             catch { }
         }
-
         private string? LookupMined(string raw)
         {
             try
@@ -219,11 +190,10 @@ namespace WunderLanguage.Host.Capture
             {
                 if (string.IsNullOrWhiteSpace(raw) || raw == fixed_)
                     return;
-                string stripRaw = StripForOverlap(raw).Replace("・", "").Replace("！", "").Replace("!", "").Replace("？", "").Replace("?", "").Replace("＂", "").Replace("\"", "").Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "");
-                string stripFixed = StripForOverlap(fixed_).Replace("・", "").Replace("！", "").Replace("!", "").Replace("？", "").Replace("?", "").Replace("＂", "").Replace("\"", "").Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "");
+                string stripRaw = StripForOverlap(raw).Replace("・", "").Replace("！", "").Replace("!", "").Replace("？", "").Replace("?", "").Replace("＂", "").Replace("\"", "").Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "").Replace("…", "").Replace("．", "").Replace(".", "");
+                string stripFixed = StripForOverlap(fixed_).Replace("・", "").Replace("！", "").Replace("!", "").Replace("？", "").Replace("?", "").Replace("＂", "").Replace("\"", "").Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "").Replace("…", "").Replace("．", "").Replace(".", "");
                 if (stripRaw == stripFixed)
                     return;
-                FileLogger.Log($"[mine] \"{raw}\" -> \"{fixed_}\"");
                 string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corrections");
                 Directory.CreateDirectory(dir);
                 string path = Path.Combine(dir, _gameId + ".json");
@@ -240,6 +210,7 @@ namespace WunderLanguage.Host.Capture
                     catch { map = new Dictionary<string, string>(); }
                     if (map.TryGetValue(raw, out string? prev) && prev == fixed_)
                         return;
+                    FileLogger.Log($"[mine] \"{raw}\" -> \"{fixed_}\"");
                     map[raw] = fixed_;
                     File.WriteAllText(path, JsonSerializer.Serialize(map, new JsonSerializerOptions { WriteIndented = true }));
                 }
@@ -250,12 +221,13 @@ namespace WunderLanguage.Host.Capture
         private static string ApplyZeldaOcrFixups(string text)
         {
             string fixed_ = text;
-            foreach (var (from, to) in ZeldaOcrFixups)
+            foreach (var (from, to) in Packs.PackRegistry.Current.OcrFixups)
             {
                 if (fixed_.Contains(from, StringComparison.Ordinal))
                     fixed_ = fixed_.Replace(from, to, StringComparison.Ordinal);
             }
-            fixed_ = Regex.Replace(fixed_, @".{1,3}をとこう", "封印をとこう");
+            if (!fixed_.Contains("封印", StringComparison.Ordinal))
+                fixed_ = Regex.Replace(fixed_, @".{1,3}をとこう", "封印をとこう");
             fixed_ = fixed_.Replace("たくらも、", "たくらむ、", StringComparison.Ordinal);
             fixed_ = fixed_.Replace("カジの司祭", "ナゾの司祭", StringComparison.Ordinal);
             fixed_ = Regex.Replace(fixed_, @"イケ[ァ-ヶー]+", "イケニエ");
@@ -267,24 +239,101 @@ namespace WunderLanguage.Host.Capture
             fixed_ = Regex.Replace(fixed_, @"[バパ]イラル", "ハイラル");
             fixed_ = Regex.Replace(fixed_, @"エ[女土]ゼルダ", "王女ゼルダ");
             fixed_ = Regex.Replace(fixed_, @"[選連通]命", "運命");
-            fixed_ = Regex.Replace(fixed_, @"ささ[けばが]られ", "ささげられ");
+            // Sasage shape (corrected, log-named loop 277): ざ/ば/が insert before け — ささ[X]けられ → ささげられ.
+            // Previous single-char class missed the insertion shape. Idempotent fixed-point (output re-matches to itself).
+            fixed_ = Regex.Replace(fixed_, @"ささ[ざばが]?[けげ]られ", "ささげられ");
             fixed_ = Regex.Replace(fixed_, @"イケ[三二]工", "イケニエ");
             fixed_ = Regex.Replace(fixed_, @"[狼塊]達", "娘達");
+            // M8-4b moved: daughter lives in Packs/Zelda/ZeldaPack.cs. Same position.
+            fixed_ = Packs.PackRegistry.Current.ApplyDaughterFixups(fixed_);
             fixed_ = Regex.Replace(fixed_, @"カンラ[ラテ]ラ", "カンテラ");
             fixed_ = Regex.Replace(fixed_, @"[訪初射]印", "封印");
+            // L1.3 glyph pair by token context (universal): seals open, visits don't.
+            // 訪問 + open-verb → 封印. True 訪問 (no 開 after) passes through untouched.
+            // Idempotent: output 封印 contains no 訪問, so no rematch.
+            fixed_ = Regex.Replace(fixed_, @"訪問を再び開", "封印を再び開");
+            fixed_ = Regex.Replace(fixed_, @"訪問を開", "封印を開");
             fixed_ = Regex.Replace(fixed_, @"司[^祭]{1,2}アグニム", "司祭アグニム");
             fixed_ = Regex.Replace(fixed_, @"[カガ]ンテラ", "カンテラ");
+            fixed_ = Regex.Replace(fixed_, @"[プブ][ニ一]メラン", "ブーメラン");
+            // M8-4b moved: sacrifice lives in Packs/Zelda/ZeldaPack.cs. Same position, same order.
+            fixed_ = Packs.PackRegistry.Current.ApplySacrificeFixups(fixed_);
+            // M8-4a moved: sweep lives in Packs/Zelda/ZeldaPack.cs. Same position, same order.
+            fixed_ = Packs.PackRegistry.Current.ApplySweepFixups(fixed_);
+            fixed_ = Packs.PackRegistry.Current.ApplyVoiceTailFixups(fixed_);
+            fixed_ = Regex.Replace(fixed_, @"[日自目白ロ]ボタン", "Ｂボタン");
+            fixed_ = Regex.Replace(fixed_, @"[HＨ][TＴ](?:オ)?(?:タン|ボタン)", "Ａボタン");
+            fixed_ = Regex.Replace(fixed_, @"一官[ボポ]タン", "Ｂボタン");
+            // L1.1 button-token rule (universal): <kanji/kana-token>ボタン → Ｂボタン.
+            // B unless pack says otherwise. Fullwidth-Latin tokens (A/B/X/Y, START) never match here.
+            // Idempotent: output Ｂボタン uses Latin Ｂ, outside [一-鿿ぁ-んァ-ヶ], so no rematch.
+            // L1.1 repaired: hiragana excluded — verb endings/particles (て/け/で) are never button tokens.
+            // Kanji/katakana only (二層/日本/黒田/ロ/日 all covered). Idempotent: output Ｂ is Latin, no rematch.
+            fixed_ = Regex.Replace(fixed_, @"[一-鿿ァ-ヶ]{1,3}ボタン", "Ｂボタン");
+            // L1.4 repaired (log-named loops 48/49/62/94): (?<![ボポ]) stops タン matching inside ボタン (no more ＢＢ);
+            // hiragana excluded (no more て-eating: さわって/よくきけ/前で survive).
+            // Idempotent: output Ｂボタン contains no bare タン outside ボタン, so no rematch.
+            fixed_ = Regex.Replace(fixed_, @"[一-鿿ァ-ヶ]{1,3}(?:オ)?(?<![ボポ])タン(?=.*押す)", "Ｂボタン");
+            // Pack-context buttons (screenshots pair 5/6 + ref image 4): lift/chest guides use Ａ. Output Ａ is Latin, no rule rematches.
+            fixed_ = Packs.PackRegistry.Current.ApplyButtonContextFixups(fixed_);
+            fixed_ = Regex.Replace(fixed_, @"９ＴＡＲＴ", "ＳＴＡＲＴ");
+            // M8-4b moved: decision instance lives in Packs/Zelda/ZeldaPack.cs. Same position.
+            fixed_ = Packs.PackRegistry.Current.ApplyDecisionFixups(fixed_);
+            fixed_ = Regex.Replace(fixed_, @"[MＭｍｍ][AＡａａ][PＰｐｐ]", "ＭＡＰ");
+            fixed_ = fixed_.Replace("昨年ＰＣ", "ＭＡＰ", StringComparison.Ordinal);
+            // M8-4b moved: reward lives in Packs/Zelda/ZeldaPack.cs. Same position, same order.
+            fixed_ = Packs.PackRegistry.Current.ApplyRewardFixups(fixed_);
+            // L1.5 MAP-by-obtain-context (universal, log-named drift-95): you obtain MAP, never 昨年Ｐ.
+            // Covers 昨年Ｐ/昨年ＰＣ/昨日Ｐ shapes with zero new rows per variant. Idempotent: output ＭＡＰ never rematches.
+            fixed_ = Regex.Replace(fixed_, @"[昨映][年午日]?ＰＣ?を、?手に入れた", "ＭＡＰを手に入れた");
+            // M8-4a moved: guard lives in Packs/Zelda/ZeldaPack.cs. Same position, same order.
+            fixed_ = Packs.PackRegistry.Current.ApplyGuardFixups(fixed_);
             if (!ReferenceEquals(fixed_, text) && fixed_ != text)
                 FileLogger.Log($"[ocr-fixup] \"{text}\" -> \"{fixed_}\"");
             return fixed_;
         }
 
+        // M8-0 moved: table lives in Packs/Zelda/ZeldaPack.cs, delegate here. No behavior change.
+        // M8f: see above — display table likewise live.
+
+        private static string ApplyDisplayFixups(string text)
+        {
+            string fixed_ = text;
+            foreach (var (from, to) in Packs.PackRegistry.Current.DisplayFixups)
+            {
+                if (fixed_.Contains(from, StringComparison.Ordinal))
+                    fixed_ = fixed_.Replace(from, to, StringComparison.Ordinal);
+            }
+            return fixed_;
+        }
+
         private static string NormalizePunctForStability(string text)
         {
-            string s = text.Replace('・', '…').Replace('．', '…').Replace('＂', '…').Replace('"', '…')
-                .Replace('！', '…').Replace('!', '…').Replace('？', '…').Replace('?', '…');
-                        s = s.Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "");
-            return Regex.Replace(s, @"[…．\.]{2,}", "…");
+            string s = text.Replace('・', '…').Replace('＂', '…').Replace('"', '…');
+            // Doubled ！ is OCR doubling a true single (boomerang/MAP/cell):
+            // collapse at line end, never convert to …. Mid-line runs are
+            // dot-confusion → … (Zelda-4, uncle 剣よくきけ).
+            s = Regex.Replace(s, @"[!！]{2,}$", "！");
+            s = Regex.Replace(s, @"[!！]{2,}", "…");
+            // JA 1:1 — ? runs stay verbatim (??? is real punctuation, never dot-confusion).
+                        if (!Packs.PackRegistry.Current.KeepSpeakerBrackets)
+                            s = s.Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "");
+            // Trailing bare numbers (universal, FFVI battle artifacts ９２２５２５): damage/HP figures
+            // glued to speech are never dialogue. Dates/coords carry non-digits, untouched.
+            s = Regex.Replace(s, @"\s+[0-9０-９ ]{2,}\s*$", "");
+            s = s.Replace('．', '…').Replace('.', '…');
+            // Spaced fullwidth Latin is one token (Ｍ Ａ Ｐ → ＭＡＰ).
+            string prev;
+            do { prev = s; s = Regex.Replace(s, @"(?<=[Ａ-Ｚ]) (?=[Ａ-Ｚ])", ""); } while (s != prev);
+            // Dot counts: 4+ → …… (opening), exactly 3 → … (uncle 剣),
+            // 2+ before 。 → single (ほうむり…。), trailing run → single.
+            s = Regex.Replace(s, @"…{4,}", "……");
+            s = Regex.Replace(s, @"…{3}", "…");
+            s = Regex.Replace(s, @"…{2,}(?=。)", "…");
+            s = Regex.Replace(s, @"…{2,}$", "…");
+            // … eats a following ！ (なかった……！ → なかった…); true ！ untouched.
+            s = Regex.Replace(s, @"…+！", "…");
+            return s;
         }
 
         public CaptureController(IntPtr hWnd, GameRegion gameRegion, OcrClient ocrClient, TranslationManager translationManager, Func<IntPtr, bool>? isCompanionWindow = null)
@@ -302,6 +351,7 @@ namespace WunderLanguage.Host.Capture
         public void Start()
         {
             FileLogger.Log("CaptureController.Start called");
+            try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
             _ = RunLoopAsync(_cts.Token);
@@ -349,6 +399,7 @@ namespace WunderLanguage.Host.Capture
                         _pendingFrameHash = null;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
+                    if (iteration % 20 == 0) RefreshGameSession();
                     using var bitmap = WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
                     _consecutiveCaptureFailures = 0;
 
@@ -357,13 +408,17 @@ namespace WunderLanguage.Host.Capture
                     {
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] frame unchanged, skipping OCR");
+                        string? quietTitleStatic = CheckQuietTitle(iteration, null);
+if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
                         // Static dwell confirms a clean held candidate. Menu screens
                         // (sig set) and titles stay out; dupes stay out via guards.
                         if (!string.IsNullOrEmpty(_candidateText)
-                            && _candidateStableCount >= 1
+                            && _candidateStableCount >= 2
                             && _candidateStableCount < RequiredStableReadings
                             && string.IsNullOrEmpty(_menuSignature)
                             && !_frameIsTitle
+                            && !IsDwellDashNoise(_candidateText)
+                            && HasAnchorSubstance(_candidateText)
                             && HasJapanese(_candidateText)
                             && !IsJunkOcr(_candidateText) && !IsEllipsisOnly(_candidateText)
                             && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
@@ -404,31 +459,46 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
 
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
+                    _settledOcrLoops++;
+                    if (_settledOcrLoops <= StartupWarmupOcrLoops)
+                    {
+                        _warmDetSum += _ocrClient.LastDetMs;
+                        _warmRecSum += _ocrClient.LastRecMs;
+                        _warmSamples++;
+                    }
                     _lastOcrText = rawText.Trim();
+                    MaybeEmitMinSpecVerdict();
                     _lastOcrContent = contentWords;
                     _lastOcrTotal = totalWords;
                     string rawTrim = rawText.Trim();
                     string? remembered = null;
                     try { remembered = LookupMined(rawTrim); } catch { }
-                    string extractedText = remembered ?? NormalizePunctForStability(ApplyZeldaOcrFixups(rawTrim));
+                    string extractedText = ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(remembered ?? rawTrim)));
                     try { MineCorrection(rawTrim, extractedText); } catch { }
+                    try { CorpusRecordOcr(iteration, rawTrim, ocrBlocks, extractedText, remembered != null); } catch { }
                     // Phase 1a probe only: shape signal for menus/titles, dialogue path below unchanged.
                     try
                     {
                         int jaBlocks = 0;
                         foreach (var b in ocrBlocks)
                             if (HasJapanese(b.Text)) jaBlocks++;
+// REPLACE
                         var preview = new System.Text.StringBuilder();
                         int shown = 0;
+                        int fw = 1, fh = 1;
+                        try { fw = System.Math.Max(1, bitmap.Width); fh = System.Math.Max(1, bitmap.Height); } catch { }
                         foreach (var b in ocrBlocks)
                         {
                             if (shown >= 12) break;
                             string t = b.Text.Replace("\n", " ");
                             if (t.Length > 28) t = t.Substring(0, 28) + "…";
-                            preview.Append($" [b{shown} h={b.Height} ja={HasJapanese(b.Text)} \"{t}\"]");
+                            double nx = (double)b.X / fw, ny = (double)b.Y / fh;
+                            preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} \"{t}\"]");
                             shown++;
                         }
-                        FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)}{preview}");
+                        FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
+                        string? quietTitleSettled = CheckQuietTitle(iteration, ocrBlocks);
+                        if (quietTitleSettled != null) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
                     }
                     catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
@@ -442,6 +512,7 @@ namespace WunderLanguage.Host.Capture
                         _candidateText = string.Empty;
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
+                        _flashFired = false;
                         await Task.Delay(IdleDelayMs, token);
                         continue;
                     }
@@ -465,6 +536,7 @@ namespace WunderLanguage.Host.Capture
                         _candidateText = string.Empty;
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
+                        _flashFired = false;
                     }
                     else if (!string.IsNullOrEmpty(_candidateText)
                         && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
@@ -480,6 +552,7 @@ namespace WunderLanguage.Host.Capture
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
+                            _flashFired = false;
                         }
                         else
                         {
@@ -491,13 +564,51 @@ namespace WunderLanguage.Host.Capture
                         _candidateStableCount++;
                         if (_candidateText.Contains(extractedText, StringComparison.Ordinal))
                         {
-                            _candidateText = extractedText;
-                            _candidateGrewThisRead = false;
-                            _successorText = string.Empty;
-                            _successorCount = 0;
+                            // R1 (steadiness): never trade a complete held line
+                            // for a much-shorter contained tail (OCR head-loss).
+                            // Normalization jitter (<6) still adopts as before.
+                            if (IsCompleteDialogueLine(_candidateText)
+                                && StripForOverlap(_candidateText).Length - StripForOverlap(extractedText).Length >= 6)
+                            {
+                                if (_successorText == extractedText)
+                                    _successorCount++;
+                                else
+                                {
+                                    _successorText = extractedText;
+                                    _successorCount = 1;
+                                }
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-short-tail (keeping complete held line)");
+                                _candidateGrewThisRead = false;
+                            }
+                            else
+                            {
+                                _candidateText = extractedText;
+                                _candidateGrewThisRead = false;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                            }
                         }
                         else if (extractedText.Length > _candidateText.Length)
                         {
+                            // Flash-post (pair-2): a stable fragment absorbed by
+                            // growth was really shown (telepathy flashes). Post
+                            // once per lineage on substantial jumps only (no
+                            // typewriter spam); the full line follows via update.
+                            if (!_flashFired && _candidateStableCount >= RequiredStableReadings
+                                && StripForOverlap(extractedText).Length - StripForOverlap(_candidateText).Length >= 6
+                                && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText) && !IsScrollBlend(_candidateText)
+                                && !IsZeldaTransitionBlend(_candidateText) && !EndsWithContinuation(_candidateText)
+                                && !IsIncompleteSacrifice(_candidateText) && IsCompleteDialogueLine(_candidateText) && !_frameIsTitle
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flash-post (stable fragment absorbed by growth)");
+                                _lastTranslatedText = _candidateText;
+                                string flashText = _candidateText;
+                                _ = TranslateAndPublishAsync(flashText);
+                                _flashFired = true;
+                            }
                             _candidateText = extractedText;
                             _candidateGrewThisRead = true;
                             _successorText = string.Empty;
@@ -524,10 +635,93 @@ namespace WunderLanguage.Host.Capture
                     }
                     else
                     {
+                        // MILESTONE 4 (page-turn flush): substantial held line
+                        // replaced by a dissimilar substantial line = the player
+                        // turned the page. Publish the held page now; it will
+                        // never stabilize again. Noise can't trigger this: both
+                        // sides must be substantial, and menu screens are out.
+                        if (!string.IsNullOrEmpty(_candidateText)
+                            && IsSubstantialLine(_candidateText)
+                            && IsSubstantialLine(extractedText)
+                            && !IsGameOverText(extractedText)
+                            && string.IsNullOrEmpty(_menuSignature)
+                            && !_frameIsTitle
+                            && !EndsWithContinuation(_candidateText)
+                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                            && !IsIncompleteSacrifice(_candidateText)
+                            && IsCompleteDialogueLine(_candidateText)
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                            // R2a: shown line younger than 3 loops + dissimilar held page = lone intruder, hold it.
+                            // True turns arrive with an old shown line and fire instantly, as before.
+                            && (iteration - _lastFireLoop >= 3))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-pageturn (publishing turned page)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
+                            _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
+                            string pageText = _candidateText;
+                            _ = TranslateAndPublishAsync(pageText);
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                            _successorText = string.Empty;
+                            _successorCount = 0;
+                            _weakHoldCount = 0;
+                            _weakHoldFor = string.Empty;
+                        }
+                        // MILESTONE 4 (challenger guard): weak incoming
+                        // (junk, anchorless, or fragment) can never evict a
+                        // substantial held line. Tracked as successor so a
+                        // real scene change still breaks through below.
+                        // MILESTONE 5 step 1 (recall): survival is stability.
+                        // A held line outliving the weak-hold bar (12 full / 18 reduced, see S1.2) posts on
+                        // its own instead of waiting 70+ loops for the next
+                        // page-turn (the 昨年Ｐ/ブーメラン stall).
+                        else if (!string.IsNullOrEmpty(_candidateText)
+                            && IsSubstantialLine(_candidateText)
+                            && !IsSubstantialLine(extractedText)
+                            && !IsGameOverText(extractedText))
+                        {
+                            if (_successorText == extractedText)
+                                _successorCount++;
+                            else
+                            {
+                                _successorText = extractedText;
+                                _successorCount = 1;
+                            }
+                            if (_weakHoldFor != _candidateText)
+                            {
+                                _weakHoldFor = _candidateText;
+                                _weakHoldCount = 0;
+                            }
+                            _weakHoldCount++;
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-weak-challenger (keeping held line, weakHold={_weakHoldCount})");
+                            if (_weakHoldCount >= _weakHoldThreshold
+                                && !StartsHeadlessFragment(_candidateText)
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-weak-hold (held line survived churn)");
+                                try { CorpusRecordBubble("dialogue-decision:publish-weak-hold", _candidateText, ""); } catch { }
+                                _prevTranslatedText = _lastTranslatedText;
+                                _lastTranslatedText = _candidateText;
+                                _lastFireLoop = iteration;
+                                string weakHoldText = _candidateText;
+                                _ = TranslateAndPublishAsync(weakHoldText);
+                                _candidateStableCount = RequiredStableReadings;
+                                _weakHoldCount = 0;
+                                _weakHoldFor = string.Empty;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                            }
+                        }
                         // Scroll-flush: the held line just scrolled (its successor
                         // starts with its tail). Publish the full held text now --
                         // it will never stabilize again.
-                        if (_candidateStableCount >= 2
+                        else if (_candidateStableCount >= 2
                             && !string.IsNullOrEmpty(_candidateText)
                             && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
                             && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
@@ -537,17 +731,44 @@ namespace WunderLanguage.Host.Capture
                             && HasJapanese(_candidateText))
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-scroll (publishing scrolled line)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-scroll", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
                             _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
                             string flushText = _candidateText;
                             _ = TranslateAndPublishAsync(flushText);
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
+                            _flashFired = false;
                         }
                         // Single garbled scroll-out must not wipe a held line.
                         else if (_candidateStableCount >= RequiredStableReadings
+                            && !IsJunkOcr(_candidateText) && !IsEllipsisOnly(_candidateText)
                             && (IsScrollBlend(extractedText) || IsJunkOcr(extractedText) || extractedText.Length < 6))
                         {
+                            // Guard-break: a challenger stabilizing twice means
+                            // the scene really changed (Zelda cell blocks) -
+                            // adopt it instead of holding forever.
+                            if (_successorText == extractedText)
+                            {
+                                _successorCount++;
+                                if (_successorCount >= 2)
+                                {
+                                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=guard-break (challenger stabilized, adopting)");
+                                    _candidateText = extractedText;
+                                    _candidateStableCount = 1;
+                                    _candidateGrewThisRead = false;
+                                    _successorText = string.Empty;
+                                    _successorCount = 0;
+                                    _flashFired = false;
+                                }
+                            }
+                            else
+                            {
+                                _successorText = extractedText;
+                                _successorCount = 1;
+                            }
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-new-guard (keeping held line)");
                         }
                         else
@@ -576,10 +797,33 @@ namespace WunderLanguage.Host.Capture
                                 string ellipsisFlush = _candidateText;
                                 _ = TranslateAndPublishAsync(ellipsisFlush);
                             }
+                            // Replacement flush (uncle-2nd/3rd, escape line):
+                            // stable clean held line, incoming is a different
+                            // real line (not ellipsis) -> post the held one.
+                            if (!IsEllipsisOnly(extractedText)
+                                && _candidateStableCount >= RequiredStableReadings
+                                && !_candidateGrewThisRead
+                                && !string.IsNullOrEmpty(_candidateText)
+                                && HasJapanese(_candidateText)
+                                && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText)
+                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                                && !_frameIsTitle
+                                && _candidateText != _lastTranslatedText
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-replace (publishing replaced line)");
+                                _lastTranslatedText = _candidateText;
+                                string replaceFlush = _candidateText;
+                                _ = TranslateAndPublishAsync(replaceFlush);
+                            }
                             // Genuinely new line: track the LATEST read fresh.
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
+                            _flashFired = false;
                         }
                     }
                     FileLogger.Log($"[loop {iteration}] candidateText=\"{_candidateText}\" stableCount={_candidateStableCount}");
@@ -645,6 +889,7 @@ namespace WunderLanguage.Host.Capture
                             else
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-publish");
+                                try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, ""); } catch { }
                                 _lastTranslatedText = breakthroughText;
                                 string breakthroughFire = breakthroughText;
                                 _ = TranslateAndPublishAsync(breakthroughFire);
@@ -674,6 +919,10 @@ namespace WunderLanguage.Host.Capture
                         }
                         else
                         {
+                        // ANCHOR-SHADOW (log-only): would a substance gate hold this?
+                        // Observational only - the decision below runs unchanged.
+                        if (!HasAnchorSubstance(_candidateText))
+                            FileLogger.Log($"[anchor-shadow] would-hold \"{_candidateText}\" (no kanji/katakana)");
                         double similarity = ComputeSimilarity(_candidateText, _lastTranslatedText);
                         bool isNearDuplicate = similarity >= NearDuplicateSimilarityThreshold;
 
@@ -684,6 +933,17 @@ namespace WunderLanguage.Host.Capture
 
                         bool isOverlapContinuation = !isNearDuplicate && _candidateText != _lastTranslatedText
                             && StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 12);
+
+                        // R1: return-to-predecessor with another line shown = oscillation, not a new page.
+                        // Same trust shape as update-neardupe (>=0.90, or >=0.70 with common affix), aimed backward.
+                        double prevSimilarity = string.IsNullOrEmpty(_prevTranslatedText) ? 0.0 : ComputeSimilarity(_candidateText, _prevTranslatedText);
+                        bool isOscillationReturn = !string.IsNullOrEmpty(_prevTranslatedText)
+                            && _prevTranslatedText != _lastTranslatedText
+                            && (prevSimilarity >= NearDuplicateSimilarityThreshold
+                                || (prevSimilarity >= 0.70
+                                    && (HasCommonPrefix(_candidateText, _prevTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(_candidateText, _prevTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(_prevTranslatedText, _candidateText, 6))));
 
                         if (isGrowth)
                         {
@@ -703,6 +963,20 @@ namespace WunderLanguage.Host.Capture
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=subpart-suppressed (tail of shown line)");
                         }
+                        else if ((similarity >= 0.70
+                            && (HasCommonPrefix(_candidateText, _lastTranslatedText, 6)
+                                || StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 6)
+                                || StartsWithSuffixOfStrip(_lastTranslatedText, _candidateText, 6)))
+                            || HasLongCommonMiddle(_candidateText, _lastTranslatedText, 10))
+                        {
+                            // Flicker variant (こらこら ねなさい/ねえさい): same
+                            // bubble, update in place - never a second post.
+                            string prev = _lastTranslatedText;
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
+                            _lastTranslatedText = _candidateText;
+                            string textToTranslate = _candidateText;
+                            _ = TranslateAndUpdateAsync(prev, textToTranslate);
+                        }
                         else if (!isNearDuplicate)
                         {
                             // Density gate: 4+ words, zero content (POS), matching the
@@ -717,14 +991,39 @@ namespace WunderLanguage.Host.Capture
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-non-ja");
                             }
+                            // MILESTONE 2 (enforced, shadow-verified): no kanji/
+                            // katakana, no bubble. Omission-only if ever wrong.
+                            else if (!HasAnchorSubstance(_candidateText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-anchor (no kanji/katakana)");
+                            }
                             else if (_frameIsTitle)
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=title-guard (title-screen misread, holding)");
                             }
+                            else if (isOscillationReturn)
+                            {
+                                // R1 (corpus loops 555-557): the returnee proves the middle fire was the intruder.
+                                // Single bubble: rewrite it back, never a second post. Omission-only if ever wrong.
+                                string prev = _lastTranslatedText;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-oscillation (return flicker, single bubble)");
+                                _prevTranslatedText = _lastTranslatedText;
+                                _lastTranslatedText = _candidateText;
+                                string textToTranslate = _candidateText;
+                                _ = TranslateAndUpdateAsync(prev, textToTranslate);
+                            }
+                            else if (IsUnterminatedComposite(_candidateText))
+                            {
+                                FileLogger.Log($"[translate] suppressed scroll-composite for \"{Truncate(_candidateText)}\"");
+                                return;
+                            }
                             else
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-new (similarity to last shown: {similarity:F2})");
+                                try { CorpusRecordBubble("dialogue-decision:publish-new", _candidateText, ""); } catch { }
+                                _prevTranslatedText = _lastTranslatedText;
                                 _lastTranslatedText = _candidateText;
+                                _lastFireLoop = iteration;
 
                                 string textToTranslate = _candidateText;
                                 _ = TranslateAndPublishAsync(textToTranslate);
@@ -783,9 +1082,55 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[translate] suppressed latin-chrome for \"{Truncate(text)}\"");
                     return;
                 }
+                if (HasUntrustedLatinRun(text))
+                {
+                    FileLogger.Log($"[translate] suppressed untrusted-latin for \"{Truncate(text)}\"");
+                    return;
+                }
                 if (IsGameOverText(text))
                 {
                     FileLogger.Log($"[translate] suppressed gameover-dupe for \"{Truncate(text)}\" (menu pack owns it)");
+                    return;
+                }
+                // Double-fire symmetric guard (FFVI Gil doubles): dialogue exactly matching the
+                // currently-stable menu holds — menu owns it (menu-side already holds the reverse).
+                // Omission-only; _menuSignature empties off-menu so holds never go stale.
+                if (!string.IsNullOrEmpty(_menuSignature) && _menuSignature.Split('\n').Select(r => NormalizePunctForStability(r)).Contains(text))
+                {
+                    FileLogger.Log($"[translate] suppressed menu-dupe for \"{Truncate(text)}\" (menu owns it)");
+                    return;
+                }
+                if (!string.IsNullOrEmpty(_lastDecisionSig)
+                    && (ComputeSimilarity(StripForOverlap(text), StripForOverlap(_lastDecisionSig)) >= 0.60
+                        || StripForOverlap(_lastDecisionSig).Contains(StripForOverlap(text), StringComparison.Ordinal)
+                        || StripForOverlap(text).Contains(StripForOverlap(_lastDecisionSig), StringComparison.Ordinal)))
+                {
+                FileLogger.Log($"[translate] suppressed decision-dupe for \"{Truncate(text)}\" (decision pack owns it)");
+                    return;
+                }
+                // S1.1: pre-game chrome (emulator menus, other windows) never becomes a bubble.
+                // Menus/titles/decisions bypass this (navigation flows); dialogue waits out warmup.
+                // Omission-only if ever wrong.
+                if (_settledOcrLoops < StartupWarmupOcrLoops)
+                {
+                    FileLogger.Log($"[translate] suppressed warmup for \"{Truncate(text)}\" (settled {_settledOcrLoops}<{StartupWarmupOcrLoops})");
+                    return;
+                }
+                // S1.3 title-screen guard (log-named loops 28/32/33 この人の正規): logo screens carry
+                // no story dialogue — any dialogue-height read there is art strokes. TITLE/MENU still
+                // publish via the menu path. Omission-only if ever wrong. (トライフォ string is M8 pack debt.)
+                if (_frameIsTitle)
+                {
+                    FileLogger.Log($"[translate] suppressed title-screen-dialogue for \"{Truncate(text)}\"");
+                    return;
+                }
+                // MILESTONE 3 (single publish gate): unanchored text never
+                // becomes a bubble, whichever path fired it. Kills よろしくお,
+                // …いた and the grunt family at every door at once.
+                // Omission-only if ever wrong.
+                if (!HasAnchorSubstance(text))
+                {
+                    FileLogger.Log($"[translate] suppressed anchorless for \"{Truncate(text)}\" (no kanji/katakana)");
                     return;
                 }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
@@ -793,7 +1138,9 @@ namespace WunderLanguage.Host.Capture
                 FileLogger.Log($"[translate-provider] {_translationManager.ActiveProviderName} for \"{Truncate(text)}\"");
                 if (IsUnpublishable(translated))
                 {
-                    FileLogger.Log($"[translate] suppressed failure output for \"{text}\" -> \"{Truncate(translated)}\"");
+                    FileLogger.Log($"[translate] untranslatable -> ------ for \"{text}\" (DeepL fallback exhausted/no key)");
+                    if (_stopped) { FileLogger.Log($"[translate] id={_id} dropped (stopped)"); return; }
+                    TextTranslated?.Invoke(text, "------");
                     return;
                 }
                 // Stale guard: a longer version already shown covers this one
@@ -807,6 +1154,7 @@ namespace WunderLanguage.Host.Capture
                 }
                 FileLogger.Log($"[translate] id={_id} \"{text}\" -> \"{translated}\"");
                 if (_stopped) { FileLogger.Log($"[translate] id={_id} dropped (stopped)"); return; }
+                try { CorpusRecordBubble("dialogue-fire", text, translated); } catch { }
                 TextTranslated?.Invoke(text, translated);
             }
             catch (Exception ex)
@@ -819,14 +1167,41 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
+                if (!string.IsNullOrEmpty(_lastDecisionSig)
+                    && (ComputeSimilarity(StripForOverlap(text), StripForOverlap(_lastDecisionSig)) >= 0.60
+                        || StripForOverlap(_lastDecisionSig).Contains(StripForOverlap(text), StringComparison.Ordinal)
+                        || StripForOverlap(text).Contains(StripForOverlap(_lastDecisionSig), StringComparison.Ordinal)))
+                {
+                FileLogger.Log($"[translate] suppressed decision-dupe update for \"{Truncate(text)}\" (decision pack owns it)");
+                    return;
+                }
+                if (HasUntrustedLatinRun(text))
+                {
+                    FileLogger.Log($"[translate] suppressed untrusted-latin update for \"{Truncate(text)}\"");
+                    return;
+                }
+                if (_settledOcrLoops < StartupWarmupOcrLoops)
+                {
+                    FileLogger.Log($"[translate] suppressed warmup update for \"{Truncate(text)}\" (settled {_settledOcrLoops}<{StartupWarmupOcrLoops})");
+                    return;
+                }
+                // R2 updates: growth legitimately lacks terminals, but mid-word-cut blends must never morph
+                // a bubble (lever line proved the fire-only bypass). Hiragana growth passes via the carve-out.
+                if (IsUnterminatedComposite(text))
+                {
+                    FileLogger.Log($"[translate] suppressed scroll-composite update for \"{Truncate(text)}\"");
+                    return;
+                }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\" (update)");
                 string translated = await _translationManager.TranslateAsync(text);
                 if (IsUnpublishable(translated))
                 {
-                    FileLogger.Log($"[translate] suppressed failure output for \"{text}\"");
+                    FileLogger.Log($"[translate] untranslatable update -> ---- for \"{text}\"");
+                    TextUpdated?.Invoke(expectedOldJa, text, " ------");
                     return;
                 }
                 FileLogger.Log($"[translate-update] \"{text}\" -> \"{translated}\"");
+                try { CorpusRecordBubble("dialogue-update", text, translated, expectedOldJa); } catch { }
                 TextUpdated?.Invoke(expectedOldJa, text, translated);
             }
             catch (Exception ex)
@@ -838,14 +1213,60 @@ namespace WunderLanguage.Host.Capture
         private static string Truncate(string s, int max = 80)
             => s.Length <= max ? s : s.Substring(0, max) + "...";
 
+        // M7a corpus recorder (automatic, text-only, ~2KB/loop). One JSONL per session under
+        // %AppData%/WunderLanguage/corpus/. M7b replays raw+blocks through the real fixup/
+        // stability/publish path with translation stubbed; exit = identical Japanese bubbles.
+        // Off-switch: RecordCorpus=false. Never throws; never blocks OCR.
+        private static readonly bool RecordCorpus = true;
+        private string _corpusPath = "";
+        private readonly object _corpusLock = new();
+        private void CorpusEnsure()
+        {
+            if (_corpusPath != "") return;
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corpus");
+            Directory.CreateDirectory(dir);
+            _corpusPath = Path.Combine(dir, _gameId + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jsonl");
+        }
+        private void CorpusLine(string line)
+        {
+            try
+            {
+                if (!RecordCorpus) return;
+                CorpusEnsure();
+                lock (_corpusLock) File.AppendAllText(_corpusPath, line + "\n");
+            }
+            catch { }
+        }
+        private void CorpusRecordOcr(int loop, string raw, List<OcrBlock> blocks, string extracted, bool mined = false)
+        {
+            try
+            {
+                if (!RecordCorpus) return;
+                var bs = new List<object>(blocks.Count);
+                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height });
+                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
+            }
+            catch { }
+        }
+        private void CorpusRecordBubble(string kind, string ja, string en, string old = "")
+        {
+            try
+            {
+                if (!RecordCorpus) return;
+                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "bubble", kind = kind, old = old, ja = ja, en = en }));
+            }
+            catch { }
+        }
+
         private static readonly Regex SingleCharRun = new(@"(?:\b\w\b\s*){8,}", RegexOptions.Compiled);
         private static readonly Regex AlphaRun = new(@"([A-Za-z0-9])\1{6,}", RegexOptions.Compiled);
         private static readonly Regex FullWidthLatin = new(@"[Ａ-Ｚａ-ｚ]", RegexOptions.Compiled);
-        private static readonly Regex PromptEcho = new(@"(Translate|Transform) the following Japanese text into English|ready to translate|provide the Japanese (passage|text)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex PromptEcho = new(@"(translat\w*|transform\w*).{0,25}following Japanese text.{0,30}english|following Japanese text.{0,40}translat\w+ into english|ready to translate|provide the (Japanese )?(passage|text)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex JapaneseChars = new(@"[぀-ヿ一-鿿]", RegexOptions.Compiled);
 
         private static bool IsJunkOcr(string text)
         {
+            if (Regex.IsMatch(text.Trim(), @"^([uｕ]|い) ?[FＦ] ?[EＥ]$|^いた$|^はいぜ、?$|^そこ$")) return true;
             int content = 0;
             int fullWidthLatin = 0;
             bool hasHiragana = false;
@@ -861,7 +1282,33 @@ namespace WunderLanguage.Host.Capture
             }
             if (content < MinCandidateContentLength)
                 return true;
+            // Doubled-grunt noise: identical kana twice (tall-block ああ
+            // sprite misread, no textbox) is never a dialogue line. Shape
+            // only: distinct pairs (はい, うん) and punctuated doubles
+            // (うう…) pass through untouched. Omission-only if wrong.
+            if (content == 2)
+            {
+                string bare = text.Trim();
+                if (bare.Length == 2 && bare[0] == bare[1]
+                    && ((bare[0] >= 'ぁ' && bare[0] <= 'ん') || (bare[0] >= 'ァ' && bare[0] <= 'ヶ')))
+                    return true;
+            }
             if (!hasHiragana && (fullWidthLatin >= 3 || (content > 0 && (double)fullWidthLatin / content > 0.3)))
+                return true;
+            // Digit-dominated lines are HUD noise (scores, counters), never
+            // dialogue: real lines carry kana context (１００ルピー… sits at
+            // ~25%, safely below). Kills the ２０５０００ bubble + junk MENU.
+            int digits = 0, substance = 0;
+            foreach (char c in text)
+            {
+                if (char.IsWhiteSpace(c) || c == '.' || c == '．' || c == '…' || c == '・' || c == '、' || c == '。'
+                    || c == 'ー' || c == '─' || c == '-' || c == 'っ' || c == 'ッ')
+                    continue;
+                substance++;
+                if ((c >= '0' && c <= '9') || (c >= '０' && c <= '９'))
+                    digits++;
+            }
+            if (digits > 0 && substance > 0 && digits * 2 >= substance)
                 return true;
             return false;
         }
@@ -871,6 +1318,37 @@ namespace WunderLanguage.Host.Capture
         {
             int n = 0, k = 0;
             while ((k = text.IndexOf("セーブ", k, StringComparison.Ordinal)) >= 0) { n++; k += 3; if (n >= 2) return true; }
+            return false;
+        }
+
+        // L1.2 Latin-allowlist (universal, hold-only): exact MAP/START/PUSH/SELECT/COPY/KILL
+        // + coords (1F/B1) pass. Any other A-Z run len>=2 (PIGH, Gmazow, iPhone) fails closed.
+        // Never rewrites garbage into plausible text. Idempotent: pure predicate, no text change.
+        private static readonly HashSet<string> LatinAllowlist = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "MAP", "START", "PUSH", "SELECT", "COPY", "KILL"
+        };
+
+        private static bool HasUntrustedLatinRun(string text)
+        {
+            var sb = new System.Text.StringBuilder(text.Length);
+            foreach (char c in text)
+            {
+                if (c >= 'Ａ' && c <= 'Ｚ') sb.Append((char)(c - 'Ａ' + 'A'));
+                else if (c >= 'ａ' && c <= 'ｚ') sb.Append((char)(c - 'ａ' + 'A'));
+                else if (c >= '０' && c <= '９') sb.Append((char)(c - '０' + '0'));
+                else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) sb.Append(char.ToUpperInvariant(c));
+                else sb.Append(' ');
+            }
+            foreach (Match m in Regex.Matches(sb.ToString(), @"[A-Z0-9]{2,}"))
+            {
+                string run = m.Value;
+                if (!Regex.IsMatch(run, @"[A-Z]")) continue;
+                if (LatinAllowlist.Contains(run)) continue;
+                if (Regex.IsMatch(run, @"^[0-9]+[A-Z]+$")) continue;
+                if (Regex.IsMatch(run, @"^[A-Z]+[0-9]+$")) continue;
+                return true;
+            }
             return false;
         }
 
@@ -944,6 +1422,82 @@ namespace WunderLanguage.Host.Capture
             return text.Length > 0;
         }
 
+        // Dwell-dash noise: static-frame fade remnants (LIFE HUD "— LIFE —"
+        // OCRs as …ーーーっ + pixel-font gasps like はぁ). Shape: dash run
+        // with zero kanji/katakana. Dwell-only gate: real lines still publish
+        // via the normal 3-read path, so this never alters or kills text.
+        private static bool IsDwellDashNoise(string text)
+        {
+            if (!Regex.IsMatch(text, @"[ー─-]{2,}")) return false;
+            foreach (char c in text)
+            {
+                if ((c >= '一' && c <= '鿿') || (c >= 'ァ' && c <= 'ヶ')) return false;
+            }
+            return true;
+        }
+
+        // Anchor-substance probe (SHADOW, log-only): real utterances carry
+        // kanji or katakana; pixel-noise grunts (はぁ, ああ) never do.
+        // Enforcement comes later, only on clean shadow evidence.
+        private static bool HasAnchorSubstance(string text)
+        {
+            foreach (char c in text)
+            {
+                if ((c >= '一' && c <= '鿿') || (c >= 'ァ' && c <= 'ヶ')) return true;
+            }
+            // Long-hiragana escape (FFVI shop speech loops 117-120): pixel grunts are short
+            // (はぁっ、はぁぁぁ peaks at ~8); a 12+ hiragana line is speech, never a grunt.
+            // All downstream gates (dwell/stability/recall/translation) still apply — this only
+            // admits long kana lines to them. Omission-only if ever wrong.
+            int clean = 0;
+            foreach (char c in text)
+            {
+                if (c >= 'ぁ' && c <= 'ん') clean++;
+                else if (char.IsWhiteSpace(c) || c == '…' || c == '．' || c == '.' || c == '、' || c == '。' || c == '！' || c == '!' || c == '？' || c == '?' || c == '「' || c == '」' || c == '・') continue;
+                else return false;
+            }
+            return clean >= 12;
+        }
+
+        // MILESTONE 4: publish-worthy shape. Anchored, clean, and long
+        // enough to be a real line (grunts and fragments fail length).
+        // Challenger guard and page-turn flush both build on this.
+        private static bool IsSubstantialLine(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            if (!HasAnchorSubstance(text)) return false;
+            if (IsJunkOcr(text)) return false;
+            if (IsEllipsisOnly(text)) return false;
+            return StripForOverlap(text).Length >= 6;
+        }
+
+        // MILESTONE 5 (recall shape): a publishable page starts clean and
+        // ends terminated. Kills を-headless tails (を再び…) and unterminated
+        // growth fragments (伝わる…できる) without touching publish-new.
+        private static bool StartsHeadlessFragment(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+            string t = text.TrimStart('…', '.', '．', ' ', '　', '、', '。', '「', '」', '『', '』', '〈', '〉', '【', '】', '・');
+            if (t.Length == 0) return true;
+            char c = t[0];
+            return c == 'を' || c == 'に' || c == 'が' || c == 'は' || c == 'も' || c == 'で' || c == 'と' || c == 'へ' || c == 'の' || c == 'や';
+        }
+
+        private static bool EndsCompleteSentence(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            char last = text.TrimEnd()[^1];
+            return last == '。' || last == '！' || last == '？' || last == '…' || last == '!' || last == '?';
+        }
+
+        private static bool IsCompleteDialogueLine(string text)
+        {
+            if (!IsSubstantialLine(text)) return false;
+            if (StartsHeadlessFragment(text)) return false;
+            if (!EndsCompleteSentence(text)) return false;
+            return true;
+        }
+
         private static bool IsIncompleteSacrifice(string text)
         {
             return text.Contains("つぎつぎ", StringComparison.Ordinal)
@@ -968,6 +1522,8 @@ namespace WunderLanguage.Host.Capture
         // Hold them: firing burns a full GPU translation on garbage.
         private static bool IsScrollBlend(string text)
         {
+            string t = text.TrimEnd();
+            if (t.EndsWith("?") || t.EndsWith("？") || t.EndsWith("!") || t.EndsWith("！")) return false;
             int lastPeriod = text.LastIndexOf('。');
             if (lastPeriod < 0)
                 return false;
@@ -975,9 +1531,62 @@ namespace WunderLanguage.Host.Capture
                 && text.Substring(lastPeriod + 1).Trim().Length >= 6;
         }
 
-        private static bool IsZeldaTransitionBlend(string text)
+        // M8-2 moved: game-specific blend lives in Packs/Zelda/ZeldaPack.cs. Core name kept so 8 call sites unchanged.
+        private static bool IsZeldaTransitionBlend(string text) => Packs.PackRegistry.Current.IsTransitionBlend(text);
+        // Quiet-title detector (universal machinery): textless logo screens yield long zero-substance
+        // stretches. Fires pack FullTitle ONCE per stretch (edge-trigger at bar). Fades/loads never
+        // qualify (too short, no logo hints). Zelda unaffected (readable titles fire first and reset).
+        // Omission-only if ever wrong. Empty FullTitle (Universal) never fires.
+        private const int QuietTitleLoops = 30;
+        private string? CheckQuietTitle(int iteration, List<OcrBlock>? blocks)
         {
-            return text.Contains("みつかり", StringComparison.Ordinal) && text.Contains("多くの", StringComparison.Ordinal);
+            try
+            {
+                string sig = (_lastTranslatedText ?? "") + "\n" + (_menuSignature ?? "") + "\n" + (_lastPublishedMenu ?? "");
+                if (sig != _quietSeen) { _quietSeen = sig; _quietCount = 0; _quietHint = false; return null; }
+                if (iteration % 40 == 0 && _quietCount > 0) FileLogger.Log($"[menu] quiet-title watch quiet={_quietCount} hint={_quietHint}");
+                if (blocks != null)
+                {
+                    foreach (var b in blocks)
+                    {
+                        string bt = (b.Text ?? "").Trim();
+                        if (bt.Length == 0) continue;
+                        if (System.Text.RegularExpressions.Regex.IsMatch(bt, @"[A-ZＡ-Ｚ©]{4,}|(?:19|20)\d\d|(?:１９|２０)[０-９][０-９]")) _quietHint = true;
+                    }
+                }
+                _quietCount++;
+                string packTitle = Packs.PackRegistry.Current.FullTitle;
+                if (_quietCount == QuietTitleLoops && !string.IsNullOrEmpty(packTitle)
+                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText))
+                {
+                    FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {QuietTitleLoops} quiet loops)");
+                    return packTitle;
+                }
+                return null;
+            }
+            catch { return null; }
+        }
+
+        // R2 scroll-composite (。。-less sibling of IsScrollBlend): a long line with a …/。 boundary buried
+        // mid-string but an unterminated tail (corpus 140904 loops 301-303: …１人…城にやって来た司祭アグニ)
+        // is a scroll caught mid-glide, not a line. Legit long lines terminate (。！？…!?); short fragments
+        // and continuation tails are owned upstream (fragment/continuation gates). Omission-only if ever wrong.
+        private static bool IsUnterminatedComposite(string text)
+        {
+            string t = text.TrimEnd();
+            if (t.Length == 0) return false;
+            char last = t[t.Length - 1];
+            if (last == '。' || last == '！' || last == '？' || last == '…' || last == '!' || last == '?') return false;
+            // R2 refined: hiragana endings (verb/continuation forms, complete-at-boundary words) are genuine.
+            // Mid-word cuts strand on katakana/kanji (アグニ) or bare tails. Stated hole: hiragana-cut blends
+            // pass — indistinguishable from continuations host-side.
+            if (last >= 'ぁ' && last <= 'ん') return false;
+            if (StripForOverlap(text).Length < 24) return false;
+            int ell = t.IndexOf('…');
+            if (ell > 0 && ell < t.Length - 1) return true;
+            int per = t.IndexOf('。');
+            if (per >= 0 && per < t.Length - 1) return true;
+            return false;
         }
 
         private const double NearDuplicateSimilarityThreshold = 0.90;
@@ -1010,6 +1619,20 @@ namespace WunderLanguage.Host.Capture
             int max = Math.Min(a.Length, b.Length);
             while (n < max && a[n] == b[n]) n++;
             return n >= minLen;
+        }
+
+        // R-deep mid-flicker (guard scene: stable 入れんぞ子どもは早く帰って middle, wobbling heads+t consensuses):
+        // a shared stripped run of minLen anywhere (not just the ends) = same line refining, update in place.
+        // minLen 10 = the evidenced core (子どもは早く帰って); shorter would merge boilerplate. Omission-neutral.
+        private static bool HasLongCommonMiddle(string a, string b, int minLen)
+        {
+            string sa = StripForOverlap(a), sb = StripForOverlap(b);
+            if (sa.Length < minLen || sb.Length < minLen) return false;
+            string short_ = sa.Length <= sb.Length ? sa : sb;
+            string long_ = sa.Length <= sb.Length ? sb : sa;
+            for (int i = 0; i + minLen <= short_.Length; i++)
+                if (long_.Contains(short_.Substring(i, minLen), StringComparison.Ordinal)) return true;
+            return false;
         }
 
         private static double ComputeSimilarity(string a, string b)
@@ -1056,29 +1679,125 @@ namespace WunderLanguage.Host.Capture
                 if (flat.Contains("GAME", StringComparison.OrdinalIgnoreCase) && flat.Contains("OVER", StringComparison.OrdinalIgnoreCase))
                 { hasGameOver = true; break; }
             }
-            if (!hasGameOver) return false;
+            // Headerless fallback: the GAME OVER title OCRs as junk too often,
+            // and the 3 rows merge into ONE tall block (h>150 skips the generic
+            // path). Count occurrences, not blocks - one merged block holds 3.
+            if (!hasGameOver)
+            {
+                // Any セーブ misread shape counts (raw is usually 1 clean +
+                // 2 misread: セープ/セ一ブ). Regex count, no log spam.
+                int saveHits = 0;
+                foreach (var b in blocks)
+                    saveHits += Regex.Count(b.Text, @"セ[ー一ッっ][プブ]");
+                if (saveHits < 2) return false;
+            }
             var jaBlocks = new List<OcrBlock>();
             foreach (var b in blocks)
                 if (HasJapanese(b.Text)) jaBlocks.Add(b);
             jaBlocks.Sort((a, b2) => a.Y.CompareTo(b2.Y));
-            int y = 0;
+            rows.Add((0, "GAME OVER", false));
+            rows.Add((1, "", false));
+            int y = 10;
             foreach (var b in jaBlocks)
             {
                 string t = b.Text.Trim();
-                if (!t.Contains("セーブ", StringComparison.Ordinal)) continue;
-                foreach (var part in Regex.Split(t, @"(?=セーブ)"))
+                if (!Regex.IsMatch(t, @"セ[ー一ッっ][プブ]")) continue;
+                foreach (var part in Regex.Split(t, @"(?=セ[ー一ッっ][プブ])"))
                 {
-                    string p = part.Trim();
+                    string p = Packs.PackRegistry.Current.ApplyGameOverRowFixups(ApplyZeldaOcrFixups(part.Trim()));
                     if (p.Length >= 4) { rows.Add((y, p, true)); y += 10; }
                 }
             }
-            return rows.Count >= 2;
+            rows.Add((y, "", false));
+            int optionCount = 0;
+            foreach (var r in rows) if (r.ja) optionCount++;
+            return optionCount >= 2;
+        }
+
+        // In-text decisions (choice screens): a ?-terminated question plus
+        // short non-sentence option rows. Generic shape - Zelda yes/no today,
+        // N options / arrow-or-not / centered layouts tomorrow, no per-game
+        // strings. Runs on raw Y-grouped lines (pre junk-filter) so 1-char
+        // options survive; remainder splits on punctuation only (spaces are
+        // game truth, e.g. う　ん). Future v2: same-row wide-gap splitting.
+        private static bool TryBuildDecisionRows(
+            List<(int y, List<OcrBlock> parts)> lines,
+            out List<(int y, string t, bool ja)> decision)
+        {
+            decision = new List<(int y, string t, bool ja)>();
+            var texts = new List<(int y, string t)>();
+            foreach (var ln in lines.OrderBy(l => l.y))
+            {
+                string j = string.Join(" ", ln.parts.OrderBy(p => p.X).Select(p => p.Text.Trim()));
+                if (!string.IsNullOrWhiteSpace(j)) texts.Add((ln.y, j));
+            }
+            int qi = -1, qpos = -1;
+            for (int i = 0; i < texts.Count; i++)
+            {
+                int p = texts[i].t.IndexOf('？');
+                if (p < 0) p = texts[i].t.IndexOf('?');
+                if (p >= 0) { qi = i; qpos = p; break; }
+            }
+            if (qi < 0) return false;
+            var qparts = new List<string>();
+            for (int i = 0; i < qi; i++)
+            {
+                string t = texts[i].t.Trim();
+                if (t.Length == 0 || texts[qi].t.Contains(t, StringComparison.Ordinal)) continue;
+                if (HasJapanese(t) && !IsJunkOcr(t) && !IsEllipsisOnly(t)) qparts.Add(t);
+            }
+            qparts.Add(texts[qi].t.Substring(0, qpos + 1).Trim());
+            string question = string.Join(" ", qparts).Trim();
+            if (question.Length < 2) return false;
+            var tails = new List<string>();
+            string tail = texts[qi].t.Substring(qpos + 1);
+            if (!string.IsNullOrWhiteSpace(tail)) tails.Add(tail);
+            for (int i = qi + 1; i < texts.Count; i++)
+            {
+                string t = texts[i].t.Trim();
+                if (string.IsNullOrWhiteSpace(t) || IsEllipsisOnly(t)) continue;
+                // Stray HUD rows (いた, dates) must not become options;
+                // single chars (う) can't be judged, always keep.
+                if (t.Length > 1 && IsJunkOcr(t)) continue;
+                tails.Add(t);
+            }
+            var options = new List<string>();
+            foreach (var part in tails)
+            {
+                foreach (var piece in part.Split(new[] { '、', '。', '，', ',' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string o = piece.Trim().TrimStart('▶', '>', '＞', '→', '・');
+                    // Single chars can't be judged (う) - only filter longer junk.
+                    if (o.Length == 0 || IsEllipsisOnly(o)) continue;
+                    if (o.Length > 1 && IsJunkOcr(o)) continue;
+                    options.Add(o);
+                }
+            }
+            if (options.Count < 1 || options.Count > 6) return false;
+            foreach (var o in options)
+            {
+                if (o.Length > 12) return false;
+                if (o.Contains('。') || o.Contains('！') || o.Contains('!') || o.Contains('？') || o.Contains('?')) return false;
+            }
+            // Same pipeline as dialogue display: fixups + normalize, so the
+            // DECISION bubble matches dialogue spelling (せんぜん→ぜんぜん).
+            string fixedQ = NormalizePunctForStability(ApplyZeldaOcrFixups(question));
+            decision.Add((texts[qi].y, fixedQ, HasJapanese(fixedQ)));
+            int y = texts[qi].y;
+            foreach (var o in options)
+            {
+                y += 10;
+                string fixedO = NormalizePunctForStability(ApplyZeldaOcrFixups(o));
+                if (fixedO.Length == 0) continue;
+                decision.Add((y, fixedO, HasJapanese(fixedO)));
+            }
+            return true;
         }
 
         // Generic menu/title: small JA blocks, art filtered. No per-game strings.
         private void UpdateMenuTracker(List<OcrBlock> blocks)
         {
-            _frameIsTitle = blocks.Count <= 3 && blocks.Any(b => b.Text.Contains("トライフォ"));
+            _frameIsTitle = blocks.Count <= 3 && blocks.Any(b => b.Text.Contains(Packs.PackRegistry.Current.TitleMarker));
             if (TryBuildGameOverRows(blocks, out var goRows))
             {
                 string goSig = string.Join("\n", goRows.ConvertAll(o => o.t));
@@ -1101,7 +1820,7 @@ namespace WunderLanguage.Host.Capture
             var lines = new List<(int y, List<OcrBlock> parts)>();
             foreach (var b in blocks.OrderBy(b => b.Y))
             {
-                if (b.Height > 150) continue;
+                if (b.Height > 150 && !HasJapanese(b.Text)) continue;
                 if (b.Width < 10 || b.Height < 12) continue;
                 string t = b.Text.Trim();
                 if (t.Length < 1) continue;
@@ -1152,7 +1871,7 @@ namespace WunderLanguage.Host.Capture
                     }
                 }
                 // Slot names: ellipsis-only tail (misread Latin like JOHN -> ...)
-                // with a name block present = filled but unreadable -> "----".
+                // with a name block present = filled but unreadable -> "------".
                 // Bare number alone = truly empty. Never show dot-garbage.
                 string slotH = ToHalfwidth(joined).Trim();
                 if (slotH.Length >= 1 && slotH[0] >= '1' && slotH[0] <= '9')
@@ -1170,16 +1889,17 @@ namespace WunderLanguage.Host.Capture
                 if ((ascii.Contains("PLAYER") && ascii.Contains("SELECT")) || IsPlayerSelectHeader(ascii))
                     joined = "< PLAYER SELECT >";
                 if (joined == "◆ＰＬＡＹＥＲ" || joined == "ＳＥＬＥＣＴＡ" || joined == "ＳＥＬＥＣＴ＞") { /* merged below */ }
-                if (joined.Contains("神々のトライフォース") && !joined.Contains("ゼルダ"))
-                {
-                    // Title pack filled at bubble level below; keep row as-is here.
-                }
+                // M8 moved: title fill lives at FullTitle site below; this no-op block deleted.
                 if (string.IsNullOrWhiteSpace(joined)) continue;
                 if (IsEllipsisOnly(joined)) continue;
                 bool ja = HasJapanese(joined);
                 string asciiJa = ToHalfwidth(joined);
                 bool isNumberCandidate = joined == "ま、" || joined == "は、" || joined == "ほ、" || joined == "ぱ、" || joined == "…" || joined == "...";
                 if (ja && IsJunkOcr(joined) && !isNumberCandidate && !asciiJa.Contains("KILL", StringComparison.OrdinalIgnoreCase)) continue;
+                string gridCore = System.Text.RegularExpressions.Regex.Replace(joined.Trim(), @"[．.… 　、。，]+", "");
+                if (ja && System.Text.RegularExpressions.Regex.IsMatch(gridCore, @"^[ぁ-ん]{1,2}$")) continue;
+                if (!ja && !Packs.PackRegistry.Current.IsMenuHeaderRow(asciiJa)) continue;
+                joined = System.Text.RegularExpressions.Regex.Replace(joined, @"\s+[0-9０-９ ]{2,}\s*$", "");
                 rows.Add((ln.y, joined, ja));
             }
             if (blocks.Count < 3) { _menuStableCount = 0; _menuSignature = ""; return; }
@@ -1194,8 +1914,8 @@ namespace WunderLanguage.Host.Capture
             }
             // Zelda title pack: single line. Tolerant トライフォ prefix (トライフォス misread).
             for (int i = 0; i < jaRows.Count; i++)
-                if (jaRows[i].t.Contains("トライフォ") && !jaRows[i].t.Contains("ゼルダ"))
-                    jaRows[i] = (jaRows[i].y, "ゼルダの伝説 神々のトライフォース", true);
+                if (jaRows[i].t.Contains(Packs.PackRegistry.Current.TitleMarker) && !jaRows[i].t.Contains("ゼルダ"))
+                    jaRows[i] = (jaRows[i].y, Packs.PackRegistry.Current.FullTitle, true);
             // Split header repair: PLAYER row + SELECT row adjacent -> one header.
             for (int i = 0; i + 1 < jaRows.Count; i++)
             {
@@ -1215,13 +1935,31 @@ namespace WunderLanguage.Host.Capture
             RepairMenuNumberSequence(jaRows);
             DropStrayNumberCandidates(jaRows);
             InsertMenuSectionBlank(jaRows);
-            bool isTitleFrame = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains("トライフォ")));
+            // In-text decisions claim priority over dialogue (choice screens
+            // would otherwise dwell-post as merged dialogue, e.g. Zelda cell).
+            // Tall dialogue blocks skip Y-grouping (art filter), so re-attach
+            // them here - the question mark usually lives inside the big block.
+            bool isDecision = false;
+            var decLines = lines.ToList();
+            foreach (var b in blocks)
+            {
+                if (b.Height > 150 && HasJapanese(b.Text))
+                    decLines.Add((b.Y, new List<OcrBlock> { b }));
+            }
+            if (TryBuildDecisionRows(decLines, out var decRows))
+            {
+                jaRows = decRows;
+                isDecision = true;
+            }
+            bool isTitleFrame = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
             // Fragments on dialogue screens are not menus: few rows, little JA,
             // little total content. (Title + kanji-dense single headers exempt.)
             if (!isTitleFrame)
             {
                 var contentRows = jaRows.Where(a => !string.IsNullOrWhiteSpace(a.t)).ToList();
-                bool headerOnly = contentRows.Count == 1 && contentRows[0].t.Count(c => c >= '一' && c <= '鿿') >= 2;
+                int _totalChars = 0;
+                foreach (var r in contentRows) _totalChars += r.t.Length;
+                bool headerOnly = contentRows.Count == 1 && _totalChars < 12 && contentRows[0].t.Count(c => c >= '一' && c <= '鿿') >= 2;
                 int totalChars = 0;
                 foreach (var r in contentRows) totalChars += r.t.Length;
                 if (!headerOnly && (contentRows.Count < 2 || contentRows.Count(a => a.ja) < 2 || totalChars < 12)) { _menuStableCount = 0; _menuSignature = ""; return; }
@@ -1232,9 +1970,13 @@ namespace WunderLanguage.Host.Capture
             // Never lets menus pre-empt dialogue mid-growth.
             string _refA = _lastTranslatedText ?? "";
             string _refB = _candidateText ?? "";
+            if (!isDecision)
             foreach (var r in jaRows)
             {
-                if (string.IsNullOrWhiteSpace(r.t) || r.t.Length < 10) continue;
+                if (string.IsNullOrWhiteSpace(r.t)) continue;
+                bool exactOwned = r.t == _refA || r.t == _refB;
+                if (exactOwned) { _menuStableCount = 0; _menuSignature = ""; return; }
+                if (r.t.Length < 10) continue;
                 bool owned = (!string.IsNullOrEmpty(_refA) && (_refA.Contains(r.t, StringComparison.Ordinal) || r.t.Contains(_refA, StringComparison.Ordinal)))
                     || (!string.IsNullOrEmpty(_refB) && (_refB.Contains(r.t, StringComparison.Ordinal) || r.t.Contains(_refB, StringComparison.Ordinal)));
                 if (owned) { _menuStableCount = 0; _menuSignature = ""; return; }
@@ -1253,6 +1995,7 @@ namespace WunderLanguage.Host.Capture
                 {
                     string prev = _lastPublishedMenu;
                     _lastPublishedMenu = sig;
+                    if (isDecision) _lastDecisionSig = sig;
                     _ = TranslateAndUpdateMenuAsync(prev, jaRows);
                     return;
                 }
@@ -1262,18 +2005,48 @@ namespace WunderLanguage.Host.Capture
                 {
                     string prev = _lastPublishedMenu;
                     _lastPublishedMenu = sig;
+                    if (isDecision) _lastDecisionSig = sig;
                     _ = TranslateAndUpdateMenuAsync(prev, jaRows);
                     return;
                 }
             }
             if (sig == _lastPublishedMenu) return;
             _lastPublishedMenu = sig;
-                        bool isTitle = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains("トライフォ")));
-            string kind = isTitle ? "TITLE" : "MENU";
+            if (isDecision) _lastDecisionSig = sig;
+                        bool isTitle = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
+            string kind = isTitle ? "TITLE" : (isDecision ? "DECISION" : "MENU");
             FileLogger.Log($"[menu] publish {kind} lines={jaRows.Count}");
             _ = TranslateAndPublishMenuAsync(kind, jaRows);
         }
 
+        // Menu Latin-token split (universal machinery, N3): JA rows with embedded fullwidth-Latin
+        // art (ＥｏｌｌＰｈｏＥＮＴ-class) translate the JA part only; art reattaches verbatim,
+        // never burns CAT. Allowlist/coords/button shapes stay inline. JA bubble text untouched.
+        private async Task<string> TranslateMenuJaRowAsync(string t)
+        {
+            var toks = t.Split(' ');
+            var held = new List<string>();
+            var kept = new List<string>();
+            foreach (var k in toks)
+            {
+                string s = k.Trim('・', '…', '．', '.', '「', '」', '"', '\'', '、', '。', '!', '！', '?', '？', ',', '，', ' ', '　');
+                bool latin = s.Length >= 2;
+                foreach (char c in s)
+                {
+                    if ((c >= 'ぁ' && c <= 'ん') || (c >= 'ァ' && c <= 'ヶ') || (c >= '一' && c <= '鿿')) { latin = false; break; }
+                }
+                string u = s.ToUpperInvariant();
+                if (latin && (u == "MAP" || u == "START" || u == "PUSH" || u == "SELECT" || u == "COPY" || u == "KILL"
+                    || System.Text.RegularExpressions.Regex.IsMatch(u, @"^[0-9]+[A-Z]+$") || System.Text.RegularExpressions.Regex.IsMatch(u, @"^[A-Z]+[0-9]+$")))
+                    latin = false;
+                if (latin) held.Add(k); else kept.Add(k);
+            }
+            string jaPart = string.Join(" ", kept);
+            if (string.IsNullOrWhiteSpace(jaPart)) return t;
+            if (held.Count == 0) return await _translationManager.TranslateAsync(t);
+            string e = await _translationManager.TranslateAsync(jaPart);
+            return e + " " + string.Join(" ", held);
+        }
         private async Task TranslateAndPublishMenuAsync(string kind, List<(int y, string t, bool ja)> rows)
         {
             try
@@ -1281,13 +2054,15 @@ namespace WunderLanguage.Host.Capture
                 var en = new List<string>();
                 foreach (var r in rows)
                 {
+                    if (kind == "TITLE") { string tt = string.IsNullOrWhiteSpace(r.t) ? Packs.PackRegistry.Current.FullTitle : r.t; en.Add(Packs.PackRegistry.Current.ApplyTitleFixup(tt) ?? tt); continue; }
                     if (string.IsNullOrWhiteSpace(r.t)) { en.Add(""); continue; }
                     if (!r.ja || IsSlotRow(r.t)) { en.Add(r.t); continue; }
-                    string e = await _translationManager.TranslateAsync(r.t);
-                    if (IsUnpublishable(e)) e = "(untranslatable)";
+                    string e = await TranslateMenuJaRowAsync(r.t);
+                    if (IsUnpublishable(e)) e = "------";
                     en.Add(e);
                 }
                 FileLogger.Log($"[menu] {kind} -> {en.Count} lines");
+                try { CorpusRecordBubble("menu-fire:" + kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en)); } catch { }
                 MenuTranslated?.Invoke(kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en));
             }
             catch (Exception ex) { FileLogger.Log($"[menu] ERROR: {ex.Message}"); }
@@ -1304,8 +2079,8 @@ namespace WunderLanguage.Host.Capture
                 {
                     if (string.IsNullOrWhiteSpace(r.t)) { en.Add(""); continue; }
                     if (!r.ja || IsSlotRow(r.t)) { en.Add(r.t); continue; }
-                    string e = await _translationManager.TranslateAsync(r.t);
-                    if (IsUnpublishable(e)) e = "(untranslatable)";
+                    string e = await TranslateMenuJaRowAsync(r.t);
+                    if (IsUnpublishable(e)) e = "------";
                     en.Add(e);
                 }
                 string newJa = string.Join("\n", clean.ConvertAll(r => r.t));
@@ -1313,7 +2088,8 @@ namespace WunderLanguage.Host.Capture
                 FileLogger.Log($"[menu] update -> {en.Count} lines");
                 if (_stopped) return;
                 // Kind derived from rows: TITLE only for Triforce single, else MENU.
-                string kind2 = newJa.Contains("トライフォ") && newJa.Split('\n').Length <= 2 ? "TITLE" : "MENU";
+                string kind2 = oldSig == _lastDecisionSig ? "DECISION" : (newJa.Contains(Packs.PackRegistry.Current.TitleMarker) && newJa.Split('\n').Length <= 2 ? "TITLE" : "MENU");
+                try { CorpusRecordBubble("menu-update:" + kind2, newJa, newEn, oldSig); } catch { }
                 MenuUpdated?.Invoke(oldSig, kind2, newJa, newEn);
             }
             catch (Exception ex) { FileLogger.Log($"[menu] ERROR: {ex.Message}"); }
@@ -1441,6 +2217,14 @@ namespace WunderLanguage.Host.Capture
         private static bool IsInputGrid(List<OcrBlock> blocks)
         {
             if (blocks.Count < 10) return false;
+            // Shop/menu lists carry tall merged content blocks (h=614 shop list); name-entry
+            // charts never do (all cells tiny). Veto keeps shop menus publishable. Omission-safe:
+            // dialogue textboxes never reach this gate as grids (few tiny cells).
+            foreach (var b in blocks)
+            {
+                string bt = (b.Text ?? "").Trim();
+                if (b.Height > 150 && bt.Length >= 6 && HasAnchorSubstance(bt)) return false;
+            }
             int tiny = 0;
             var rows = new HashSet<int>();
             foreach (var b in blocks)

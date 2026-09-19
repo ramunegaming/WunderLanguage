@@ -24,6 +24,18 @@ namespace WunderLanguage.Host.Windows
         private static extern IntPtr DeferWindowPos(IntPtr hWinPosInfo, IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")]
         private static extern bool EndDeferWindowPos(IntPtr hWinPosInfo);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        private const int GWLP_HWNDPARENT = -8;
+
+        private static IntPtr SetWindowOwner(IntPtr hWnd, IntPtr owner)
+        {
+            if (IntPtr.Size == 8)
+                return SetWindowLongPtr64(hWnd, GWLP_HWNDPARENT, owner);
+            return new IntPtr(SetWindowLong32(hWnd, GWLP_HWNDPARENT, owner.ToInt32()));
+        }
 
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
@@ -73,8 +85,10 @@ namespace WunderLanguage.Host.Windows
             _bottomBar = new BottomBarWindow();
             _bottomBar.PauseToggled += OnPauseToggled;
             _bottomBar.SettingsRequested += OnSettingsRequested;
+            _topBar.ShotRequested += OnShotRequested;
             _tracker = new EmulatorWindowTracker(emulatorHandle);
             _tracker.BoundsChanged += OnBoundsChanged;
+            _tracker.ForegroundChanged += OnForegroundChanged;
             _tracker.Minimized += OnEmulatorMinimized;
             _tracker.Restored += OnEmulatorRestored;
             _captureController = BuildCaptureController();
@@ -101,7 +115,9 @@ namespace WunderLanguage.Host.Windows
         private CaptureController BuildCaptureController()
         {
             var cache = new TranslationCache();
-            DeepLProvider? deepL = _settings.TranslationProvider == "DeepL" && !string.IsNullOrWhiteSpace(_settings.DeepLApiKey)
+            // Hybrid: build DeepL whenever a key exists, regardless of the
+            // selected provider - CAT-primary flagged lines fall back per-line.
+            DeepLProvider? deepL = !string.IsNullOrWhiteSpace(_settings.DeepLApiKey)
                 ? new DeepLProvider(_settings.DeepLApiKey!)
                 : null;
             var offline = new OfflineTranslationProvider();
@@ -182,21 +198,61 @@ namespace WunderLanguage.Host.Windows
                     $"foreground=0x{foreground:X}");
                 _lastShouldBeOnTop = shouldBeOnTop;
             }
-            if (shouldBeOnTop)
+            // Z-order pairing: every bar sits directly above the emulator, so the
+            // four windows travel as one depth. Covered together, restored together.
+            // Batched in one DeferWindowPos so all three land the same frame.
+            PairGroupAboveEmulator();
+            // Popup untouched: topmost band owns it (see TrackPopup).
+        }
+
+        private void PairGroupAboveEmulator()
+        {
+            if (_topBarHandle == IntPtr.Zero || _sidePanelHandle == IntPtr.Zero || _bottomBarHandle == IntPtr.Zero)
             {
-                SetTopmostLogged(_topBarHandle, "topBar");
-                SetTopmostLogged(_sidePanelHandle, "sidePanel");
-                SetTopmostLogged(_bottomBarHandle, "bottomBar");
-                if (popupHandle != IntPtr.Zero)
-                    SetTopmostLogged(popupHandle, "activePopup");
+                PairAboveEmulator(_topBarHandle, "topBar");
+                PairAboveEmulator(_sidePanelHandle, "sidePanel");
+                PairAboveEmulator(_bottomBarHandle, "bottomBar");
+                return;
+            }
+            IntPtr hdwp = BeginDeferWindowPos(3);
+            if (hdwp != IntPtr.Zero)
+                hdwp = DeferWindowPos(hdwp, _topBarHandle, _emulatorHandle, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (hdwp != IntPtr.Zero)
+                hdwp = DeferWindowPos(hdwp, _sidePanelHandle, _emulatorHandle, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (hdwp != IntPtr.Zero)
+                hdwp = DeferWindowPos(hdwp, _bottomBarHandle, _emulatorHandle, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (hdwp != IntPtr.Zero)
+            {
+                EndDeferWindowPos(hdwp);
             }
             else
             {
-                SetNotTopmostLogged(_topBarHandle, "topBar", foreground);
-                SetNotTopmostLogged(_sidePanelHandle, "sidePanel", foreground);
-                SetNotTopmostLogged(_bottomBarHandle, "bottomBar", foreground);
-                if (popupHandle != IntPtr.Zero)
-                    SetNotTopmostLogged(popupHandle, "activePopup", foreground);
+                if (DateTime.UtcNow - _lastPairFailLog > TimeSpan.FromSeconds(30))
+                {
+                    _lastPairFailLog = DateTime.UtcNow;
+                    FileLogger.Log("PairGroupAboveEmulator: batch failed, falling back to individual calls.");
+                }
+                PairAboveEmulator(_topBarHandle, "topBar");
+                PairAboveEmulator(_sidePanelHandle, "sidePanel");
+                PairAboveEmulator(_bottomBarHandle, "bottomBar");
+            }
+        }
+
+        private DateTime _lastPairFailLog = DateTime.MinValue;
+
+        private void PairAboveEmulator(IntPtr handle, string name)
+        {
+            if (handle == IntPtr.Zero || handle == _emulatorHandle)
+                return;
+            bool ok = SetWindowPos(handle, _emulatorHandle, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (!ok)
+            {
+                int err = Marshal.GetLastWin32Error();
+                if (err != 0 && DateTime.UtcNow - _lastPairFailLog > TimeSpan.FromSeconds(30))
+                {
+                    _lastPairFailLog = DateTime.UtcNow;
+                    FileLogger.Log($"SetWindowPos FAILED (pair above emulator) for {name} (0x{handle:X}): Win32 error {err}");
+                }
             }
         }
 
@@ -247,12 +303,10 @@ namespace WunderLanguage.Host.Windows
         private void ForceTopmost(string reason)
         {
             FileLogger.Log($"ForceTopmost ({reason})");
-            SetTopmostLogged(_topBarHandle, "topBar");
-            SetTopmostLogged(_sidePanelHandle, "sidePanel");
-            SetTopmostLogged(_bottomBarHandle, "bottomBar");
-            IntPtr popupHandle = GetActivePopupHandle();
-            if (popupHandle != IntPtr.Zero)
-                SetTopmostLogged(popupHandle, "activePopup");
+            PairAboveEmulator(_topBarHandle, "topBar");
+            PairAboveEmulator(_sidePanelHandle, "sidePanel");
+            PairAboveEmulator(_bottomBarHandle, "bottomBar");
+            // Popup untouched: topmost band owns it (see TrackPopup).
         }
 
         private void BeginPostRestoreTopmostBurst()
@@ -287,6 +341,86 @@ namespace WunderLanguage.Host.Windows
             _activePopup?.Show();
             ForceTopmost("OnEmulatorRestored");
             BeginPostRestoreTopmostBurst();
+        }
+
+        // TEMP troubleshooting aid: snapshot emulator + panels with timestamps,
+        // no alt-tab needed. Remove post-Zelda.
+        private void OnShotRequested()
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot");
+                System.IO.Directory.CreateDirectory(dir);
+                string stamp = DateTime.Now.ToString("HHmmss_fff");
+                // Single stitched shot: bounding box over game region + all panels.
+                var rects = new System.Collections.Generic.List<System.Drawing.Rectangle>();
+                if (WindowCapture.TryGetWindowBounds(_emulatorHandle, out var winBounds))
+                {
+                    var rel = _gameRegion.GetScaledCropRect(winBounds);
+                    rects.Add(new System.Drawing.Rectangle(winBounds.Left + rel.Left, winBounds.Top + rel.Top, rel.Width, rel.Height));
+                }
+                foreach (var handle in new[] { _topBarHandle, _sidePanelHandle, _bottomBarHandle })
+                {
+                    try
+                    {
+                        if (WindowCapture.TryGetWindowBounds(handle, out var r) && r.Width > 0 && r.Height > 0)
+                            rects.Add(new System.Drawing.Rectangle(r.Left, r.Top, r.Width, r.Height));
+                    }
+                    catch { }
+                }
+                if (rects.Count > 0)
+                {
+                    int l = int.MaxValue, t = int.MaxValue, r2 = int.MinValue, b2 = int.MinValue;
+                    foreach (var r in rects)
+                    {
+                        if (r.Left < l) l = r.Left;
+                        if (r.Top < t) t = r.Top;
+                        if (r.Right > r2) r2 = r.Right;
+                        if (r.Bottom > b2) b2 = r.Bottom;
+                    }
+                    using var bmp = WindowCapture.CaptureScreenRegion(new System.Drawing.Rectangle(l, t, r2 - l, b2 - t));
+                    bmp.Save(System.IO.Path.Combine(dir, $"{stamp}_all.png"), System.Drawing.Imaging.ImageFormat.Png);
+                }
+                try
+                {
+                    var keep = new System.Text.RegularExpressions.Regex(@"\[mine\]|\[confusion\]|\[words\]|POST /observe|breakthrough|word guide|suppress-contentless|title-guard|STABLE-DECISION|refocus-catchup|\[shot\]|\[translate-provider\]|\[translate\]|\[menu\]|translate-fire|\[blocks\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var lines = System.IO.File.ReadAllLines(FileLogger.Path_);
+                    var tail = new System.Collections.Generic.List<string>();
+                    foreach (var ln in lines)
+                    {
+                        try { if (keep.IsMatch(ln)) tail.Add(ln); } catch { }
+                    }
+                    int take = tail.Count > 150 ? 150 : tail.Count;
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine($"# WunderLanguage troubleshoot {DateTime.Now:yyyy-MM-dd HH:mm:ss} ({stamp})");
+                    for (int i = tail.Count - take; i < tail.Count; i++) sb.AppendLine(tail[i]);
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(dir, $"{stamp}_log.txt"), sb.ToString());
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Log($"[shot] log dump failed: {ex.Message}");
+                }
+                FileLogger.Log($"[shot] saved {stamp} to {dir}");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[shot] failed: {ex.Message}");
+            }
+        }
+
+        // Instant z-pairing on focus change: closes the ms gap between the
+        // clicked window and the bars that a 150ms tick alone can't.
+        private void OnForegroundChanged(IntPtr fgHwnd)
+        {
+            try
+            {
+                IntPtr popupHandle = GetActivePopupHandle();
+                if (fgHwnd == _emulatorHandle || fgHwnd == _topBarHandle
+                    || fgHwnd == _sidePanelHandle || fgHwnd == _bottomBarHandle
+                    || (popupHandle != IntPtr.Zero && fgHwnd == popupHandle))
+                    PairGroupAboveEmulator();
+            }
+            catch { }
         }
 
         private void OnPauseToggled(bool paused)
@@ -331,7 +465,27 @@ namespace WunderLanguage.Host.Windows
         // it, everything comes back together, popup included.
         private void TrackPopup(Window popup)
         {
+            // Layer +1 via ownership: popup owned by the emulator sits above it,
+            // minimizes/covers with it, never topmost-band, never re-asserted.
+            // (Untracked ConnectWindow settings is owned by Connect instead.)
+            popup.Topmost = false;
             _activePopup = popup;
+            try
+            {
+                // Handle is Zero until first show - without EnsureHandle the
+                // owner was never set and the popup spawned behind the
+                // emulator (its XAML Topmost was already stripped above).
+                IntPtr ph = new WindowInteropHelper(popup).EnsureHandle();
+                if (ph != IntPtr.Zero && ph != _emulatorHandle)
+                {
+                    SetWindowOwner(ph, _emulatorHandle);
+                    SetWindowPos(ph, _sidePanelHandle, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"TrackPopup owner failed: {ex.Message}");
+            }
             popup.Closed += (_, _) =>
             {
                 if (_activePopup == popup)

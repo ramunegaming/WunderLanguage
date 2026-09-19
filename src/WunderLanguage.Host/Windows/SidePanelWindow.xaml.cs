@@ -259,6 +259,20 @@ namespace WunderLanguage.Host.Windows
                 }
                 if (NormalizeEllipsisForDisplay(_lastJapaneseBlock.Text) != NormalizeEllipsisForDisplay(expectedOldJa))
                 {
+                    // Deeper-history match (dupe fix): async completion for an older bubble
+                    // updates its history row in place instead of appending a dupe entry.
+                    string want = NormalizeEllipsisForDisplay(expectedOldJa);
+                    for (int i = _history.Count - 1; i >= 0 && i >= _history.Count - 8; i--)
+                    {
+                        string hja = _history[i].ja;
+                        int nl = hja.IndexOf('\n');
+                        string hbody = nl >= 0 ? hja.Substring(nl + 1) : hja;
+                        if (NormalizeEllipsisForDisplay(hbody) == want)
+                        {
+                            _history[i] = (_history[i].time, nl >= 0 ? hja.Substring(0, nl + 1) + japanese : japanese, english);
+                            return;
+                        }
+                    }
                     ShowTranslation(japanese, english);
                     return;
                 }
@@ -440,7 +454,8 @@ namespace WunderLanguage.Host.Windows
 
         private static string NormalizeEllipsisForDisplay(string text)
         {
-            return EllipsisRunPattern.Replace(text, "…");
+            text = EllipsisRunPattern.Replace(text, "…");
+            return text;
         }
     }
 }

@@ -5,19 +5,15 @@ namespace WunderLanguage.Host.Windows
 {
     public partial class GameRegionPromptWindow : Window
     {
+        private readonly System.Windows.Threading.DispatcherTimer _topmostTimer;
+
         public GameRegionPromptWindow()
         {
             InitializeComponent();
-            Loaded += (_, _) => ReassertTopmostBurst();
-        }
-
-        private async void ReassertTopmostBurst()
-        {
-            for (int i = 0; i < 5; i++)
-            {
-                Win32TopmostHelper.ForceTopmost(this);
-                await Task.Delay(100);
-            }
+            _topmostTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _topmostTimer.Tick += (_, _) => { }; // Neutered: AppShell tick solely owns z-order.
+            Loaded += (_, _) => _topmostTimer.Start();
+            Closed += (_, _) => _topmostTimer.Stop();
         }
 
         private void Continue_Click(object sender, RoutedEventArgs e)

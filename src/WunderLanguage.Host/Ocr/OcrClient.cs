@@ -16,6 +16,9 @@ namespace WunderLanguage.Host.Ocr
     {
         private readonly HttpClient _http;
         private readonly string _endpoint;
+        // S1.2: last-loop timings retained for the min-spec verdict (elsewhere log-only).
+        public double LastDetMs { get; private set; }
+        public double LastRecMs { get; private set; }
 
         public OcrClient(string endpoint = "http://localhost:8000")
         {
@@ -82,6 +85,16 @@ namespace WunderLanguage.Host.Ocr
                 {
                     if (w.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var ci)) contentWords = ci;
                     if (w.TryGetProperty("total", out var t2) && t2.ValueKind == JsonValueKind.Number && t2.TryGetInt32(out var ti)) totalWords = ti;
+                }
+            }
+            catch { }
+            try
+            {
+                if (root.TryGetProperty("timing", out var tm) && tm.ValueKind == JsonValueKind.Object)
+                {
+                    FileLogger.Log($"[ocr-timing] {tm}");
+                    if (tm.TryGetProperty("det_ms", out var dm) && dm.TryGetDouble(out var dd)) LastDetMs = dd;
+                    if (tm.TryGetProperty("rec_ms", out var rm) && rm.TryGetDouble(out var rd)) LastRecMs = rd;
                 }
             }
             catch { }

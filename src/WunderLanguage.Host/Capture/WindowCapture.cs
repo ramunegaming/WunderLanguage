@@ -208,7 +208,7 @@ namespace WunderLanguage.Host.Capture
                     "The calibrated region is outside the current window bounds - try recalibrating.");
             return full.Clone(rect, full.PixelFormat);
         }
-        private static Bitmap CaptureScreenRegion(Rectangle screenRect)
+        public static Bitmap CaptureScreenRegion(Rectangle screenRect)
         {
             if (screenRect.Width <= 0 || screenRect.Height <= 0)
                 throw new InvalidOperationException("Invalid capture region.");

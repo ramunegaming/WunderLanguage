@@ -31,6 +31,8 @@ namespace WunderLanguage.Host.Translation
         private DateTime _lastQuotaRetry = DateTime.MinValue;
         // Previous source line, passed as DeepL context (best-effort under concurrency).
         private string _lastSourceLine = string.Empty;
+        // In-flight dedup: concurrent identical fires share one Task (double-fire costs one CAT).
+        private readonly Dictionary<string, Task<string>> _inflight = new();
         private static readonly TimeSpan QuotaRetryInterval = TimeSpan.FromMinutes(30);
 
         // Pruned once per process, after we know the live sidecar version.
@@ -76,12 +78,31 @@ namespace WunderLanguage.Host.Translation
             {
                 ActiveProviderName = "Cache";
                 _lastSourceLine = text;
+                FileLogger.Log($"[translate-metrics] cache-hit chars={text.Length}");
                 return cachedCurrent;
             }
 
+            string key = versionedLang + "|" + text;
+            Task<string> shared;
+            lock (_inflight)
+            {
+                if (!_inflight.TryGetValue(key, out shared!))
+                {
+                    shared = TranslateMissAsync(text, sourceLang, targetLang, versionedLang);
+                    _inflight[key] = shared;
+                }
+            }
+            try { return await shared; }
+            finally { lock (_inflight) { _inflight.Remove(key); } }
+        }
+
+        private async Task<string> TranslateMissAsync(string text, string sourceLang, string targetLang, string versionedLang)
+        {
+            long t0 = Environment.TickCount64;
             string result = _preference == TranslationProviderPreference.DeepL
                 ? await TranslateViaDeepLWithFallback(text, sourceLang, targetLang)
                 : await TranslateViaOfflineWithDeepLBackup(text, sourceLang, targetLang);
+            FileLogger.Log($"[translate-metrics] miss provider={ActiveProviderName} ms={Environment.TickCount64 - t0} chars={text.Length}");
 
             // Never cache flagged lines: a suppressed Japanese echo must not
             // become tomorrow's instant wrong answer. Next run retries fresh.

@@ -32,6 +32,11 @@ namespace WunderLanguage.Host.Windows
                 .ToList();
         }
 
+        private void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshWindowList();
+        }
+
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             var popup = new SettingsPopup(_settings) { Owner = this };
