@@ -72,7 +72,17 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("道星屋", "道具屋"),
             ("適用屋", "道具屋"),
             ("通常屋", "道具屋"),
+            // Battle action garbles (cited: panel/screenshot loops this chat).
+            ("ただからひっさつねざ", "たたかうひっさつわざ"),
+            ("ただからひっきつねぎ", "たたかうひっさつわざ"),
+            ("たたかうひっきつれだ", "たたかうひっさつわざ"),
+            ("たたからひっさつねざ", "たたかうひっさつわざ"),
+            ("ただからひっきつれざ", "たたかうひっさつわざ"),
+            ("ただからひっきつねざ", "たたかうひっさつわざ"),
         };
+        // Battle command vocabulary (cited): fight / ability / magic / item.
+        // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
+        public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まほう", "アイテム" };
         public static readonly (string from, string to)[] DisplayFixups = { };
         public const string TitleMarker = "FINAL FANTASY";
         public const string FullTitle = "FINAL FANTASY VI";
@@ -119,6 +129,7 @@ namespace WunderLanguage.Host.Packs.FFVI
         public string ApplyGameOverRowFixups(string p) => FfviPack.ApplyGameOverRowFixups(p);
         public bool KeepSpeakerBrackets => FfviPack.KeepSpeakerBrackets;
         public System.Collections.Generic.IReadOnlyList<string> Signatures => FfviPack.Signatures;
+        public System.Collections.Generic.IReadOnlyList<string> BattleCommands => FfviPack.BattleCommands;
         public bool IsMenuHeaderRow(string ascii) => FfviPack.IsMenuHeaderRow(ascii);
     }
 }

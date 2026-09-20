@@ -244,6 +244,7 @@ namespace WunderLanguage.Host.Packs.Zelda
             return english;
         }
         public static readonly string[] Signatures = { "ゼルダ", "ハイラル", "トライフォース", "アグニム" };
+        public static readonly string[] BattleCommands = { };
         public static bool KeepSpeakerBrackets => false;
         public static string ApplyGameOverRowFixups(string p)
         {
@@ -291,6 +292,7 @@ namespace WunderLanguage.Host.Packs.Zelda
         public string ApplyGameOverRowFixups(string p) => ZeldaPack.ApplyGameOverRowFixups(p);
         public bool KeepSpeakerBrackets => ZeldaPack.KeepSpeakerBrackets;
         public System.Collections.Generic.IReadOnlyList<string> Signatures => ZeldaPack.Signatures;
+        public System.Collections.Generic.IReadOnlyList<string> BattleCommands => ZeldaPack.BattleCommands;
         public bool IsMenuHeaderRow(string ascii) => ZeldaPack.IsMenuHeaderRow(ascii);
     }
 }

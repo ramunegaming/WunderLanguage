@@ -61,10 +61,37 @@ namespace WunderLanguage.Host.Capture
 
         public event Action<string, string>? TextTranslated;
         public event Action<string, string, string>? MenuTranslated; // (kind TITLE/MENU, jaJoined, enJoined)
+        public event Action<string, string, List<string>, List<string>, List<string>, List<string>, List<string>, List<string>>? BattleFramePublished; // (topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn)
         public event Action<string, string, string, string>? MenuUpdated; // (expectedOldJa, kind, jaJoined, enJoined) update-only, never appends
         private string _menuSignature = "";
         private int _menuStableCount;
         private bool _frameIsTitle;
+        // Battle-frame size for BattleFrame.cs (0 = unknown, battle logic stays off).
+        private int _battleFrameW;
+        private int _battleFrameH;
+        // Battle-frame slot stability: 2 consistent reads to fire, then every
+        // consistent change updates in place (never appends, so no feed spam).
+        private string _battlePrevSig = "";
+        private string _battleFiredSig = "";
+        // Last seen monster rows within the current fight. The action menu covers
+        // the monster box when open; stickiness keeps the frame steady instead of
+        // blanking every time the player picks a command.
+        private List<string> _battleMonsterSticky = new();
+        // Menu grace after battle: transitions clear the fired mark before the
+        // frame refires; menus stay silent a few loops more so no MENU dupe
+        // lands mid-fight. Decremented per menu pass; battle frames never see it.
+        private int _battleCooldown;
+        // Slot EN stickiness: identical JA reuses last published EN verbatim.
+        // Unreliable-tier translations are never cached by policy, so without
+        // this every refire rolls fresh nondeterministic EN and the frame flickers.
+        private string _lastBattleTopJa = "";
+        private string _lastBattleTopEn = "";
+        private List<string> _lastBattleMonJa = new();
+        private List<string> _lastBattleMonEn = new();
+        private List<string> _lastBattleActJa = new();
+        private List<string> _lastBattleActEn = new();
+        private List<string> _lastBattleRightJa = new();
+        private List<string> _lastBattleRightEn = new();
         private string _lastPublishedMenu = "";
         // Newest DECISION sig (choice screens). Dialogue yields to it (D2/D3);
         // similarity-gated so no expiry bookkeeping needed.
@@ -140,6 +167,8 @@ namespace WunderLanguage.Host.Capture
                     Packs.PackRegistry.SetCurrent(content);
                     try { LoadMinedCorrections(); } catch { }
                     _corpusPath = "";
+                    // New game, new timeline: stale quiet must not mint a TITLE.
+                    _quietCount = 0; _quietSeen = "";
                     return;
                 }
                 if (fresh == _gameId) return;
@@ -148,6 +177,7 @@ namespace WunderLanguage.Host.Capture
                 try { Packs.PackRegistry.SetSession(_gameId); } catch { }
                 try { LoadMinedCorrections(); } catch { }
                 _corpusPath = "";
+                _quietCount = 0; _quietSeen = "";
             }
             catch { }
         }
@@ -351,6 +381,10 @@ namespace WunderLanguage.Host.Capture
         public void Start()
         {
             FileLogger.Log("CaptureController.Start called");
+            // Build capability line: logs self-identify which behavior set is live,
+            // so a stale exe can never again masquerade as the current build.
+            // Bump the tag on every behavior batch.
+            try { FileLogger.Log($"[build] battle18 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -409,7 +443,9 @@ namespace WunderLanguage.Host.Capture
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] frame unchanged, skipping OCR");
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
-if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        // Same battle guard as the settled path: static cooldown screens
+                        // must never mint a TITLE mid-fight (forces a dupe frame).
+                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
                         // Static dwell confirms a clean held candidate. Menu screens
                         // (sig set) and titles stay out; dupes stay out via guards.
                         if (!string.IsNullOrEmpty(_candidateText)
@@ -487,6 +523,7 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
                         int shown = 0;
                         int fw = 1, fh = 1;
                         try { fw = System.Math.Max(1, bitmap.Width); fh = System.Math.Max(1, bitmap.Height); } catch { }
+                        try { _battleFrameW = fw; _battleFrameH = fh; } catch { }
                         foreach (var b in ocrBlocks)
                         {
                             if (shown >= 12) break;
@@ -498,7 +535,32 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
                         }
                         FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
                         string? quietTitleSettled = CheckQuietTitle(iteration, ocrBlocks);
-                        if (quietTitleSettled != null) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        // A live battle owns the screen: the logo/title detector must
+                        // never fire mid-fight (it forces a bogus TITLE plus a dupe
+                        // frame). Battle-grace covers transitions too.
+                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                    }
+                    catch { }
+                    // Battle-frame dialogue guard: bottom-band battle blocks never become
+                    // dialogue; top-band rewards isolate and flow on. Wiring only — all
+                    // geometry lives in BattleFrame.cs. Non-battle frames fall through.
+                    try
+                    {
+                        string battleTop = "";
+                        int battleClass = BattleFrame.Classify(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, out battleTop);
+                        if (battleClass == 2)
+                        {
+                            // Rewards live in the battle frame now (UpdateBattleFrame
+                            // carries the top bar); they no longer dialogue-fire.
+                            FileLogger.Log($"[battle] rewards frame owns top-bar (dialogue suppressed)");
+                            extractedText = string.Empty;
+                        }
+                        else if (battleClass == 1)
+                        {
+                            if (!string.IsNullOrEmpty(extractedText))
+                                FileLogger.Log($"[battle] bottom-frame suppressed from dialogue ({ocrBlocks.Count} blocks)");
+                            extractedText = string.Empty;
+                        }
                     }
                     catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
@@ -518,6 +580,7 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
                     }
                     // Phase 1b: menu/title tracker. Dialogue path below frozen.
                     try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
+                    try { UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
                     token.ThrowIfCancellationRequested();
                     FileLogger.Log($"[loop {iteration}] OCR result: \"{extractedText}\"");
 
@@ -1542,7 +1605,9 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
         {
             try
             {
-                string sig = (_lastTranslatedText ?? "") + "\n" + (_menuSignature ?? "") + "\n" + (_lastPublishedMenu ?? "");
+                // Battle liveness breaks the streak: any frame fire or slot change
+                // resets the counter, so long battles can never mint a TITLE.
+                string sig = (_lastTranslatedText ?? "") + "\n" + (_menuSignature ?? "") + "\n" + (_lastPublishedMenu ?? "") + "\n" + (_battleFiredSig ?? "") + "\n" + (_battlePrevSig ?? "");
                 if (sig != _quietSeen) { _quietSeen = sig; _quietCount = 0; _quietHint = false; return null; }
                 if (iteration % 40 == 0 && _quietCount > 0) FileLogger.Log($"[menu] quiet-title watch quiet={_quietCount} hint={_quietHint}");
                 if (blocks != null)
@@ -1556,10 +1621,14 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
                 }
                 _quietCount++;
                 string packTitle = Packs.PackRegistry.Current.FullTitle;
-                if (_quietCount == QuietTitleLoops && !string.IsNullOrEmpty(packTitle)
+                // Hint-gated bars: logo evidence (caps/years/copyright in frame)
+                // fires at 30; bare quiet needs 120. Pre-logo black and idle fields
+                // accumulate quiet without hints and must never mint a TITLE.
+                int titleBar = _quietHint ? QuietTitleLoops : QuietTitleLoops * 4;
+                if (_quietCount == titleBar && !string.IsNullOrEmpty(packTitle)
                     && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText))
                 {
-                    FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {QuietTitleLoops} quiet loops)");
+                    FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint})");
                     return packTitle;
                 }
                 return null;
@@ -1817,6 +1886,15 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
             }
             if (IsInputGrid(blocks)) { _menuStableCount = 0; _menuSignature = ""; return; }
             // Group same-line blocks by Y overlap, top-to-bottom lines.
+            // Battle wiring only: party-status cells drop, tall X-disjoint columns
+            // never merge. Geometry lives in BattleFrame.cs; gated on battle shape
+            // so non-battle frames group exactly as before.
+            bool battleFrame = BattleFrame.IsBattle(blocks, _battleFrameW, _battleFrameH, HasJapanese);
+            if (_battleCooldown > 0) _battleCooldown--;
+            // Battle owns its rows while a frame is live (plus grace): menu stays
+            // silent so the feed shows one frame, never a frame plus a MENU dupe.
+            // Non-battle and pre-frame menus flow exactly as before.
+            if (battleFrame && (_battleFiredSig != "" || _battleCooldown > 0)) return;
             var lines = new List<(int y, List<OcrBlock> parts)>();
             foreach (var b in blocks.OrderBy(b => b.Y))
             {
@@ -1824,15 +1902,28 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
                 if (b.Width < 10 || b.Height < 12) continue;
                 string t = b.Text.Trim();
                 if (t.Length < 1) continue;
+                if (battleFrame && BattleFrame.IsPartyStatusBlock(b, _battleFrameW, _battleFrameH, HasJapanese))
+                    continue;
                 bool placed = false;
                 foreach (var ln in lines)
                 {
                     int ly = ln.y;
                     if (Math.Abs(b.Y - ly) < Math.Min(b.Height, 60) / 2 + 8)
                     {
-                        ln.parts.Add(b);
-                        placed = true;
-                        break;
+                        bool tallColumnSplit = false;
+                        if (battleFrame)
+                        {
+                            foreach (var p in ln.parts)
+                            {
+                                if (BattleFrame.IsTallColumnSplit(b, p)) { tallColumnSplit = true; break; }
+                            }
+                        }
+                        if (!tallColumnSplit)
+                        {
+                            ln.parts.Add(b);
+                            placed = true;
+                            break;
+                        }
                     }
                 }
                 if (!placed) lines.Add((b.Y, new List<OcrBlock> { b }));
@@ -2019,6 +2110,439 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
             _ = TranslateAndPublishMenuAsync(kind, jaRows);
         }
 
+        // Battle-frame pipeline: slot extraction (BattleFrame.cs), 2-consistent-read
+        // fire, consistent changes update in place (panel owns new-vs-refresh via
+        // the last-entry rule). Rewards no longer dialogue-fire; the frame owns them.
+        // This bit: monster + party only. Action content is extracted but withheld
+        // from the frame until the overlap bit; monster rows go sticky so opening
+        // the action menu never blanks them.
+        private void UpdateBattleFrame(List<OcrBlock> blocks)
+        {
+            string topRaw;
+            int cls = BattleFrame.Classify(blocks, _battleFrameW, _battleFrameH, HasJapanese, out topRaw);
+            // Leaving battle clears the fired mark: an identical fight later refires
+            // (panel spawns new only if other text came between), menus flow again.
+            if (cls == 0) { _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); return; }
+            // Any battle-classified loop refreshes grace, so the countdown only
+            // starts once battle truly ends (fires set it too, same value).
+            _battleCooldown = 6;
+            var slots = BattleFrame.ExtractSlots(blocks, _battleFrameW, _battleFrameH, HasJapanese, t => IsEllipsisOnly(t));
+            // Party slot is names-only (HP/timebar digits complicate without
+            // informing); monster counts stay. Reward tops need substance:
+            // まえば-class flicker stays dialogue-suppressed but never posts,
+            // so the top bar sits empty until real post-fight rewards arrive.
+            var rightNames = slots.Right.ConvertAll(r => { SplitRowDigits(r, out string n, out _); return string.IsNullOrWhiteSpace(n) ? r : n; });
+            slots = slots with { Top = slots.Top.Length < 4 ? "" : slots.Top, Right = rightNames };
+            // Overlap bit: action rows normalize through pack fixups, then split
+            // on pack command vocabulary into positional rows (blank magic gap).
+            var normAction = slots.Action.ConvertAll(a => ApplyZeldaOcrFixups(a));
+            // Tall-block disambiguation: geometry alone files a tall monster
+            // list (two names, one OCR block — same height as the command box)
+            // into the action slot. Only lines carrying command vocabulary (or
+            // short enough to be a command fragment) stay; the rest spill back
+            // to the monster column with their count. Unknown game (no vocab):
+            // geometry as before.
+            var commands = Packs.PackRegistry.Current.BattleCommands ?? new System.Collections.Generic.List<string>();
+            var actionLines = new List<string>();
+            var spillMonster = new List<string>();
+            if (commands.Count < 5) actionLines = new List<string>(normAction);
+            else
+            {
+                int maxCmd = 0;
+                foreach (var c in commands) if (!string.IsNullOrEmpty(c) && c.Length > maxCmd) maxCmd = c.Length;
+                foreach (var a in normAction)
+                {
+                    if (ContainsBattleCommand(a, commands) || a.Length <= maxCmd + 4) actionLines.Add(a);
+                    else if (!string.IsNullOrWhiteSpace(a)) spillMonster.Add(a);
+                }
+            }
+            var monsterLines = new List<string>(spillMonster);
+            monsterLines.AddRange(slots.Monster);
+            monsterLines = SplitMergedMonsters(monsterLines);
+            monsterLines = AttachMonsterCounts(monsterLines);
+            if (monsterLines.Count > 0) _battleMonsterSticky = new List<string>(monsterLines);
+            var shownMonster = actionLines.Count > 0 && _battleMonsterSticky.Count > 0 ? _battleMonsterSticky : monsterLines;
+            var actionRows = BattleFrame.SplitActionRows(actionLines, commands);
+            var shown = new BattleFrame.BattleSlots(slots.Top, shownMonster, actionRows, slots.Right);
+            string sig = shown.Top + "\n" + string.Join("\n", shown.Monster) + "\n" + string.Join("\n", shown.Action) + "\n" + string.Join("\n", shown.Right);
+            // Prefetch on first sight: translations run during the stability wait,
+            // so the fire completes near-instantly. Same strings and providers as
+            // the publish path — strictly earlier, never different.
+            if (sig != _battlePrevSig) PrefetchBattleRows(shown);
+            // prev updates BEFORE the fire: a fully-cached fast leg completes
+            // synchronously on this same thread and must see the current mark
+            // at its check — otherwise every instant fire suicides (fire==cur
+            // drops) and only yielding fires ever publish. Stuck action boxes
+            // and missing rewards traced to exactly this ordering.
+            _battlePrevSig = sig;
+            // Battle fires on first sight: the frame updates in place and stale
+            // publishes drop, so a lone misread self-corrects next loop instead of
+            // waiting out a stability bar while the game moves on. Dialogue and
+            // menu keeps their frozen gates; battle is the live surface.
+            // Action rides the sig, so open/close always counts as a change.
+            if (sig != _battleFiredSig && (shown.Top.Length > 0 || shown.Monster.Count > 0 || shown.Action.Count > 0))
+            {
+                _battleFiredSig = sig;
+                _battleCooldown = 6;
+                FileLogger.Log($"[battle] fire top={shown.Top.Length}ch mon={shown.Monster.Count} act={shown.Action.Count} right={shown.Right.Count} sig={SigTag(sig)}");
+                _ = TranslateAndPublishBattleAsync(sig, shown);
+            }
+        }
+
+        // One row translated at most once per unique text: exact JA matches reuse
+        // last published EN verbatim, so refires are byte-identical and free.
+        // Prefetch memo: first-sight translations land here while stability waits,
+        // so fires complete near-instantly. Exact-text keyed, cleared on pack
+        // switch (translations are provider-versioned; the memo is not).
+        private readonly Dictionary<string, string> _prefetch = new();
+        private readonly object _prefetchLock = new();
+        private string _prefetchPack = "";
+        private void PrefetchBattleRows(BattleFrame.BattleSlots slots)
+        {
+            try
+            {
+                string pack = Packs.PackRegistry.Current.GameId;
+                var fresh = new List<(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)>();
+                lock (_prefetchLock)
+                {
+                    if (_prefetchPack != pack) { _prefetch.Clear(); _battleNameMemo.Clear(); _prefetchPack = pack; }
+                    if (!string.IsNullOrWhiteSpace(slots.Top) && !_prefetch.ContainsKey(slots.Top))
+                    {
+                        string t = slots.Top;
+                        _prefetch[t] = "";
+                        fresh.Add((t, () => _translationManager.TranslateAsync(t)));
+                    }
+                    foreach (var l in slots.Monster) PrefetchNeed(l, () => TranslateMenuJaRowAsync(l), fresh);
+                    foreach (var l in slots.Action) PrefetchNeed(l, () => TranslateMenuJaRowAsync(l), fresh);
+                    foreach (var n in slots.Right) PrefetchNeed(n, () => _translationManager.TranslateAsync(n), fresh);
+                    if (_prefetch.Count > 1000) _prefetch.Clear();
+                }
+                foreach (var (ja, tx) in fresh)
+                    _ = PrefetchOneAsync(ja, tx);
+            }
+            catch { }
+        }
+        private void PrefetchNeed(string ja, System.Func<System.Threading.Tasks.Task<string>> tx, List<(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)> fresh)
+        {
+            if (string.IsNullOrWhiteSpace(ja) || _prefetch.ContainsKey(ja)) return;
+            _prefetch[ja] = "";
+            fresh.Add((ja, tx));
+        }
+        private async Task PrefetchOneAsync(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)
+        {
+            try
+            {
+                string en = await tx();
+                lock (_prefetchLock) { _prefetch[ja] = en; }
+            }
+            catch { lock (_prefetchLock) { _prefetch.Remove(ja); } }
+        }
+        private bool TryPrefetch(string ja, out string en)
+        {
+            lock (_prefetchLock) { return _prefetch.TryGetValue(ja, out en!) && !string.IsNullOrEmpty(en); }
+        }
+        private async Task<string> PrefetchOrTranslateAsync(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)
+        {
+            if (TryPrefetch(ja, out var pre)) return pre;
+            return await tx();
+        }
+        private async Task<List<string>> TranslateBattleRowsAsync(List<string> ja, List<string> lastJa, List<string> lastEn, System.Func<string, System.Threading.Tasks.Task<string>> translateOne, bool simMemo = false)
+        {
+            var sticky = new Dictionary<string, string>();
+            if (lastJa != null && lastEn != null && lastJa.Count == lastEn.Count && lastJa.Count > 0)
+            {
+                for (int i = 0; i < lastJa.Count; i++)
+                    if (!sticky.ContainsKey(lastJa[i])) sticky[lastJa[i]] = lastEn[i];
+            }
+            // Fan-out, not sequence: every miss starts before the first await, so
+            // N rows cost the slowest row, not the sum. Order preserved by index.
+            var tasks = new Task<string>[ja.Count];
+            // Intentional gaps (the blank magic row) bypass everything and stay
+            // "" — the "------" mask is for failed translations, not for slots
+            // that are empty on purpose.
+            var emptyBypass = new bool[ja.Count];
+            for (int i = 0; i < ja.Count; i++)
+            {
+                string l = ja[i];
+                if (string.IsNullOrEmpty(l)) { tasks[i] = Task.FromResult(""); emptyBypass[i] = true; }
+                else if (sticky.TryGetValue(l, out var e)) tasks[i] = Task.FromResult(e);
+                else tasks[i] = TranslateRowSplitAsync(l, translateOne, simMemo);
+            }
+            var ens = await Task.WhenAll(tasks);
+            var result = new List<string>(ens.Length);
+            for (int i = 0; i < ens.Length; i++) result.Add(emptyBypass[i] ? "" : (IsUnpublishable(ens[i]) ? "------" : ens[i]));
+            return result;
+        }
+
+        // Digit-split: HP/counts never burn translation. A 16s DeepL call for
+        // "２" once gated a whole rewards fire (slowest row wins the WhenAll),
+        // so every action/rewards publish died stale. Digit-only rows post
+        // verbatim; mixed rows translate the name part only (prefetch-keyed on
+        // the name, so HP flicker reuses it instantly) and reattach digits
+        // verbatim ("Mash 231"). Title-agnostic: digits are digits everywhere.
+        private static void SplitRowDigits(string row, out string name, out string digits)
+        {
+            name = row; digits = "";
+            if (string.IsNullOrWhiteSpace(row)) return;
+            var names = new List<string>();
+            var digs = new List<string>();
+            foreach (var k in row.Split(new[] { ' ', '　' }, System.StringSplitOptions.RemoveEmptyEntries))
+            {
+                string s = k.Trim('・', '…', '．', '.', '「', '」', '"', '\'', '、', '。', '!', '！', '?', '？', ',', '，');
+                bool isDigits = s.Length > 0;
+                foreach (char c in s)
+                    if (!((c >= '0' && c <= '9') || (c >= '０' && c <= '９'))) { isDigits = false; break; }
+                if (isDigits) digs.Add(k); else names.Add(k);
+            }
+            if (digs.Count == 0) return;
+            name = string.Join(" ", names); digits = string.Join(" ", digs);
+        }
+        private async Task<string> TranslateRowSplitAsync(string row, System.Func<string, System.Threading.Tasks.Task<string>> translateOne, bool simMemo = false)
+        {
+            SplitRowDigits(row, out string name, out string digits);
+            if (string.IsNullOrWhiteSpace(name)) return row;
+            if (string.IsNullOrEmpty(digits))
+            {
+                string whole = await PrefetchOrTranslateAsync(row, () => translateOne(row));
+                if (simMemo) MemoizeBattleName(row, whole);
+                return whole;
+            }
+            string en;
+            if (simMemo && TrySimilarBattleEn(name, out var simEn))
+            {
+                en = simEn;
+                FileLogger.Log($"[battle] memo-sim \"{name}\" -> \"{en}\"");
+            }
+            else
+            {
+                en = await PrefetchOrTranslateAsync(name, () => translateOne(name));
+                if (simMemo) MemoizeBattleName(name, en);
+            }
+            if (string.IsNullOrWhiteSpace(en)) return row;
+            return en + " " + digits;
+        }
+        // Battle-name memo: OCR flicker (シビーラビット/シピーラビット/…)
+        // mints a new exact key every loop, so exact memoization never hits
+        // and every variant burns a fresh 7s translation that dies stale.
+        // Levenshtein ≥ 0.7 reuses EN across flicker (logged, auditable);
+        // fallback serves ARE memoized here (battle-scoped — the dialogue
+        // no-fallback-cache rule is untouched). Refusals/echoes never
+        // memoize. Cleared on pack switch. Action rows excluded (reusing a
+        // hallucinated ability EN faster is faster-wrong, not better).
+        private readonly Dictionary<string, string> _battleNameMemo = new();
+        private const double BattleSimThreshold = 0.7;
+        private void MemoizeBattleName(string ja, string en)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(ja) || string.IsNullOrWhiteSpace(en) || IsUnpublishable(en)) return;
+                lock (_prefetchLock)
+                {
+                    if (_battleNameMemo.Count > 200) _battleNameMemo.Clear();
+                    _battleNameMemo[ja] = en;
+                }
+            }
+            catch { }
+        }
+        private bool TrySimilarBattleEn(string name, out string en)
+        {
+            en = "";
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name)) return false;
+                lock (_prefetchLock)
+                {
+                    double best = BattleSimThreshold;
+                    string bestEn = "";
+                    foreach (var kv in _battleNameMemo)
+                    {
+                        if (string.IsNullOrWhiteSpace(kv.Value)) continue;
+                        if (kv.Key == name) { en = kv.Value; return true; }
+                        double s = ComputeSimilarity(name, kv.Key);
+                        if (s > best) { best = s; bestEn = kv.Value; }
+                    }
+                    if (bestEn.Length > 0) { en = bestEn; return true; }
+                }
+            }
+            catch { }
+            return false;
+        }
+        // Sig tags: drops were anonymous — the next log convicts exactly
+        // which fire died and what superseded it.
+        // Command-vocabulary test for the tall-block gate: a line stays in the
+        // action slot only if it carries a known command (or is short enough
+        // to be a command fragment). Long garble-free non-command lines are
+        // merged monster lists and spill back to the monster column.
+        private static bool ContainsBattleCommand(string line, System.Collections.Generic.IReadOnlyList<string> commands)
+        {
+            if (string.IsNullOrEmpty(line) || commands == null) return false;
+            foreach (var c in commands)
+                if (!string.IsNullOrEmpty(c) && line.Contains(c, System.StringComparison.Ordinal)) return true;
+            return false;
+        }
+        // Merged-monster split: two names in one OCR block ("エビオルニス
+        // シビーラビット", one tall block) post as one long wrapping line.
+        // Split on memoized single names, longest first — self-improving:
+        // single-name fights memoize parts, later merges split around them.
+        // Cold start (nothing known yet) keeps the merged line; nothing is
+        // ever hidden or dropped, only divided.
+        private List<string> SplitMergedMonsters(List<string> rows)
+        {
+            List<string> keys;
+            lock (_prefetchLock)
+                keys = _battleNameMemo.Keys.Where(k => k.Length >= 5 && k.Length <= 9).OrderByDescending(k => k.Length).ToList();
+            if (keys.Count == 0) return rows;
+            var out_ = new List<string>(rows.Count);
+            foreach (var r in rows)
+            {
+                var parts = new List<string> { r };
+                bool changed = true;
+                int guard = 0;
+                while (changed && guard++ < 4)
+                {
+                    changed = false;
+                    var next = new List<string>();
+                    foreach (var p in parts)
+                    {
+                        string? hit = null;
+                        foreach (var k in keys)
+                            if (p.Length > k.Length + 1 && p.Contains(k, System.StringComparison.Ordinal)) { hit = k; break; }
+                        if (hit is null) { next.Add(p); continue; }
+                        int ix = p.IndexOf(hit, System.StringComparison.Ordinal);
+                        string a = p.Substring(0, ix), b = p.Substring(ix + hit.Length);
+                        if (a.Length >= 2 || b.Length >= 2)
+                        {
+                            if (a.Length >= 2) next.Add(a);
+                            next.Add(hit);
+                            if (b.Length >= 2) next.Add(b);
+                            changed = true;
+                        }
+                        else next.Add(p);
+                    }
+                    parts = next;
+                }
+                out_.AddRange(parts);
+            }
+            return out_;
+        }
+        // Count attach: a standalone count ("２") joins the preceding monster
+        // ("シビーラビット　２", same line as in-game) instead of floating
+        // alone. No preceding name: stays standalone (truthful over clever).
+        // Deliberately no trailing gap on count-less names: trailing space is
+        // invisible in a left-aligned box but churns exact cache keys (an extra
+        // full retranslation per row) — cost without gain.
+        private static List<string> AttachMonsterCounts(List<string> rows)
+        {
+            var out_ = new List<string>(rows.Count);
+            foreach (var r in rows)
+            {
+                SplitRowDigits(r, out string name, out string digits);
+                if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(digits) && out_.Count > 0)
+                {
+                    SplitRowDigits(out_[^1], out string prevName, out _);
+                    if (!string.IsNullOrWhiteSpace(prevName)) { out_[^1] = out_[^1].TrimEnd() + "　" + digits; continue; }
+                }
+                out_.Add(r);
+            }
+            return out_;
+        }
+        private static string SigTag(string sig)
+        {
+            if (string.IsNullOrEmpty(sig)) return "-";
+            string t = sig.Replace("\n", "|").Replace("\r", "");
+            return t.Length <= 44 ? t : t.Substring(0, 44) + "…";
+        }
+
+        // Fast/refresh split: the frame is a live surface — it must post inside
+        // the state's lifetime (~2-8s), but one miss costs 10-25s (CAT
+        // refusal-gens + DeepL fallback) and the slowest row gated the whole
+        // frame, so every action/rewards fire died stale. Now: a 1200ms
+        // best-effort fast publish (slow rows post JA-verbatim — truthful
+        // pending state, never "------"-masked), then the full translation
+        // refreshes in place if still current. Newer fires always supersede;
+        // currency checks prevent inversion.
+        private const int BattleFastMs = 1200;
+        private static async Task<T> WithTimeout<T>(Task<T> full, T fallback, int ms)
+        {
+            if (full.IsCompletedSuccessfully) return await full;
+            if (ms <= 0) return await full;
+            var winner = await Task.WhenAny(full, Task.Delay(ms));
+            if (winner == full) return await full;
+            return fallback;
+        }
+        private static async Task<List<string>> BestEffortRowsAsync(Task<List<string>> full, List<string> jaFallback)
+        {
+            // Blank-check only, with intentional gaps staying blank to match the
+            // full leg: IsUnpublishable would nuke JA-verbatim into "------",
+            // but the pending JA text IS the truthful fast state.
+            var fb = new List<string>(jaFallback.Count);
+            foreach (var j in jaFallback) fb.Add(string.IsNullOrEmpty(j) ? "" : j);
+            return await WithTimeout(full, fb, BattleFastMs);
+        }
+
+        private async Task TranslateAndPublishBattleAsync(string sig, BattleFrame.BattleSlots slots)
+        {
+            try
+            {
+                // Whole-frame fan-out: top + all rows start together, wall time is
+                // the slowest row, not the sum. Results land back in slot order.
+                var topFull = (slots.Top.Length > 0 && slots.Top == _lastBattleTopJa) ? Task.FromResult(_lastBattleTopEn)
+                    : (string.IsNullOrWhiteSpace(slots.Top) ? Task.FromResult("") : PrefetchOrTranslateAsync(slots.Top, () => _translationManager.TranslateAsync(slots.Top)));
+                var monFull = TranslateBattleRowsAsync(slots.Monster, _lastBattleMonJa, _lastBattleMonEn, l => TranslateMenuJaRowAsync(l), true);
+                var actFull = TranslateBattleRowsAsync(slots.Action, _lastBattleActJa, _lastBattleActEn, l => TranslateMenuJaRowAsync(l));
+                var rightFull = TranslateBattleRowsAsync(slots.Right, _lastBattleRightJa, _lastBattleRightEn, n => _translationManager.TranslateAsync(n), true);
+                // Fast leg: best-effort inside the state's lifetime. All four
+                // start before the first await, so the frame costs ~1.2s max.
+                var topFastTask = WithTimeout(topFull, slots.Top, BattleFastMs);
+                var monFastTask = BestEffortRowsAsync(monFull, slots.Monster);
+                var actFastTask = BestEffortRowsAsync(actFull, slots.Action);
+                var rightFastTask = BestEffortRowsAsync(rightFull, slots.Right);
+                await Task.WhenAll(topFastTask, monFastTask, actFastTask, rightFastTask);
+                string topEn = await topFastTask;
+                var monEn = await monFastTask;
+                var actEn = await actFastTask;
+                var rightEn = await rightFastTask;
+                // Stale-drop: translation outlived the state it captured. The
+                // newest state always has its own fast fire ~1s behind, so
+                // dropping wrong beats posting wrong.
+                if (_battleFiredSig != sig || _battlePrevSig != sig) { FileLogger.Log($"[battle] stale publish dropped fire={SigTag(sig)} cur={SigTag(_battleFiredSig)}"); return; }
+                FileLogger.Log($"[battle] frame publish top={slots.Top.Length}ch mon={slots.Monster.Count} act={slots.Action.Count} right={slots.Right.Count} fast sig={SigTag(sig)}");
+                BattleFramePublished?.Invoke(slots.Top, topEn, slots.Monster, monEn, slots.Action, actEn, slots.Right, rightEn);
+                // Refresh leg: real EN when the slow rows land, if still current.
+                // Corpus records the full pair only (never JA-verbatim fallbacks).
+                _ = RefreshBattleWhenReadyAsync(sig, slots, topFull, monFull, actFull, rightFull);
+            }
+            catch (Exception ex) { FileLogger.Log($"[battle] ERROR: {ex.Message}"); }
+        }
+        private async Task RefreshBattleWhenReadyAsync(string sig, BattleFrame.BattleSlots slots, Task<string> topFull, Task<List<string>> monFull, Task<List<string>> actFull, Task<List<string>> rightFull)
+        {
+            try
+            {
+                await Task.WhenAll(topFull, monFull, actFull, rightFull);
+                string topEn = await topFull;
+                var monEn = await monFull;
+                var actEn = await actFull;
+                var rightEn = await rightFull;
+                // Memos warm even when superseded (yesterday's behavior: keeps
+                // sticky/prefetch hot for the next fire).
+                _lastBattleTopJa = slots.Top;
+                _lastBattleTopEn = topEn;
+                _lastBattleMonJa = new List<string>(slots.Monster);
+                _lastBattleMonEn = new List<string>(monEn);
+                _lastBattleActJa = new List<string>(slots.Action);
+                _lastBattleActEn = new List<string>(actEn);
+                _lastBattleRightJa = new List<string>(slots.Right);
+                _lastBattleRightEn = new List<string>(rightEn);
+                // Silent when superseded: a newer fire owns the panel, and the
+                // fast leg already posted something truthful. No drop-spam.
+                if (_battleFiredSig != sig || _battlePrevSig != sig) return;
+                FileLogger.Log($"[battle] frame publish top={slots.Top.Length}ch mon={slots.Monster.Count} act={slots.Action.Count} right={slots.Right.Count} full sig={SigTag(sig)}");
+                try { CorpusRecordBubble("battle-frame:fire", slots.Top + "\n" + string.Join("\n", slots.Monster) + "\n" + string.Join("\n", slots.Action) + "\n" + string.Join("\n", slots.Right), topEn + "\n" + string.Join("\n", monEn) + "\n" + string.Join("\n", actEn) + "\n" + string.Join("\n", rightEn)); } catch { }
+                BattleFramePublished?.Invoke(slots.Top, topEn, slots.Monster, monEn, slots.Action, actEn, slots.Right, rightEn);
+            }
+            catch { }
+        }
+
         // Menu Latin-token split (universal machinery, N3): JA rows with embedded fullwidth-Latin
         // art (ＥｏｌｌＰｈｏＥＮＴ-class) translate the JA part only; art reattaches verbatim,
         // never burns CAT. Allowlist/coords/button shapes stay inline. JA bubble text untouched.
@@ -2051,16 +2575,20 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
         {
             try
             {
-                var en = new List<string>();
-                foreach (var r in rows)
+                // Fan-out like the battle path: every row starts together, wall time
+                // is the slowest row. Order preserved by index; sync shortcuts stay.
+                // Faults still fail the whole publish via WhenAll (as before).
+                var tasks = new Task<string>[rows.Count];
+                for (int i = 0; i < rows.Count; i++)
                 {
-                    if (kind == "TITLE") { string tt = string.IsNullOrWhiteSpace(r.t) ? Packs.PackRegistry.Current.FullTitle : r.t; en.Add(Packs.PackRegistry.Current.ApplyTitleFixup(tt) ?? tt); continue; }
-                    if (string.IsNullOrWhiteSpace(r.t)) { en.Add(""); continue; }
-                    if (!r.ja || IsSlotRow(r.t)) { en.Add(r.t); continue; }
-                    string e = await TranslateMenuJaRowAsync(r.t);
-                    if (IsUnpublishable(e)) e = "------";
-                    en.Add(e);
+                    var r = rows[i];
+                    if (kind == "TITLE") { string tt = string.IsNullOrWhiteSpace(r.t) ? Packs.PackRegistry.Current.FullTitle : r.t; tasks[i] = Task.FromResult(Packs.PackRegistry.Current.ApplyTitleFixup(tt) ?? tt); continue; }
+                    if (string.IsNullOrWhiteSpace(r.t)) { tasks[i] = Task.FromResult(""); continue; }
+                    if (!r.ja || IsSlotRow(r.t)) { tasks[i] = Task.FromResult(r.t); continue; }
+                    tasks[i] = TranslateOneMenuRowAsync(r.t);
                 }
+                var got = await Task.WhenAll(tasks);
+                var en = new List<string>(got);
                 FileLogger.Log($"[menu] {kind} -> {en.Count} lines");
                 try { CorpusRecordBubble("menu-fire:" + kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en)); } catch { }
                 MenuTranslated?.Invoke(kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en));
@@ -2069,6 +2597,11 @@ if (quietTitleStatic != null) _ = TranslateAndPublishMenuAsync("TITLE", new List
         }
 
 
+        private async Task<string> TranslateOneMenuRowAsync(string t)
+        {
+            string e = await TranslateMenuJaRowAsync(t);
+            return IsUnpublishable(e) ? "------" : e;
+        }
         private async Task TranslateAndUpdateMenuAsync(string oldSig, List<(int y, string t, bool ja)> rows)
         {
             try

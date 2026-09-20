@@ -23,5 +23,8 @@ namespace WunderLanguage.Host.Packs
         bool IsMenuHeaderRow(string ascii);
         bool KeepSpeakerBrackets { get; }
         System.Collections.Generic.IReadOnlyList<string> Signatures { get; }
+        // Battle command vocabulary (cited per game) for splitting merged action
+        // rows into positional slots. Empty = unknown game, verbatim passthrough.
+        System.Collections.Generic.IReadOnlyList<string> BattleCommands { get; }
     }
 }

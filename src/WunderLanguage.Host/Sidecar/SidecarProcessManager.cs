@@ -9,6 +9,7 @@ namespace WunderLanguage.Host.Sidecar
     public class SidecarProcessManager
     {
         private Process? _process;
+        private string? _pythonExe;
         private readonly List<string> _recentOutput = new();
 
         public async Task StartAsync(IProgress<string>? statusProgress = null)
@@ -17,10 +18,14 @@ namespace WunderLanguage.Host.Sidecar
             statusProgress?.Report("Checking translation engine...");
 
             string? sidecarDir = FindSidecarDirectory();
+            _pythonExe = sidecarDir is null ? null : Path.Combine(sidecarDir, "venv", "Scripts", "python.exe");
             string? runningVersion = await GetRunningVersionAsync();
             string? diskVersion = GetDiskVersion(sidecarDir);
             if (runningVersion is not null && runningVersion == diskVersion)
             {
+                // Adopted, not owned: a previous host may have died dirty
+                // (Task Manager / debugger stop skips OnExit AND ProcessExit),
+                // so Stop() reaps it on OUR exit instead of leaving it immortal.
                 FileLogger.Log($"Reusing healthy sidecar version={runningVersion} - matches disk.");
                 statusProgress?.Report("Translation engine already running.");
                 return;
@@ -38,7 +43,7 @@ namespace WunderLanguage.Host.Sidecar
             if (sidecarDir is null)
                 throw new InvalidOperationException("Could not find the ocr-service folder relative to this app.");
 
-            string pythonExe = Path.Combine(sidecarDir, "venv", "Scripts", "python.exe");
+            string pythonExe = _pythonExe ?? Path.Combine(sidecarDir, "venv", "Scripts", "python.exe");
             FileLogger.Log($"Python exe path: {pythonExe} (exists: {File.Exists(pythonExe)})");
             if (!File.Exists(pythonExe))
                 throw new InvalidOperationException(
@@ -230,6 +235,24 @@ namespace WunderLanguage.Host.Sidecar
             catch
             {
                 // Best effort on shutdown.
+            }
+            // Reuse-path sidecars are adopted, not owned (_process is null).
+            // Reap OUR venv's python so a dirty-killed previous host can't
+            // leave an immortal orphan. Path-matched (never touches a user's
+            // unrelated python), and skipped while another Host is still
+            // alive so a double-launched sibling keeps its engine.
+            if (_process is null && _pythonExe is not null
+                && Process.GetProcessesByName("WunderLanguage.Host").Length <= 1)
+            {
+                foreach (var p in Process.GetProcessesByName("python"))
+                {
+                    try
+                    {
+                        if (string.Equals(p.MainModule?.FileName, _pythonExe, StringComparison.OrdinalIgnoreCase))
+                            p.Kill();
+                    }
+                    catch { }
+                }
             }
         }
     }

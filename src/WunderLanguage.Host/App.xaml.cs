@@ -21,6 +21,12 @@ namespace WunderLanguage.Host
                 FileLogger.Log($"Unobserved task exception: {e.Exception}");
                 e.SetObserved();
             };
+            // Belt-and-braces: OnExit covers clean shutdowns; a crash that skips
+            // it still gets the sidecar reaped here instead of orphaning python.exe.
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            {
+                try { _sidecar.Stop(); } catch { }
+            };
         }
 
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -102,7 +108,12 @@ namespace WunderLanguage.Host
 
         protected override void OnExit(ExitEventArgs e)
         {
-            FileLogger.Log("App exiting - sidecar kept alive for fast relaunch (stale versions auto-replaced by version check)");
+            // The sidecar exits with the app: a lingering python.exe causes more
+            // confusion than the cold-start seconds it saves (stale-pipeline
+            // mismatch, orphaned GPU memory). Crash orphans are still replaced
+            // by the version check on next launch.
+            FileLogger.Log("App exiting - stopping sidecar");
+            try { _sidecar.Stop(); } catch { }
             base.OnExit(e);
         }
     }

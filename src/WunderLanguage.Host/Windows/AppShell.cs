@@ -131,6 +131,7 @@ namespace WunderLanguage.Host.Windows
             controller.TextTranslated += (ja, en) => _sidePanel.ShowTranslation(ja, en);
             controller.MenuTranslated += (kind, ja, en) => _sidePanel.ShowMenu(kind, ja, en);
             controller.MenuUpdated += (oldJa, kind, ja, en) => _sidePanel.UpdateMenuIfMatches(oldJa, kind, ja, en);
+            controller.BattleFramePublished += (topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn) => _sidePanel.ShowOrUpdateBattleFrame(topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn);
             controller.TextUpdated += (oldJa, ja, en) => _sidePanel.UpdateLastTranslationIfMatches(oldJa, ja, en);
             controller.WindowLost += OnCaptureWindowLost;
             return controller;
