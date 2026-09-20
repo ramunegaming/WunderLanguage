@@ -52,7 +52,7 @@ namespace WunderLanguage.Host.Translation
         {
             _apiKey = apiKey;
             _baseUrl = baseUrl;
-            _http = new HttpClient();
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         }
 
         public async Task<string> TranslateAsync(string text, string sourceLang = "JA", string targetLang = "EN", string? context = null)

@@ -499,6 +499,98 @@ def _is_bad_output(out: str) -> str:
     if is_degenerate_english(out):
         return "degenerate-loop"
     return ""
+# Romaji tripwire (generic, all games): pure-Latin output that merely
+# transliterates the kana source is not English. Short names (1-2 tokens)
+# stay exempt so proper nouns keep posting verbatim.
+_ROMAJI_MAP = {}
+for _k, _r in [
+    ("ア","a"),("イ","i"),("ウ","u"),("エ","e"),("オ","o"),
+    ("カ","ka"),("キ","ki"),("ク","ku"),("ケ","ke"),("コ","ko"),
+    ("サ","sa"),("シ","shi"),("ス","su"),("セ","se"),("ソ","so"),
+    ("タ","ta"),("チ","chi"),("ツ","tsu"),("テ","te"),("ト","to"),
+    ("ナ","na"),("ニ","ni"),("ヌ","nu"),("ネ","ne"),("ノ","no"),
+    ("ハ","ha"),("ヒ","hi"),("フ","fu"),("ヘ","he"),("ホ","ho"),
+    ("マ","ma"),("ミ","mi"),("ム","mu"),("メ","me"),("モ","mo"),
+    ("ヤ","ya"),("ユ","yu"),("ヨ","yo"),
+    ("ラ","ra"),("リ","ri"),("ル","ru"),("レ","re"),("ロ","ro"),
+    ("ワ","wa"),("ヲ","wo"),("ン","n"),
+    ("ガ","ga"),("ギ","gi"),("グ","gu"),("ゲ","ge"),("ゴ","go"),
+    ("ザ","za"),("ジ","ji"),("ズ","zu"),("ゼ","ze"),("ゾ","zo"),
+    ("ダ","da"),("ヂ","ji"),("ヅ","zu"),("デ","de"),("ド","do"),
+    ("バ","ba"),("ビ","bi"),("ブ","bu"),("ベ","be"),("ボ","bo"),
+    ("パ","pa"),("ピ","pi"),("プ","pu"),("ペ","pe"),("ポ","po"),
+]:
+    _ROMAJI_MAP[_k] = _r
+    try:
+        _ROMAJI_MAP[chr(ord(_k) - 0x60)] = _r  # hiragana counterparts
+    except Exception:
+        pass
+_SMALL_KANA_VOWEL = {"ャ":"a","ュ":"u","ョ":"o","ゃ":"a","ゅ":"u","ょ":"o","ァ":"a","ィ":"i","ゥ":"u","ェ":"e","ォ":"o","ぁ":"a","ぃ":"i","ぅ":"u","ぇ":"e","ぉ":"o"}
+def _romaji_fold(s: str) -> str:
+    try:
+        pieces = []
+        for ch in (s or ""):
+            if ch in ("ッ", "っ"):
+                pieces.append("\x01")  # sokuon: double next consonant
+                continue
+            if ch == "ー":
+                for c in reversed(pieces):
+                    if c in "aeiou":
+                        pieces.append(c)
+                        break
+                continue
+            if ch in _SMALL_KANA_VOWEL:
+                if pieces and pieces[-1] not in ("", "\x01"):
+                    prev = pieces[-1]
+                    if prev.endswith("i") and len(prev) >= 2:
+                        pieces[-1] = prev[:-1] + _SMALL_KANA_VOWEL[ch]
+                        continue
+                pieces.append(_SMALL_KANA_VOWEL[ch])
+                continue
+            r = _ROMAJI_MAP.get(ch)
+            if r is None:
+                continue
+            pieces.append(r)
+        flat = "".join(pieces)
+        flat = re.sub("\x01([bcdfghjklmnpqrstvwxyz])", r"\1\1", flat)
+        return flat.replace("\x01", "")
+    except Exception:
+        return ""
+def _romaji_output(src: str, out: str) -> bool:
+    try:
+        words = re.findall(r"[a-z]{2,}", (out or "").lower())
+        if len(words) < 3:
+            return False
+        folded = _romaji_fold(src or "")
+        if len(folded) < 6:
+            return False
+        hits = 0
+        for w in words:
+            if w in folded:
+                hits += 1
+                continue
+            L = len(w)
+            for ln in (L - 1, L, L + 1):
+                if ln < 2 or ln > len(folded):
+                    continue
+                for i in range(len(folded) - ln + 1):
+                    if _confusion_lev_le2(w, folded[i:i + ln]) <= 1:
+                        hits += 1
+                        break
+                else:
+                    continue
+                break
+        return hits / len(words) >= 0.6
+    except Exception:
+        return False
+def _output_bad(src_text: str, out: str, target_lang: str) -> str:
+    bad = _is_bad_output(out) if target_lang.lower() == "en" else ""
+    if not bad and target_lang.lower() == "en":
+        bad = _coverage_fail(src_text, out)
+    if not bad and target_lang.lower() == "en" and _romaji_output(src_text, out):
+        print(f"[WunderLanguage] flagged unreliable reason=romaji for \"{_confusion_esc(out[:60])}\"")
+        bad = "wrong-language"
+    return bad
 def is_negation_mismatch(ja: str, en: str) -> bool:
     if not ja or not en:
         return False
@@ -518,7 +610,10 @@ def _run_generation(src_text: str, src_lang_name: str, tgt_lang_name: str):
     prompt = CAT_TRANSLATE_PROMPT.format(src_lang=src_lang_name, tgt_lang=tgt_lang_name, src_text=src_text)
     user_input = [{"role": "user", "content": prompt}]
     _t0 = time.time()
-    response = cat_translate_pipeline(user_input, max_new_tokens=120, do_sample=False)
+    # Short battle rows must not pay a 120-token generation: cap output tokens
+    # by input length (long dialogue still gets the full 120).
+    _max_tokens = max(40, min(120, len(src_text) * 3))
+    response = cat_translate_pipeline(user_input, max_new_tokens=_max_tokens, do_sample=False)
     dt = time.time() - _t0
     print(f"[WunderLanguage] CAT-Translate generation took {dt:.2f}s for {len(src_text)} input characters.")
     return _parse_out(response)
@@ -574,15 +669,13 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
     src_lang_name = LANGUAGE_CODE_NAMES.get(source_lang.lower(), source_lang)
     tgt_lang_name = LANGUAGE_CODE_NAMES.get(target_lang.lower(), target_lang)
     out = apply_english_fixups(_run_generation(src_text, src_lang_name, tgt_lang_name), src_text)
-    bad = _is_bad_output(out) if target_lang.lower() == "en" else ""
-    if not bad and target_lang.lower() == "en":
-        bad = _coverage_fail(src_text, out)
+    bad = _output_bad(src_text, out, target_lang)
     if bad in ("degenerate-loop", "wrong-language"):
         alt = strip_trailing_ellipsis(src_text)
         if alt and alt != src_text:
             print("[WunderLanguage] retrying once reason=ellipsis-strip")
             out2 = apply_english_fixups(_run_generation(alt, src_lang_name, tgt_lang_name), src_text)
-            bad2 = _is_bad_output(out2)
+            bad2 = _output_bad(src_text, out2, target_lang)
             if not bad2:
                 print("[WunderLanguage] retry kept")
                 return out2, False, ""
