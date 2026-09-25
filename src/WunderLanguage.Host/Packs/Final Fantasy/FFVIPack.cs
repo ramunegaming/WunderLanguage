@@ -79,10 +79,77 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("たたからひっさつねざ", "たたかうひっさつわざ"),
             ("ただからひっきつれざ", "たたかうひっさつわざ"),
             ("ただからひっきつねざ", "たたかうひっさつわざ"),
+            // Standalone ability garbles (cited: 19/6/6 fires): normalize to
+            // the canonical form so the glossary hits every loop (no CAT/DeepL
+            // flicker). Substring shape also repairs merged forms containing them.
+            ("ひっさつねざ", "ひっさつわざ"),
+            ("ひっきつれざ", "ひっさつわざ"),
+            ("ひっきうねぎ", "ひっさつわざ"),
+            // Screenshot-cited 2026-09-26: merged + standalone forms of the
+            // ひっきつかさ flicker (ability row came through raw, unpinned).
+            ("ただからひっきつかさ", "たたかうひっさつわざ"),
+            ("ひっきつかさ", "ひっさつわざ"),
+            // Grey-item garbles (cited: dim battle-unusable rows — panel shot,
+            // live log, crop replication each gave a different misread).
+            ("スートボウク", "オートボウガン"),
+            ("スートボック", "オートボウガン"),
+            ("スートボウル", "オートボウガン"),
+            // Panel-cited 2026-09-26: dim オートボウガン read ブートだった
+            // (EN went "I was a boot."). Same shape, literal row as always.
+            ("ブートだった", "オートボウガン"),
+            // Panel-cited 2026-09-26: same row read ブートボウル ("Boot Bowl").
+            ("ブートボウル", "オートボウガン"),
+            // Log-cited 2026-09-26: same row read スートファンの.
+            ("スートファンの", "オートボウガン"),
         };
         // Battle command vocabulary (cited): fight / ability / magic / item.
         // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
         public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まほう", "アイテム" };
+        // Battle monster vocabulary (cited: panel/screenshot/log loops this
+        // chat — OCR flickers エビオルニス/エピオルニス/エヒオルニス/
+        // エヒプルニス and シビーラビット/シピーラビット/ンビーラビット,
+        // so all variants split). Pre-warms the session memo
+        // so cold multi-type fights split one-line-each on first sight.
+        public static readonly string[] MonsterVocabulary = { "エビオルニス", "エピオルニス", "エヒオルニス", "エヒプルニス", "シビーラビット", "シピーラビット", "ンビーラビット" };
+        // Battle item vocabulary (cited: item-box screenshots, incl. scrolled
+        // rows 2026-09-26). だっシューズ rides as a spelling variant (game
+        // pixels read ダッシューズ; both split). Extend as scrolling reveals more.
+        public static readonly string[] ItemVocabulary = { "ポーション", "ハイポーション", "ねぶくろ", "テント", "フェニックスのお", "オートボウガン", "エアナイフ", "ダッシューズ", "だっシューズ", "ナイトのこころえ", "ガントレット", "ダガー", "かわのぼうし", "レザーアーマー", "めぐすり" };
+        // Weapon-select slot labels (cited: equip box). ひだりで rides along:
+        // OCR reads ひだりて's て as で about half the time.
+        public static readonly string[] WeaponLabels = { "みぎて", "ひだりて", "ひだりで" };
+        // Battle UI glossary (cited: FFVI official command/item names).
+        // ひっさつわざ pinned per user: Special move (was Blitz).
+        // Exact-match only — merged rows and names stay on the live path.
+        public static readonly (string ja, string en)[] BattleGlossary =
+        {
+            ("たたかう", "Fight"),
+            ("ひっさつわざ", "Special move"),
+            ("ぬすむ", "Steal"),
+            ("まほう", "Magic"),
+            ("アイテム", "Item"),
+            // Party name pin (user-cited): マッシュ renders Matthew.
+            ("マッシュ", "Matthew"),
+            ("ポーション", "Potion"),
+            ("ハイポーション", "Hi-Potion"),
+            ("ねぶくろ", "Sleeping Bag"),
+            ("テント", "Tent"),
+            ("フェニックスのお", "Phoenix Down"),
+            ("オートボウガン", "Auto Crossbow"),
+            ("エアナイフ", "Air Knife"),
+            ("ダッシューズ", "Dash Shoes"),
+            ("だっシューズ", "Dash Shoes"),
+            // Scrolled rows (cited 2026-09-26). ナイトのこころえ deliberately
+            // unglossed (no certain EN) — live translation covers it.
+            ("ガントレット", "Gauntlet"),
+            ("ダガー", "Dagger"),
+            ("かわのぼうし", "Leather Hat"),
+            ("レザーアーマー", "Leather Armor"),
+            ("めぐすり", "Eye Drops"),
+            ("みぎて", "Right"),
+            ("ひだりて", "Left"),
+            ("ひだりで", "Left"),
+        };
         public static readonly (string from, string to)[] DisplayFixups = { };
         public const string TitleMarker = "FINAL FANTASY";
         public const string FullTitle = "FINAL FANTASY VI";
@@ -100,7 +167,14 @@ namespace WunderLanguage.Host.Packs.FFVI
         public static string ApplyButtonContextFixups(string fixed_) => fixed_;
         public static string ApplyVoiceTailFixups(string fixed_) => fixed_;
         public static string? ApplyTitleFixup(string japaneseSource) => null;
-        public static string ApplyEnNounFixups(string english, string japaneseSource) => english;
+        public static string ApplyEnNounFixups(string english, string japaneseSource)
+        {
+            // Party name pin (user-cited): マッシュ renders Matthew everywhere,
+            // including dialogue lines that never pass the battle glossary.
+            if (japaneseSource.Contains("マッシュ", System.StringComparison.Ordinal))
+                english = System.Text.RegularExpressions.Regex.Replace(english, @"\bMassh\b|\bMash\b", "Matthew");
+            return english;
+        }
         public static readonly string[] Signatures = { "ティナ", "ケフカ", "フィガロ", "ナルシェ", "リターナー", "バナン", "ガストラ" };
         public static bool KeepSpeakerBrackets => true;
         public static string ApplyGameOverRowFixups(string p) => p;
@@ -130,6 +204,10 @@ namespace WunderLanguage.Host.Packs.FFVI
         public bool KeepSpeakerBrackets => FfviPack.KeepSpeakerBrackets;
         public System.Collections.Generic.IReadOnlyList<string> Signatures => FfviPack.Signatures;
         public System.Collections.Generic.IReadOnlyList<string> BattleCommands => FfviPack.BattleCommands;
+        public System.Collections.Generic.IReadOnlyList<string> MonsterVocabulary => FfviPack.MonsterVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => FfviPack.ItemVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => FfviPack.WeaponLabels;
+        public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => FfviPack.BattleGlossary;
         public bool IsMenuHeaderRow(string ascii) => FfviPack.IsMenuHeaderRow(ascii);
     }
 }

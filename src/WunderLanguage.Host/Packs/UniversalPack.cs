@@ -20,6 +20,10 @@ namespace WunderLanguage.Host.Packs
         public static string ApplyEnNounFixups(string english, string japaneseSource) => english;
         public static readonly string[] Signatures = { };
         public static readonly string[] BattleCommands = { };
+        public static readonly string[] MonsterVocabulary = { };
+        public static readonly string[] ItemVocabulary = { };
+        public static readonly string[] WeaponLabels = { };
+        public static readonly (string ja, string en)[] BattleGlossary = { };
         public static bool KeepSpeakerBrackets => false;
         public static string ApplyGameOverRowFixups(string p) => p;
         public static bool IsMenuHeaderRow(string ascii)
@@ -57,6 +61,10 @@ namespace WunderLanguage.Host.Packs
         public bool KeepSpeakerBrackets => UniversalPack.KeepSpeakerBrackets;
         public System.Collections.Generic.IReadOnlyList<string> Signatures => UniversalPack.Signatures;
         public System.Collections.Generic.IReadOnlyList<string> BattleCommands => UniversalPack.BattleCommands;
+        public System.Collections.Generic.IReadOnlyList<string> MonsterVocabulary => UniversalPack.MonsterVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => UniversalPack.ItemVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => UniversalPack.WeaponLabels;
+        public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => UniversalPack.BattleGlossary;
         public bool IsMenuHeaderRow(string ascii) => UniversalPack.IsMenuHeaderRow(ascii);
     }
 }
