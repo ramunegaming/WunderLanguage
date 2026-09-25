@@ -33,6 +33,12 @@ namespace WunderLanguage.Host.Windows
         private Border? _battleActJaBox;
         private FrameworkElement? _battleLeftJaCell;
         private StackPanel? _battleRightJaHost;
+        private Border? _battleItemJaBox;
+        private StackPanel? _battleItemJaLeft;
+        private StackPanel? _battleItemJaRight;
+        private Border? _battleWeaponJaBox;
+        private StackPanel? _battleWeaponJaHost;
+        private FrameworkElement? _battleJaHalfGrid;
         private StackPanel? _battleEnTopHost;
         private Border? _battleEnTopBox;
         private StackPanel? _battleMonEnHost;
@@ -41,6 +47,12 @@ namespace WunderLanguage.Host.Windows
         private Border? _battleActEnBox;
         private FrameworkElement? _battleLeftEnCell;
         private StackPanel? _battleRightEnHost;
+        private Border? _battleEnItemBox;
+        private StackPanel? _battleEnItemLeft;
+        private StackPanel? _battleEnItemRight;
+        private Border? _battleEnWeaponBox;
+        private StackPanel? _battleEnWeaponHost;
+        private FrameworkElement? _battleEnHalfGrid;
         // Battle boxes mirror small in-game pixel text: one game row must stay
         // one panel row ("name 3" never wraps). Single knob for all battle text.
         private const int BattleFontSize = 9;
@@ -227,13 +239,20 @@ namespace WunderLanguage.Host.Windows
         // (monster + overlapping action menu), bottom-right stay drawn in
         // fixed positions for the whole fight. Only CONTENTS refresh — the
         // action box alone despawns on cooldown and reappears after.
-        private void RefreshBattleHalf(StackPanel topHost, Border topBox, StackPanel monHost, Border monBox, StackPanel actHost, Border actBox, FrameworkElement leftCell, StackPanel rightHost, string top, List<string> mon, List<string> act, List<string> right)
+        private void RefreshBattleHalf(StackPanel topHost, Border topBox, StackPanel monHost, Border monBox, StackPanel actHost, Border actBox, FrameworkElement leftCell, StackPanel rightHost, Border itemBox, StackPanel itemLeft, StackPanel itemRight, Border weaponBox, StackPanel weaponHost, FrameworkElement halfGrid, string top, List<string> mon, List<string> act, List<string> right, List<string> item, List<string> weapon)
         {
-            RefreshAsciiRows(topHost, string.IsNullOrWhiteSpace(top) ? new List<string>() : new List<string> { top }, BattleFontSize);
+            RefreshAsciiRows(topHost, string.IsNullOrWhiteSpace(top) ? new List<string>() : new List<string> { top }, BattleFontSize, true);
             topBox.Visibility = Visibility.Visible;
-            RefreshAsciiRows(monHost, mon, BattleFontSize);
-            RefreshAsciiRows(actHost, ActRows(act), BattleFontSize);
-            RefreshAsciiRows(rightHost, right, BattleFontSize);
+            RefreshAsciiRows(monHost, mon, BattleFontSize, true);
+            RefreshAsciiRows(actHost, ActRows(act), BattleFontSize, true);
+            RefreshAsciiRows(rightHost, right, BattleFontSize, true);
+            RefreshItemBox(itemBox, itemLeft, itemRight, item);
+            RefreshWeaponBox(weaponBox, weaponHost, weapon);
+            // Mockup layering: behind boxes always stay drawn — a new box
+            // opens ON TOP (action over monster, item over action+bottom row,
+            // weapon over item) and despawns on close, never replacing the
+            // row underneath.
+            halfGrid.Visibility = Visibility.Visible;
             monBox.Visibility = Visibility.Visible;
             FitBattleRows(monHost, monBox);
             FitBattleRows(actHost, actBox);
@@ -252,19 +271,27 @@ namespace WunderLanguage.Host.Windows
         // One game row stays one panel row: shrink a battle box's rows
         // uniformly to fit its widest row, measured with real font metrics
         // against the real box width — no pixel math, no DPI/fallback-font
-        // guessing. Floor + Wrap backstop: overflow degrades to wrapping,
-        // never clipping. Deferred to Loaded so ActualWidth is exact (and
-        // harmless on rapid refreshes: it always measures current children).
-        private void FitBattleRows(StackPanel host, Border box)
+        // guessing. Floor + NoWrap: rows shrink, never wrap, never clip.
+        // Collapsed boxes (closed overlays) have no width by design — skip
+        // silently. Deferred to Render (after layout) so ActualWidth is exact;
+        // retries cover the first tick before layout lands.
+        private void FitBattleRows(StackPanel host, Border box, double widthDiv = 1.0, int attempt = 0)
         {
             try
             {
+                if (box.Visibility != Visibility.Visible) return;
                 Dispatcher.BeginInvoke(() =>
                 {
                     try
                     {
-                        double avail = box.ActualWidth - box.Padding.Left - box.Padding.Right;
-                        if (avail <= 20) { FileLogger.Log($"[battle] autofit skip avail={avail:0} (box not laid out; next refresh retries)"); return; }
+                        if (box.Visibility != Visibility.Visible) return;
+                        double avail = (box.ActualWidth - box.Padding.Left - box.Padding.Right) / widthDiv;
+                        if (avail <= 20)
+                        {
+                            if (attempt < 5) FitBattleRows(host, box, widthDiv, attempt + 1);
+                            else FileLogger.Log($"[battle] autofit skip avail={avail:0} rows={host.Children.Count}");
+                            return;
+                        }
                         var dpi = VisualTreeHelper.GetDpi(this);
                         var tf = new Typeface(new FontFamily("MS Gothic, NSimSun, Consolas, Courier New"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
                         double ratio = 1.0;
@@ -286,12 +313,94 @@ namespace WunderLanguage.Host.Windows
                         }
                     }
                     catch { }
-                }, DispatcherPriority.Loaded);
+                }, DispatcherPriority.Render);
             }
             catch { }
         }
 
-        private void BuildBattleHalf(StackPanel parent, Brush textBrush, Brush innerBrush, string top, List<string> mon, List<string> act, List<string> right, bool withBottomMargin, out StackPanel topHost, out Border topBox, out StackPanel monHost, out Border monBox, out StackPanel actHost, out Border actBox, out FrameworkElement leftCell, out StackPanel rightHost)
+        // Item box: full-width 2-column grid between the top bar and the
+        // bottom row. Pairs arrive "left\tRight"; missing sides render
+        // full-height blank so rows stay aligned. Despawns on close like the
+        // action box; scroll states just refresh in place.
+        private static List<(string l, string r)> SplitItemPairs(List<string> pairs)
+        {
+            var out_ = new List<(string l, string r)>(pairs?.Count ?? 0);
+            foreach (var q in pairs ?? new List<string>())
+            {
+                string p = q ?? "";
+                int ti = p.IndexOf('\t');
+                string l = ti < 0 ? p : p.Substring(0, ti);
+                string r = ti < 0 ? "" : p.Substring(ti + 1);
+                if (l.Length == 0) l = "　";
+                if (r.Length == 0) r = "　";
+                out_.Add((l, r));
+            }
+            return out_;
+        }
+        private void RefreshItemBox(Border itemBox, StackPanel itemLeft, StackPanel itemRight, List<string> item)
+        {
+            var rows = SplitItemPairs(item);
+            RefreshAsciiRows(itemLeft, rows.ConvertAll(p => p.l), BattleFontSize, true);
+            RefreshAsciiRows(itemRight, rows.ConvertAll(p => p.r), BattleFontSize, true);
+            itemBox.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            FitBattleRows(itemLeft, itemBox, 2.0);
+            FitBattleRows(itemRight, itemBox, 2.0);
+        }
+        // Weapon box (mockup "Weapon Select Open"): full-width single-column
+        // rows (slot labels + weapon names) over the item box, like
+        // the on-top equip box in-game. Despawns on close; selection changes
+        // just refresh in place.
+        private void RefreshWeaponBox(Border weaponBox, StackPanel weaponHost, List<string> weapon)
+        {
+            RefreshAsciiRows(weaponHost, weapon, BattleFontSize, true);
+            weaponBox.Visibility = weapon.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            FitBattleRows(weaponHost, weaponBox);
+        }
+        private void BuildWeaponBox(Panel parent, Brush textBrush, Brush coverBrush, List<string> weapon, out Border weaponBox, out StackPanel weaponHost)
+        {
+            weaponHost = new StackPanel();
+            weaponBox = new Border
+            {
+                BorderBrush = textBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 0, 0, 0),
+                Background = coverBrush,
+                Visibility = Visibility.Collapsed,
+                Child = weaponHost
+            };
+            Panel.SetZIndex(weaponBox, 3);
+            parent.Children.Add(weaponBox);
+            RefreshWeaponBox(weaponBox, weaponHost, weapon);
+        }
+        private void BuildItemBox(Panel parent, Brush textBrush, Brush coverBrush, List<string> item, out Border itemBox, out StackPanel itemLeft, out StackPanel itemRight)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50, GridUnitType.Star) });
+            itemLeft = new StackPanel { Margin = new Thickness(0, 0, 4, 0) };
+            itemRight = new StackPanel { Margin = new Thickness(4, 0, 0, 0) };
+            Grid.SetColumn(itemRight, 1);
+            grid.Children.Add(itemLeft);
+            grid.Children.Add(itemRight);
+            itemBox = new Border
+            {
+                BorderBrush = textBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 8, 10, 8),
+                // Peek strip: the cover sits 12px below the cell top so the
+                // top borders of the boxes beneath stay visible (in-game box
+                // stack effect) instead of a full replace.
+                Margin = new Thickness(0, 12, 0, 0),
+                Background = coverBrush,
+                Visibility = Visibility.Collapsed,
+                Child = grid
+            };
+            Panel.SetZIndex(itemBox, 2);
+            parent.Children.Add(itemBox);
+            RefreshItemBox(itemBox, itemLeft, itemRight, item);
+        }
+        private void BuildBattleHalf(StackPanel parent, Brush textBrush, Brush innerBrush, string top, List<string> mon, List<string> act, List<string> right, List<string> item, List<string> weapon, bool withBottomMargin, out StackPanel topHost, out Border topBox, out StackPanel monHost, out Border monBox, out StackPanel actHost, out Border actBox, out FrameworkElement leftCell, out StackPanel rightHost, out Border itemBox, out StackPanel itemLeft, out StackPanel itemRight, out Border weaponBox, out StackPanel weaponHost, out FrameworkElement halfGrid)
         {
             topHost = new StackPanel();
             topBox = new Border
@@ -303,20 +412,24 @@ namespace WunderLanguage.Host.Windows
                 Visibility = Visibility.Visible
             };
             if (!string.IsNullOrWhiteSpace(top))
-                AddAsciiRows(topHost, new List<string> { top }, BattleFontSize);
+                AddAsciiRows(topHost, new List<string> { top }, BattleFontSize, true);
             topBox.Child = topHost;
             parent.Children.Add(topBox);
-            var half = new Grid { Margin = withBottomMargin ? new Thickness(0, 0, 0, 8) : new Thickness(0, 0, 0, 0) };
+            // One bottom cell, Z layers: the half grid is always drawn at Z0;
+            // the action box (Z1), item box (Z2) and weapon box (Z3) are opaque
+            // covers in the SAME cell — a new box opens ABOVE the previous
+            // (a layer above, not north of it), and the row underneath returns
+            // current on close. No layout jumps, no replace.
+            var bottomCell = new Grid { Margin = withBottomMargin ? new Thickness(0, 0, 0, 8) : new Thickness(0, 0, 0, 0) };
+            var half = new Grid { Margin = new Thickness(0, 0, 0, 0) };
             // 38/62 mirrors the in-game bottom boxes (monster ~37% measured);
-            // doubles as wrap room so one game row stays one panel row.
+            // doubles as shrink room so one game row stays one panel row.
             half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38, GridUnitType.Star) });
             half.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62, GridUnitType.Star) });
+            // Left cell: the monster box fills it edge to edge. The action box
+            // no longer squeezes in beside it — it overlays in front (actLayer
+            // Z1 below, same 38/62 split so it lands where the game puts it).
             var cell = new Grid { Margin = new Thickness(0, 0, 4, 0) };
-            // Action-heavy split: 6-kana abilities (ひっきつれざ-class) must fit
-            // one panel row. The monster box spans both columns behind the
-            // overlay anyway, so only the visible peek narrows.
-            cell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22, GridUnitType.Star) });
-            cell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78, GridUnitType.Star) });
             monBox = new Border
             {
                 BorderBrush = textBrush,
@@ -326,26 +439,9 @@ namespace WunderLanguage.Host.Windows
                 Visibility = Visibility.Visible
             };
             monHost = new StackPanel();
-            AddAsciiRows(monHost, mon, BattleFontSize);
+            AddAsciiRows(monHost, mon, BattleFontSize, true);
             monBox.Child = monHost;
-            Grid.SetColumnSpan(monBox, 2);
             cell.Children.Add(monBox);
-            actBox = new Border
-            {
-                BorderBrush = textBrush,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 8, 10, 8),
-                Margin = new Thickness(6, 0, 4, 0),
-                Background = innerBrush,
-                Visibility = act.Count == 0 ? Visibility.Collapsed : Visibility.Visible
-            };
-            actHost = new StackPanel();
-            AddAsciiRows(actHost, ActRows(act), BattleFontSize);
-            FitBattleRows(monHost, monBox);
-            FitBattleRows(actHost, actBox);
-            actBox.Child = actHost;
-            Grid.SetColumn(actBox, 1);
-            cell.Children.Add(actBox);
             Grid.SetColumn(cell, 0);
             half.Children.Add(cell);
             leftCell = cell;
@@ -357,14 +453,48 @@ namespace WunderLanguage.Host.Windows
                 Margin = new Thickness(4, 0, 0, 0)
             };
             rightHost = new StackPanel();
-            AddAsciiRows(rightHost, right, BattleFontSize);
+            AddAsciiRows(rightHost, right, BattleFontSize, true);
             rightBox.Child = rightHost;
             Grid.SetColumn(rightBox, 1);
             half.Children.Add(rightBox);
-            parent.Children.Add(half);
+            bottomCell.Children.Add(half);
+            // Action overlay (mockup state 1): in front of the half-grid (Z1),
+            // under item (Z2) / weapon (Z3). Same 38/62 split as half so the
+            // box sits over the monster zone where the game puts it.
+            // Collapsed when closed so the monster box shows through
+            // untouched; one row per command, the blank magic slot holding
+            // the positional gap (まほう posts there on magic characters).
+            var actLayer = new Grid { Margin = new Thickness(0, 0, 0, 0), IsHitTestVisible = false };
+            actLayer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38, GridUnitType.Star) });
+            actLayer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62, GridUnitType.Star) });
+            actBox = new Border
+            {
+                BorderBrush = textBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(14, 4, 6, 4),
+                Background = innerBrush,
+                Visibility = act.Count == 0 ? Visibility.Collapsed : Visibility.Visible
+            };
+            actHost = new StackPanel();
+            AddAsciiRows(actHost, ActRows(act), BattleFontSize, true);
+            actBox.Child = actHost;
+            Grid.SetColumn(actBox, 0);
+            actLayer.Children.Add(actBox);
+            Panel.SetZIndex(actLayer, 1);
+            bottomCell.Children.Add(actLayer);
+            FitBattleRows(monHost, monBox);
+            FitBattleRows(actHost, actBox);
+            BuildItemBox(bottomCell, textBrush, innerBrush, item, out itemBox, out itemLeft, out itemRight);
+            BuildWeaponBox(bottomCell, textBrush, innerBrush, weapon, out weaponBox, out weaponHost);
+            parent.Children.Add(bottomCell);
+            // Behind boxes always stay drawn (Z0); covers toggle above them.
+            // The row keeps refreshing silently underneath either way.
+            halfGrid = half;
+            halfGrid.Visibility = Visibility.Visible;
         }
 
-        public void ShowOrUpdateBattleFrame(string topJa, string topEn, List<string> monJa, List<string> monEn, List<string> actJa, List<string> actEn, List<string> rightJa, List<string> rightEn)
+        public void ShowOrUpdateBattleFrame(string topJa, string topEn, List<string> monJa, List<string> monEn, List<string> actJa, List<string> actEn, List<string> rightJa, List<string> rightEn, List<string> itemJa, List<string> itemEn, List<string> weaponJa, List<string> weaponEn)
         {
             Dispatcher.Invoke(() =>
             {
@@ -375,19 +505,21 @@ namespace WunderLanguage.Host.Windows
                 }
                 bool wasAtBottom = HistoryScroller.VerticalOffset >= HistoryScroller.ScrollableHeight - AtBottomThresholdPx;
                 string stamp = System.DateTime.Now.ToString("HH:mm:ss");
-                string jaSummary = "BATTLE\n" + topJa + "\n" + string.Join("\n", monJa) + "\n" + string.Join("\n", actJa) + "\n" + string.Join("\n", rightJa);
-                string enSummary = topEn + "\n" + string.Join("\n", monEn) + "\n" + string.Join("\n", actEn) + "\n" + string.Join("\n", rightEn);
+                string jaSummary = "BATTLE\n" + topJa + "\n" + string.Join("\n", monJa) + "\n" + string.Join("\n", actJa) + "\n" + string.Join("\n", rightJa) + "\n" + string.Join("\n", itemJa) + "\n" + string.Join("\n", weaponJa);
+                string enSummary = topEn + "\n" + string.Join("\n", monEn) + "\n" + string.Join("\n", actEn) + "\n" + string.Join("\n", rightEn) + "\n" + string.Join("\n", itemEn) + "\n" + string.Join("\n", weaponEn);
                 if (_battleIsLast && _lastBattleEntry != null
                     && _battleJaTopHost != null && _battleJaTopBox != null
                     && _battleMonJaHost != null && _battleMonJaBox != null && _battleActJaHost != null && _battleActJaBox != null && _battleLeftJaCell != null && _battleRightJaHost != null
+                    && _battleItemJaBox != null && _battleItemJaLeft != null && _battleItemJaRight != null && _battleWeaponJaBox != null && _battleWeaponJaHost != null && _battleJaHalfGrid != null
                     && _battleEnTopHost != null && _battleEnTopBox != null
-                    && _battleMonEnHost != null && _battleMonEnBox != null && _battleActEnHost != null && _battleActEnBox != null && _battleLeftEnCell != null && _battleRightEnHost != null)
+                    && _battleMonEnHost != null && _battleMonEnBox != null && _battleActEnHost != null && _battleActEnBox != null && _battleLeftEnCell != null && _battleRightEnHost != null
+                    && _battleEnItemBox != null && _battleEnItemLeft != null && _battleEnItemRight != null && _battleEnWeaponBox != null && _battleEnWeaponHost != null && _battleEnHalfGrid != null)
                 {
-                    RefreshBattleHalf(_battleJaTopHost, _battleJaTopBox, _battleMonJaHost, _battleMonJaBox, _battleActJaHost, _battleActJaBox, _battleLeftJaCell, _battleRightJaHost, topJa, monJa, actJa, rightJa);
-                    RefreshBattleHalf(_battleEnTopHost, _battleEnTopBox, _battleMonEnHost, _battleMonEnBox, _battleActEnHost, _battleActEnBox, _battleLeftEnCell, _battleRightEnHost, topEn, monEn, actEn, rightEn);
+                    RefreshBattleHalf(_battleJaTopHost, _battleJaTopBox, _battleMonJaHost, _battleMonJaBox, _battleActJaHost, _battleActJaBox, _battleLeftJaCell, _battleRightJaHost, _battleItemJaBox, _battleItemJaLeft, _battleItemJaRight, _battleWeaponJaBox, _battleWeaponJaHost, _battleJaHalfGrid, topJa, monJa, actJa, rightJa, itemJa, weaponJa);
+                    RefreshBattleHalf(_battleEnTopHost, _battleEnTopBox, _battleMonEnHost, _battleMonEnBox, _battleActEnHost, _battleActEnBox, _battleLeftEnCell, _battleRightEnHost, _battleEnItemBox, _battleEnItemLeft, _battleEnItemRight, _battleEnWeaponBox, _battleEnWeaponHost, _battleEnHalfGrid, topEn, monEn, actEn, rightEn, itemEn, weaponEn);
                     if (_history.Count > 0)
                         _history[^1] = (_history[^1].time, jaSummary, enSummary);
-                    FileLogger.Log($"[battle] panel refresh top={topJa.Length}ch mon={monJa.Count} act={actJa.Count} right={rightJa.Count}");
+                    FileLogger.Log($"[battle] panel refresh top={topJa.Length}ch mon={monJa.Count} act={actJa.Count} right={rightJa.Count} item={itemJa.Count} weapon={weaponJa.Count}");
                     if (wasAtBottom)
                         Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
                     return;
@@ -428,14 +560,14 @@ namespace WunderLanguage.Host.Windows
                     Padding = new Thickness(12, 10, 12, 10)
                 };
                 var inner = new StackPanel();
-                BuildBattleHalf(inner, textBrush, innerBrush, topJa, monJa, actJa, rightJa, true, out var jaTopHost, out var jaTopBox, out var monJaHost, out var monJaBox, out var actJaHost, out var actJaBox, out var leftJaCell, out var rightJaHost);
+                BuildBattleHalf(inner, textBrush, innerBrush, topJa, monJa, actJa, rightJa, itemJa, weaponJa, true, out var jaTopHost, out var jaTopBox, out var monJaHost, out var monJaBox, out var actJaHost, out var actJaBox, out var leftJaCell, out var rightJaHost, out var jaItemBox, out var jaItemLeft, out var jaItemRight, out var jaWeaponBox, out var jaWeaponHost, out var jaHalfGrid);
                 inner.Children.Add(new Border
                 {
                     BorderBrush = textBrush,
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Margin = new Thickness(0, 8, 0, 8)
                 });
-                BuildBattleHalf(inner, textBrush, innerBrush, topEn, monEn, actEn, rightEn, false, out var enTopHost, out var enTopBox, out var monEnHost, out var monEnBox, out var actEnHost, out var actEnBox, out var leftEnCell, out var rightEnHost);
+                BuildBattleHalf(inner, textBrush, innerBrush, topEn, monEn, actEn, rightEn, itemEn, weaponEn, false, out var enTopHost, out var enTopBox, out var monEnHost, out var monEnBox, out var actEnHost, out var actEnBox, out var leftEnCell, out var rightEnHost, out var enItemBox, out var enItemLeft, out var enItemRight, out var enWeaponBox, out var enWeaponHost, out var enHalfGrid);
                 outer.Child = inner;
                 container.Children.Add(outer);
                 HistoryPanel.Children.Add(container);
@@ -449,6 +581,12 @@ namespace WunderLanguage.Host.Windows
                 _battleActJaBox = actJaBox;
                 _battleLeftJaCell = leftJaCell;
                 _battleRightJaHost = rightJaHost;
+                _battleItemJaBox = jaItemBox;
+                _battleItemJaLeft = jaItemLeft;
+                _battleItemJaRight = jaItemRight;
+                _battleWeaponJaBox = jaWeaponBox;
+                _battleWeaponJaHost = jaWeaponHost;
+                _battleJaHalfGrid = jaHalfGrid;
                 _battleEnTopHost = enTopHost;
                 _battleEnTopBox = enTopBox;
                 _battleMonEnHost = monEnHost;
@@ -457,8 +595,14 @@ namespace WunderLanguage.Host.Windows
                 _battleActEnBox = actEnBox;
                 _battleLeftEnCell = leftEnCell;
                 _battleRightEnHost = rightEnHost;
+                _battleEnItemBox = enItemBox;
+                _battleEnItemLeft = enItemLeft;
+                _battleEnItemRight = enItemRight;
+                _battleEnWeaponBox = enWeaponBox;
+                _battleEnWeaponHost = enWeaponHost;
+                _battleEnHalfGrid = enHalfGrid;
                 _history.Add((stamp, jaSummary, enSummary));
-                FileLogger.Log($"[battle] panel new top={topJa.Length}ch mon={monJa.Count} act={actJa.Count} right={rightJa.Count}");
+                FileLogger.Log($"[battle] panel new top={topJa.Length}ch mon={monJa.Count} act={actJa.Count} right={rightJa.Count} item={itemJa.Count} weapon={weaponJa.Count}");
                 if (wasAtBottom)
                     Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
             });
@@ -565,13 +709,18 @@ namespace WunderLanguage.Host.Windows
             return out_;
         }
 
-        private void AddAsciiRows(StackPanel host, List<string> lines, int fontSize)
+        // Battle rows pass noWrap=true: one game row stays one panel row —
+        // shrink-to-fit (FitBattleRows) instead of wrapping. Menus keep Wrap.
+        private void AddAsciiRows(StackPanel host, List<string> lines, int fontSize, bool noWrap = false)
         {
             var textBrush = (Brush)FindResource("TextBrush");
             var mono = new FontFamily("MS Gothic, NSimSun, Consolas, Courier New");
             foreach (var line in lines)
             {
-                if (string.IsNullOrWhiteSpace(line))
+                // Intentional battle gaps ("　") render as full-height blank
+                // rows so 4-line menus hold their slots; everywhere else a
+                // short spacer stays.
+                if (string.IsNullOrWhiteSpace(line) && !(noWrap && line == "　"))
                 {
                     host.Children.Add(new Border { Height = 10 });
                     continue;
@@ -582,16 +731,16 @@ namespace WunderLanguage.Host.Windows
                     FontFamily = mono,
                     FontSize = fontSize,
                     Foreground = textBrush,
-                    TextWrapping = TextWrapping.Wrap,
+                    TextWrapping = noWrap ? TextWrapping.NoWrap : TextWrapping.Wrap,
                     Margin = new Thickness(0, 2, 0, 2)
                 });
             }
         }
 
-        private void RefreshAsciiRows(StackPanel host, List<string> lines, int fontSize)
+        private void RefreshAsciiRows(StackPanel host, List<string> lines, int fontSize, bool noWrap = false)
         {
             host.Children.Clear();
-            AddAsciiRows(host, lines, fontSize);
+            AddAsciiRows(host, lines, fontSize, noWrap);
         }
 
         private FrameworkElement BuildAsciiMenuEntry(string stamp, string kind, List<string> jaLines, List<string> enLines)

@@ -245,6 +245,10 @@ namespace WunderLanguage.Host.Packs.Zelda
         }
         public static readonly string[] Signatures = { "ゼルダ", "ハイラル", "トライフォース", "アグニム" };
         public static readonly string[] BattleCommands = { };
+        public static readonly string[] MonsterVocabulary = { };
+        public static readonly string[] ItemVocabulary = { };
+        public static readonly string[] WeaponLabels = { };
+        public static readonly (string ja, string en)[] BattleGlossary = { };
         public static bool KeepSpeakerBrackets => false;
         public static string ApplyGameOverRowFixups(string p)
         {
@@ -293,6 +297,10 @@ namespace WunderLanguage.Host.Packs.Zelda
         public bool KeepSpeakerBrackets => ZeldaPack.KeepSpeakerBrackets;
         public System.Collections.Generic.IReadOnlyList<string> Signatures => ZeldaPack.Signatures;
         public System.Collections.Generic.IReadOnlyList<string> BattleCommands => ZeldaPack.BattleCommands;
+        public System.Collections.Generic.IReadOnlyList<string> MonsterVocabulary => ZeldaPack.MonsterVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => ZeldaPack.ItemVocabulary;
+        public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => ZeldaPack.WeaponLabels;
+        public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => ZeldaPack.BattleGlossary;
         public bool IsMenuHeaderRow(string ascii) => ZeldaPack.IsMenuHeaderRow(ascii);
     }
 }
