@@ -101,6 +101,19 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("ブートボウル", "オートボウガン"),
             // Log-cited 2026-09-26: same row read スートファンの.
             ("スートファンの", "オートボウガン"),
+            // Log-cited 2026-09-28: grey オートボウガン stably misread
+            // データの (10+ consecutive loops, panel-proven). Distinctive;
+            // action-slot risk nil (that text never occurs there).
+            ("データの", "オートボウガン"),
+            // Log-cited 2026-09-28: お母＋ fragment read of ダッシューズ.
+            ("お母ッシューズ", "ダッシューズ"),
+            // Log-cited 2026-09-28: same row read オートだった / オートバック,
+            // ハイポーション read ハイホーション, bare オートボウガン read
+            // イートボック. Same shape, literal rows as always.
+            ("オートだった", "オートボウガン"),
+            ("オートバック", "オートボウガン"),
+            ("ハイホーション", "ハイポーション"),
+            ("イートボック", "オートボウガン"),
         };
         // Battle command vocabulary (cited): fight / ability / magic / item.
         // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
@@ -113,8 +126,10 @@ namespace WunderLanguage.Host.Packs.FFVI
         public static readonly string[] MonsterVocabulary = { "エビオルニス", "エピオルニス", "エヒオルニス", "エヒプルニス", "シビーラビット", "シピーラビット", "ンビーラビット" };
         // Battle item vocabulary (cited: item-box screenshots, incl. scrolled
         // rows 2026-09-26). だっシューズ rides as a spelling variant (game
-        // pixels read ダッシューズ; both split). Extend as scrolling reveals more.
-        public static readonly string[] ItemVocabulary = { "ポーション", "ハイポーション", "ねぶくろ", "テント", "フェニックスのお", "オートボウガン", "エアナイフ", "ダッシューズ", "だっシューズ", "ナイトのこころえ", "ガントレット", "ダガー", "かわのぼうし", "レザーアーマー", "めぐすり" };
+        // pixels read ダッシューズ; both split). デッシューズ (log-cited
+        // 2026-09-28 misread) rides too, split-only. Extend as scrolling
+        // reveals more.
+        public static readonly string[] ItemVocabulary = { "ポーション", "ハイポーション", "ねぶくろ", "テント", "フェニックスのお", "オートボウガン", "エアナイフ", "ダッシューズ", "だっシューズ", "デッシューズ", "ナイトのこころえ", "ガントレット", "ダガー", "かわのぼうし", "レザーアーマー", "めぐすり" };
         // Weapon-select slot labels (cited: equip box). ひだりで rides along:
         // OCR reads ひだりて's て as で about half the time.
         public static readonly string[] WeaponLabels = { "みぎて", "ひだりて", "ひだりで" };

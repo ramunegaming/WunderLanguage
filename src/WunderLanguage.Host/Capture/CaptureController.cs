@@ -77,6 +77,11 @@ namespace WunderLanguage.Host.Capture
         // the monster box when open; stickiness keeps the frame steady instead of
         // blanking every time the player picks a command.
         private List<string> _battleMonsterSticky = new();
+        // Last seen item pair rows ("left\tRight") within the current open
+        // box. Grey-row OCR flicker (dots↔empty per loop) would otherwise
+        // collapse and re-post positions every few loops; memory holds slots
+        // steady. Cleared with everything else when the box closes.
+        private List<string> _battleItemSticky = new();
         // Menu grace after battle: transitions clear the fired mark before the
         // frame refires; menus stay silent a few loops more so no MENU dupe
         // lands mid-fight. Decremented per menu pass; battle frames never see it.
@@ -2143,7 +2148,7 @@ namespace WunderLanguage.Host.Capture
             if ((cls == 3 || cls == 4) && !InBattleContext()) cls = 0;
             // Leaving battle clears the fired mark: an identical fight later refires
             // (panel spawns new only if other text came between), menus flow again.
-            if (cls == 0) { _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); return; }
+            if (cls == 0) { _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); return; }
             // Any battle-classified loop refreshes grace, so the countdown only
             // starts once battle truly ends (fires set it too, same value).
             _battleCooldown = 6;
@@ -2155,6 +2160,18 @@ namespace WunderLanguage.Host.Capture
             // まえば-class flicker stays dialogue-suppressed but never posts,
             // so the top bar sits empty until real post-fight rewards arrive.
             slots = slots with { Top = slots.Top.Length < 4 ? "" : slots.Top };
+            // Party-slot dust guard (mirrors the monster one): standalone
+            // single-kana rows (lone だ/ェ) never post; bare counts stay.
+            slots = slots with
+            {
+                Right = slots.Right.Where(r =>
+                {
+                    string t = r.Trim();
+                    if (t.Length != 1) return true;
+                    SplitRowDigits(r, out string nm, out _);
+                    return string.IsNullOrWhiteSpace(nm);
+                }).ToList()
+            };
             // Overlap bit: action rows normalize through pack fixups, then split
             // on pack command vocabulary into positional rows (blank magic gap).
             var normAction = slots.Action.ConvertAll(a => ApplyZeldaOcrFixups(a));
@@ -2194,6 +2211,36 @@ namespace WunderLanguage.Host.Capture
                 return !string.IsNullOrWhiteSpace(nm);
             });
             var itemJa = BuildItemPairs(slots.Item);
+            // Item memory: fill blank sides from last-seen rows so grey-row
+            // flicker holds positions instead of collapsing. Strict guards so
+            // memory can never invent or misplace: same pair count (same
+            // layout), blank sides only, and a blank side fills only when the
+            // pair's other side matches memory (same row) — or when both
+            // sides are blank (whole-row restore within a matched layout).
+            // Anything else posts fresh and rewarms memory. Counts ride
+            // inside remembered rows verbatim; new sightings overwrite.
+            {
+                var mem = _battleItemSticky;
+                if (mem.Count > 0 && itemJa.Count == mem.Count)
+                {
+                    var held = new List<string>(itemJa.Count);
+                    for (int i = 0; i < itemJa.Count; i++)
+                    {
+                        SplitItemPair(itemJa[i], out string cl, out string cr);
+                        SplitItemPair(mem[i], out string ml, out string mr);
+                        string l = cl, r = cr;
+                        if (string.IsNullOrWhiteSpace(cl) && string.IsNullOrWhiteSpace(cr)) { l = ml; r = mr; }
+                        else
+                        {
+                            if (string.IsNullOrWhiteSpace(cl) && cr == mr) l = ml;
+                            if (string.IsNullOrWhiteSpace(cr) && cl == ml) r = mr;
+                        }
+                        held.Add(l + "\t" + r);
+                    }
+                    itemJa = held;
+                }
+                _battleItemSticky = new List<string>(itemJa);
+            }
             // Weapon rows post verbatim (slot labels + weapon names, mockup
             // equip box — no counts, no command gate).
             var weaponJa = new List<string>(slots.Weapon);
@@ -2342,13 +2389,32 @@ namespace WunderLanguage.Host.Capture
                     if (!((c >= '0' && c <= '9') || (c >= '０' && c <= '９'))) { isDigits = false; break; }
                 if (isDigits) digs.Add(k); else names.Add(k);
             }
+            // Trailing single-kana dust (だ/は/が particles, ェ fragments
+            // glued by same-Y joining) is never name content: strip it so
+            // pins like マッシュ→Matthew keep hitting. Digits untouched;
+            // single-token names (フェニックスのお) never match this shape.
+            while (names.Count > 0 && names[names.Count - 1].Length == 1 && IsKanaChar(names[names.Count - 1][0]))
+                names.RemoveAt(names.Count - 1);
             if (digs.Count == 0) return;
             name = string.Join(" ", names); digits = string.Join(" ", digs);
+        }
+        private static void SplitItemPair(string row, out string left, out string right)
+        {
+            string src = row ?? "";
+            int ti = src.IndexOf('\t');
+            left = ti < 0 ? src : src.Substring(0, ti);
+            right = ti < 0 ? "" : src.Substring(ti + 1);
+        }
+        private static bool IsKanaChar(char c)
+        {
+            return (c >= 'ぁ' && c <= 'ん') || (c >= 'ァ' && c <= 'ヶ') || c == 'ー' || (c >= 'ｦ' && c <= 'ﾟ');
         }
         private async Task<string> TranslateRowSplitAsync(string row, System.Func<string, System.Threading.Tasks.Task<string>> translateOne, bool simMemo = false)
         {
             SplitRowDigits(row, out string name, out string digits);
-            if (string.IsNullOrWhiteSpace(name)) return row;
+            // Dust-only rows (a lone だ/ェ with no name and no digits) post
+            // nothing; digit-only rows still post verbatim below.
+            if (string.IsNullOrWhiteSpace(name)) return string.IsNullOrWhiteSpace(digits) ? "" : row;
             if (string.IsNullOrEmpty(digits))
             {
                 string whole = await PrefetchOrTranslateAsync(row, () => translateOne(row));
@@ -2528,7 +2594,21 @@ namespace WunderLanguage.Host.Capture
                 // are worse than none). Complete reads zip exactly as before.
                 bool hasHold = items.Any(s => string.IsNullOrWhiteSpace(s));
                 var column = new System.Collections.Generic.List<string>();
-                for (int i = 0; i < items.Count; i++)
+                // End-anchored zip (complete-window gate): bright reads whose
+                // middle rows vanished without a dots trace still place
+                // first↔first and last↔last, blanks in the middle. Only the
+                // full 4-digit window carries complete information; middles
+                // stay bare (a middle name could sit on either side of its
+                // digit). Logged: a grey first row would misplace its count.
+                if (!hasHold && digits.Count == 4 && items.Count >= 2 && items.Count < 4)
+                {
+                    FileLogger.Log($"[battle] item-endanchor names={items.Count}");
+                    column.Add(items[0].TrimEnd() + " ： " + digits[0]);
+                    for (int b = 0; b < digits.Count - items.Count; b++) column.Add("　");
+                    for (int k = 1; k < items.Count - 1; k++) column.Add(items[k]);
+                    column.Add(items[items.Count - 1].TrimEnd() + " ： " + digits[digits.Count - 1]);
+                }
+                else for (int i = 0; i < items.Count; i++)
                 {
                     string it = items[i];
                     if (string.IsNullOrWhiteSpace(it)) { column.Add("　"); continue; }
@@ -2550,7 +2630,10 @@ namespace WunderLanguage.Host.Capture
             {
                 string l = colItems.Count > 0 && r < colItems[0].Count ? colItems[0][r] : "";
                 string rr = colItems.Count > 1 && r < colItems[1].Count ? colItems[1][r] : "";
-                if (l.Length == 0 && rr.Length == 0) continue;
+                // Blank holds ("　") are whitespace: an all-blank pair is an
+                // empty row, not content. The old Length==0 check let 4×blank
+                // phantoms fire and wipe real text (the "refused" item box).
+                if (string.IsNullOrWhiteSpace(l) && string.IsNullOrWhiteSpace(rr)) continue;
                 rows.Add(l + "\t" + rr);
             }
             // Pack OCR fixups over assembled pairs: grey-item garbles cited per
@@ -2608,7 +2691,7 @@ namespace WunderLanguage.Host.Capture
                 int pos = 0;
                 var gap = new System.Text.StringBuilder();
                 bool inDots = false;
-                void FlushGap() { string g = gap.ToString().Trim().TrimEnd('」', '』', '】', '〉', '》', '\'', '"'); if (g.Length >= 2) out_.Add(g); gap.Clear(); }
+                void FlushGap() { string g = gap.ToString().Trim(); if (g.Length < 2) { gap.Clear(); return; } if (g.Length > 12) g = "　"; out_.Add(g); gap.Clear(); }
                 void MatchSeg(string seg)
                 {
                     int p = 0;
@@ -2631,6 +2714,10 @@ namespace WunderLanguage.Host.Capture
                     // Spaces join: OCR spacing noise inside names (エア ナイフ
                     // must still match エアナイフ). Digits/colons/dots bound.
                     if (ch == ' ' || ch == '　') { pos++; continue; }
+                    // Nakaguro word separators (MangaOCR emits テント・X):
+                    // boundary like colons, but never a grey-row hold
+                    // (unlike dots-runs).
+                    if (ch == '・') { FlushSeg(); FlushGap(); inDots = false; pos++; continue; }
                     bool isDots = ch == '．' || ch == '.' || ch == '…';
                     bool isBleed = isDots || ch == '：' || ch == ':' || (ch >= '0' && ch <= '9') || (ch >= '０' && ch <= '９');
                     if (!isBleed) { inDots = false; seg.Append(ch); pos++; continue; }
