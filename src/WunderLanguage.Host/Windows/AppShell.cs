@@ -29,6 +29,12 @@ namespace WunderLanguage.Host.Windows
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
         private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
         private const int GWLP_HWNDPARENT = -8;
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+        [DllImport("shcore.dll")]
+        private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+        private const int MDT_EFFECTIVE_DPI = 0;
 
         private static IntPtr SetWindowOwner(IntPtr hWnd, IntPtr owner)
         {
@@ -61,6 +67,42 @@ namespace WunderLanguage.Host.Windows
         private CaptureController _captureController;
         private double _dpiScaleX = 1.0;
         private double _dpiScaleY = 1.0;
+        private DateTime _lastDpiFailLog = DateTime.MinValue;
+
+        // Dock scale comes from the EMULATOR's monitor, fresh every dock —
+        // never the startup-cached topBar value. Under PerMonitorV2 this is
+        // live truth (also self-heals cross-monitor drags).
+        private void RefreshDockDpi()
+        {
+            uint dx = 0, dy = 0;
+            IntPtr mon = IntPtr.Zero;
+            int hr = -1;
+            try
+            {
+                mon = MonitorFromWindow(_emulatorHandle, MONITOR_DEFAULTTONEAREST);
+                if (mon != IntPtr.Zero) hr = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, out dx, out dy);
+            }
+            catch { }
+            if (hr == 0 && dx >= 96 && dy >= 96)
+            {
+                double sx = dx / 96.0, sy = dy / 96.0;
+                if (Math.Abs(sx - _dpiScaleX) > 0.001 || Math.Abs(sy - _dpiScaleY) > 0.001)
+                    FileLogger.Log($"Dock DPI refreshed {_dpiScaleX:0.00}x{_dpiScaleY:0.00} -> {sx:0.00}x{sy:0.00}");
+                _dpiScaleX = sx; _dpiScaleY = sy;
+                return;
+            }
+            if (DateTime.UtcNow - _lastDpiFailLog > TimeSpan.FromSeconds(30))
+            {
+                _lastDpiFailLog = DateTime.UtcNow;
+                FileLogger.Log($"Dock DPI API hr={hr} mon=0x{mon:X} dpi={dx}x{dy} — falling back to framework value.");
+            }
+            try
+            {
+                var dpi = VisualTreeHelper.GetDpi(_topBar);
+                _dpiScaleX = dpi.DpiScaleX; _dpiScaleY = dpi.DpiScaleY;
+            }
+            catch { }
+        }
         private IntPtr _topBarHandle;
         private IntPtr _sidePanelHandle;
         private IntPtr _bottomBarHandle;
@@ -131,7 +173,7 @@ namespace WunderLanguage.Host.Windows
             controller.TextTranslated += (ja, en) => _sidePanel.ShowTranslation(ja, en);
             controller.MenuTranslated += (kind, ja, en) => _sidePanel.ShowMenu(kind, ja, en);
             controller.MenuUpdated += (oldJa, kind, ja, en) => _sidePanel.UpdateMenuIfMatches(oldJa, kind, ja, en);
-            controller.BattleFramePublished += (topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn) => _sidePanel.ShowOrUpdateBattleFrame(topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn);
+            controller.BattleFramePublished += (topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn, itemJa, itemEn, weaponJa, weaponEn) => _sidePanel.ShowOrUpdateBattleFrame(topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn, itemJa, itemEn, weaponJa, weaponEn);
             controller.TextUpdated += (oldJa, ja, en) => _sidePanel.UpdateLastTranslationIfMatches(oldJa, ja, en);
             controller.WindowLost += OnCaptureWindowLost;
             return controller;
@@ -533,11 +575,12 @@ namespace WunderLanguage.Host.Windows
 
         private void OnBoundsChanged(Rectangle windowBounds)
         {
+            RefreshDockDpi();
             int topBarHeightPx = (int)Math.Round(TopBarHeight * _dpiScaleY);
             int bottomBarHeightPx = (int)Math.Round(BottomBarHeight * _dpiScaleY);
             int sidePanelWidthPx = (int)Math.Round(SidePanelWidth * _dpiScaleX);
             int marginPx = (int)Math.Round(Margin * _dpiScaleX);
-            const int ShadowCompensationDip = 2;
+            const int ShadowCompensationDip = 3;
             int shadowCompensationPxX = Math.Max(0, (int)Math.Round(ShadowCompensationDip * _dpiScaleX) - 1);
             int shadowCompensationPxY = Math.Max(0, (int)Math.Round(ShadowCompensationDip * _dpiScaleY) - 1);
             int left = windowBounds.Left;
@@ -552,6 +595,14 @@ namespace WunderLanguage.Host.Windows
                 $"OnBoundsChanged: windowBounds=(L{windowBounds.Left},T{windowBounds.Top},R{windowBounds.Right},B{windowBounds.Bottom}) " +
                 $"derived left={left} top={top} right={right} bottom={bottom} width={width} height={height} " +
                 $"dpiX={_dpiScaleX} dpiY={_dpiScaleY}");
+            // Seam diagnostic (logging only): live shadow insets per edge so
+            // the overlap amount is measured, never guessed again.
+            try
+            {
+                if (WindowCapture.TryGetUserRect(_emulatorHandle, out var userEmu))
+                    FileLogger.Log($"  seam shadow T/B/L/R={windowBounds.Top - userEmu.Top}/{userEmu.Bottom - windowBounds.Bottom}/{windowBounds.Left - userEmu.Left}/{userEmu.Right - windowBounds.Right}");
+            }
+            catch { }
             IntPtr hdwp = BeginDeferWindowPos(3);
             if (hdwp != IntPtr.Zero)
             {
