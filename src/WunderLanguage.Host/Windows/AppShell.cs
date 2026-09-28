@@ -543,7 +543,17 @@ namespace WunderLanguage.Host.Windows
         // already know what this does by then).
         public void RunCalibration(bool showIntroPrompt)
         {
-            if (showIntroPrompt)
+            // Companion bars bury the calibration overlay wherever they
+            // overlap it (their 150ms z-pairing beats its neutered timer),
+            // making the window corners under them unreachable. Hide the bars
+            // for the whole flow; restore after, honoring a minimized
+            // emulator. try/finally so cancel paths restore too.
+            bool barsHidden = false;
+            try
+            {
+                _topBar.Hide(); _sidePanel.Hide(); _bottomBar.Hide();
+                barsHidden = true;
+                if (showIntroPrompt)
             {
                 var prompt = new GameRegionPromptWindow();
                 TrackPopup(prompt);
@@ -571,6 +581,14 @@ namespace WunderLanguage.Host.Windows
 
             if (WindowCapture.TryGetWindowBounds(_emulatorHandle, out var bounds))
                 OnBoundsChanged(bounds);
+            }
+            finally
+            {
+                if (barsHidden && !WindowCapture.IsMinimized(_emulatorHandle))
+                {
+                    _topBar.Show(); _sidePanel.Show(); _bottomBar.Show();
+                }
+            }
         }
 
         private void OnBoundsChanged(Rectangle windowBounds)

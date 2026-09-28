@@ -47,6 +47,11 @@ namespace WunderLanguage.Host.Windows
         private void Canvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _dragStart = e.GetPosition(OverlayCanvas);
+            // Capture the mouse for the drag: without this, fast movement
+            // (or crossing window edges) stops MouseMove delivery and the
+            // rect freezes short of where the cursor actually went — e.g.
+            // the bottom edge becomes unreachable.
+            try { Mouse.Capture(OverlayCanvas, CaptureMode.Element); } catch { }
             SelectionRect.Visibility = Visibility.Visible;
             ConfirmPanel.Visibility = Visibility.Collapsed;
             UpdateSelectionVisual(_dragStart.Value, _dragStart.Value);
@@ -65,6 +70,7 @@ namespace WunderLanguage.Host.Windows
             if (_dragStart is null)
                 return;
 
+            try { OverlayCanvas.ReleaseMouseCapture(); } catch { }
             var end = e.GetPosition(OverlayCanvas);
             var rect = new Rect(_dragStart.Value, end);
             _dragStart = null;
@@ -115,11 +121,33 @@ namespace WunderLanguage.Host.Windows
             double screenLeftDip = Left + _selection.Value.Left;
             double screenTopDip = Top + _selection.Value.Top;
 
+            // True scale MEASURED from our own overlay window (HWND physical
+            // px ÷ DIP size), never reported: DPI APIs disagreed with reality
+            // for whole sessions after display churn (stale-144 ghost), which
+            // poisoned saved regions 1.2x too big (desktop garbage in OCR).
+            // Falls back to construction values if unmeasurable.
+            double scaleX = _dpiScaleX, scaleY = _dpiScaleY;
+            try
+            {
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (hwnd != IntPtr.Zero && ActualWidth > 10 && ActualHeight > 10 &&
+                    Capture.WindowCapture.TryGetUserRect(hwnd, out var phys) && phys.Width > 10 && phys.Height > 10)
+                {
+                    double mx = (double)phys.Width / ActualWidth, my = (double)phys.Height / ActualHeight;
+                    if (mx > 0.5 && mx < 3.0 && my > 0.5 && my < 3.0)
+                    {
+                        scaleX = mx; scaleY = my;
+                        FileLogger.Log($"[calibrate] measured scale {scaleX:0.000}x{scaleY:0.000} (ctor was {_dpiScaleX:0.00}x{_dpiScaleY:0.00})");
+                    }
+                }
+            }
+            catch { }
+
             CalibratedPhysicalBounds = new System.Drawing.Rectangle(
-                (int)(screenLeftDip * _dpiScaleX),
-                (int)(screenTopDip * _dpiScaleY),
-                (int)(_selection.Value.Width * _dpiScaleX),
-                (int)(_selection.Value.Height * _dpiScaleY));
+                (int)(screenLeftDip * scaleX),
+                (int)(screenTopDip * scaleY),
+                (int)(_selection.Value.Width * scaleX),
+                (int)(_selection.Value.Height * scaleY));
 
             DialogResult = true;
             Close();
