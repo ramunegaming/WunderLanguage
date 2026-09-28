@@ -124,6 +124,18 @@ namespace WunderLanguage.Host.Capture
             bounds = Rectangle.Empty;
             return false;
         }
+        // Raw USER32 readback (no DWM): true on-screen frame including
+        // shadows. Same coordinate space as SetWindowPos. Diagnostic use.
+        public static bool TryGetUserRect(IntPtr hWnd, out Rectangle bounds)
+        {
+            if (GetWindowRect(hWnd, out RECT rect))
+            {
+                bounds = new Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+                return true;
+            }
+            bounds = Rectangle.Empty;
+            return false;
+        }
         public static Bitmap CaptureWindow(IntPtr hWnd)
         {
             if (!GetWindowRect(hWnd, out RECT rect))
