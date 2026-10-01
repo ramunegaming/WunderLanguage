@@ -82,6 +82,32 @@ namespace WunderLanguage.Host.Capture
         // collapse and re-post positions every few loops; memory holds slots
         // steady. Cleared with everything else when the box closes.
         private List<string> _battleItemSticky = new();
+        // Item-box-open latch: set when an item fire carries content, cleared
+        // when the box demonstrably closes (action/monster rows visible, full
+        // battle wipe). While set, the bottom band belongs to the item box —
+        // scrolled short rows (bottom-of-list views too sparse for tall
+        // columns) assemble as item rows instead of scattering to
+        // monster/right slots. Cited 2026-10-01: bottom 〈ダウン〉 soup fired
+        // as a monster while めぐすり leaked to party.
+        private bool _itemBoxOpen;
+        // Carry slot: cls==0 rescue promotion computes synthetic columns
+        // before the early-return below; the main path consumes them after.
+        // Always cleared on consume so one frame can never poison the next.
+        private List<string>? _rescueCarry;
+        // Item settle gate (cited 2026-10-01, user-endorsed "works it out
+        // and sticks to it"): item-carrying fires post only on two
+        // consecutive identical assemblies, so grey flicker (clean↔garble
+        // alternation) holds last-stable instead of flipping the panel.
+        // Cost: ~1 loop of latency on real changes; monster/action-only
+        // frames keep instant fire. Separate prev-sig per fire site so
+        // blank-box and content assemblies don't cross-hold each other.
+        private string _battleItemFirePrev = "";
+        private string _battleBlankFirePrev = "";
+        // Hysteresis counters (cited 2026-10-01: grey flicker dwells 2+
+        // loops per state, so plain 2-repeat still flips the panel —
+        // consistency needs content-aware patience).
+        private int _battleItemFireRuns;
+        private int _battleItemFiredContent;
         // Menu grace after battle: transitions clear the fired mark before the
         // frame refires; menus stay silent a few loops more so no MENU dupe
         // lands mid-fight. Decremented per menu pass; battle frames never see it.
@@ -113,6 +139,9 @@ namespace WunderLanguage.Host.Capture
 
         private string? _lastFrameHash;
         private string? _pendingFrameHash;
+        // Frame-hash novelty history + current-frame flag (see loop).
+        private readonly System.Collections.Generic.Queue<string> _recentFrameHashes = new();
+        private bool _lastFrameNovel = true;
         private int _pendingFrameStableCount;
         private const int RequiredPreOcrStablePolls = 1;
         // S1.1 startup warmup: settled-OCR count since Start (not wall time, so tired
@@ -393,7 +422,11 @@ namespace WunderLanguage.Host.Capture
             // Build capability line: logs self-identify which behavior set is live,
             // so a stale exe can never again masquerade as the current build.
             // Bump the tag on every behavior batch.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            // Build tag: bump the tail token EVERY behavior batch so a log
+            // instantly convicts which binary produced it (cited 2026-10-01:
+            // a stale binary's panel was debugged as current — wasted a full
+            // round). Tokens are chronological batch markers.
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -440,6 +473,8 @@ namespace WunderLanguage.Host.Capture
                         _focusHoldActive = false;
                         _lastFrameHash = null;
                         _pendingFrameHash = null;
+                        _recentFrameHashes.Clear();
+                        _lastFrameNovel = true;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
@@ -501,6 +536,15 @@ namespace WunderLanguage.Host.Capture
                     }
 
                     _lastFrameHash = frameHash;
+                    // Frame-hash novelty history (cited 2026-10-01: cursor
+                    // blink cycles pixels A,B,A,B with identical content —
+                    // each novel-vs-last frame re-OCRs and grey rows re-read
+                    // differently, flip-flopping the panel with zero game
+                    // motion). Repeats within recent history mark oscillation,
+                    // not change. UpdateBattleFrame holds content on those.
+                    _lastFrameNovel = !_recentFrameHashes.Contains(frameHash);
+                    _recentFrameHashes.Enqueue(frameHash);
+                    while (_recentFrameHashes.Count > 8) _recentFrameHashes.Dequeue();
                     FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
 
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
@@ -556,7 +600,7 @@ namespace WunderLanguage.Host.Capture
                     try
                     {
                         string battleTop = "";
-                        int battleClass = BattleFrame.Classify(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, out battleTop);
+                        int battleClass = BattleFrame.Classify(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, out battleTop, _itemBoxOpen);
                         if (battleClass == 2)
                         {
                             // Rewards live in the battle frame now (UpdateBattleFrame
@@ -584,12 +628,28 @@ namespace WunderLanguage.Host.Capture
                             FileLogger.Log($"[battle] weapon box owns bottom (dialogue suppressed)");
                             extractedText = string.Empty;
                         }
+                        else if (battleClass == 0 && InBattleContext() && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese))
+                        {
+                            // Scroll-remnant hold: fragmented item frames
+                            // (1-col, short rows) are battle-owned but
+                            // unclassifiable — they hold the panel, never
+                            // dialogue-fire (2026-09-30 scroll hallucinations).
+                            FileLogger.Log($"[battle] remnant holds bottom (dialogue suppressed)");
+                            extractedText = string.Empty;
+                        }
                     }
                     catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
                     // Suppresses whole screen in both tiers: header, arrows,
                     // END and blobs cost nothing and post nothing.
-                    if (IsKanaChartScreen(ocrBlocks))
+                    // Battle veto (cited 2026-10-01: open item box reads
+                    // 20+ kana with zero kanji per column, tripping this
+                    // gate for 8s until scroll breaks the blob shape).
+                    // Name entry never happens mid-battle; battle-shaped
+                    // frames route to the battle handlers below instead.
+                    if (IsKanaChartScreen(ocrBlocks)
+                        && !BattleFrame.IsBattle(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, _itemBoxOpen)
+                        && !(_itemBoxOpen && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese)))
                     {
                         FileLogger.Log($"[loop {iteration}] chart-suppressed (kana input grid)");
                         _menuStableCount = 0;
@@ -1912,12 +1972,19 @@ namespace WunderLanguage.Host.Capture
             // Battle wiring only: party-status cells drop, tall X-disjoint columns
             // never merge. Geometry lives in BattleFrame.cs; gated on battle shape
             // so non-battle frames group exactly as before.
-            bool battleFrame = BattleFrame.IsBattle(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels);
-            if (_battleCooldown > 0) _battleCooldown--;
+            bool battleFrame = BattleFrame.IsBattle(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, _itemBoxOpen);
+            // Latch freeze (cited 2026-10-01 bottom spiral: empty-slot
+            // frames classify 0 for many loops, draining grace to a wipe
+            // that kills context+latch — then every bottom fragment
+            // dialogue-fires). An open box holds grace until it closes.
+            if (_battleCooldown > 0 && !_itemBoxOpen) _battleCooldown--;
             // Battle owns its rows while a frame is live (plus grace): menu stays
             // silent so the feed shows one frame, never a frame plus a MENU dupe.
+            // Scroll remnants stay silent too (same hold as the dialogue guard).
             // Non-battle and pre-frame menus flow exactly as before.
             if (battleFrame && (_battleFiredSig != "" || _battleCooldown > 0)) return;
+            if (!battleFrame && (_battleFiredSig != "" || _battleCooldown > 0)
+                && BattleFrame.IsBattleRemnant(blocks, _battleFrameW, _battleFrameH, HasJapanese)) return;
             var lines = new List<(int y, List<OcrBlock> parts)>();
             foreach (var b in blocks.OrderBy(b => b.Y))
             {
@@ -2141,18 +2208,82 @@ namespace WunderLanguage.Host.Capture
         // the action menu never blanks them.
         private void UpdateBattleFrame(List<OcrBlock> blocks)
         {
+            // Latch expiry: mid-band JA means non-item UI (field, mid
+            // dialogue, name entry) — the box is no longer what's on
+            // screen. Top-band text coexists with an open box (mid-battle
+            // messages) and bottom-only frames never expire it (empty-slot
+            // study keeps the latch; the blank-fire covers those).
+            if (_itemBoxOpen && HasMidJa(blocks)) _itemBoxOpen = false;
+            _lastAnchorS = 0;
+            _rescueCarry = null;
+            // Box-close detector (load-bearing for the latch): action commands
+            // visible in the bottom band mean the action box is back, so the
+            // item box is closed. Runs on raw blocks BEFORE extraction —
+            // post-slots the action text would already be claimed away by
+            // latched gates and the latch could never clear (every action
+            // frame would route to item forever).
+            if (BottomHasCommands(blocks)) _itemBoxOpen = false;
             string topRaw;
-            int cls = BattleFrame.Classify(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, out topRaw);
+            int cls = BattleFrame.Classify(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, out topRaw, _itemBoxOpen);
             // Item box and weapon box are trusted only mid-battle (battle context); elsewhere
             // they fall through to menu/dialogue handling below.
             if ((cls == 3 || cls == 4) && !InBattleContext()) cls = 0;
             // Leaving battle clears the fired mark: an identical fight later refires
             // (panel spawns new only if other text came between), menus flow again.
-            if (cls == 0) { _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); return; }
+            // Grace hold (cited 2026-09-30): a single unclassifiable frame —
+            // OCR dropout (0 blocks) or scroll fragment — must not wipe
+            // context while cooldown is alive, or the item box falls to
+            // dialogue mid-scroll. The wipe lands once cooldown truly expires.
+            if (cls == 0)
+            {
+                // Latched short-row rescue runs BEFORE blank-fire (cited
+                // 2026-10-02: bottom views classify 0 (wide-ish shorts fail
+                // both arms) and blank-fired over real [Y|Kd] content).
+                // Success promotes to class 3 and falls through to the full
+                // pipeline below (slots, anchor, memory, settle, fire).
+                List<string>? rescueCols0 = null;
+                if (_itemBoxOpen)
+                {
+                    rescueCols0 = TryAssembleShortRows(blocks, Packs.PackRegistry.Current.BattleCommands ?? new System.Collections.Generic.List<string>(), 0);
+                    if (rescueCols0 != null) { cls = 3; _rescueCarry = rescueCols0; }
+                }
+                if (cls == 0)
+                {
+                // Latched empty bottom (cited 2026-10-01: scrolled past the
+                // last item, both columns blank): fire the empty box once so
+                // the panel renders blanks, never hallucinations. Gated to
+                // bottom-only narrow frames (wide = dialogue box, which must
+                // still fire normally); zero-block dropouts hold silently.
+                // Same-sig repeats hold via the fire gate below.
+                if (_itemBoxOpen && HasBottomContent(blocks) && !HasTopOrMidJa(blocks) && !HasWideBlock(blocks))
+                {
+                    var blanks = new System.Collections.Generic.List<string> { "　\t　", "　\t　", "　\t　", "　\t　" };
+                    var bShown = new BattleFrame.BattleSlots("", new System.Collections.Generic.List<string>(_battleMonsterSticky), new System.Collections.Generic.List<string>(), new System.Collections.Generic.List<string>(), blanks, new System.Collections.Generic.List<string>());
+                    string bsig = bShown.Top + "\n" + string.Join("\n", bShown.Monster) + "\n" + string.Join("\n", bShown.Action) + "\n" + string.Join("\n", bShown.Right) + "\n" + string.Join("\n", bShown.Item) + "\n" + string.Join("\n", bShown.Weapon);
+                    _battlePrevSig = bsig;
+                    bool blankSettled = bsig == _battleBlankFirePrev;
+                    _battleBlankFirePrev = bsig;
+                    if (bsig != _battleFiredSig && blankSettled)
+                    {
+                        _battleFiredSig = bsig;
+                        _battleCooldown = 6;
+                        FileLogger.Log($"[battle] fire blanks top=0ch mon={bShown.Monster.Count} item=4 (empty box)");
+                        _ = TranslateAndPublishBattleAsync(bsig, bShown);
+                    }
+                    return;
+                }
+                if (_battleCooldown > 0 || _itemBoxOpen) return;
+                _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); _itemBoxOpen = false; _battleItemFirePrev = ""; _battleBlankFirePrev = ""; _battleItemFireRuns = 0; _battleItemFiredContent = 0; return;
+                }
+            }
             // Any battle-classified loop refreshes grace, so the countdown only
             // starts once battle truly ends (fires set it too, same value).
+            // Oscillation hold: repeat pixels (cursor-blink cycles) carry no
+            // new information even when OCR re-reads grey rows differently —
+            // hold content, keep grace alive, touch nothing.
+            if (!_lastFrameNovel) { _battleCooldown = 6; return; }
             _battleCooldown = 6;
-            var slots = BattleFrame.ExtractSlots(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, t => IsEllipsisOnly(t));
+            var slots = BattleFrame.ExtractSlots(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, t => IsEllipsisOnly(t), _itemBoxOpen);
             // Party rows keep HP digits (name + HP post together, HP ticks
             // refire live like monster counts); names translate once via the
             // digit-split path, digits reattach verbatim. Reward tops need
@@ -2162,16 +2293,47 @@ namespace WunderLanguage.Host.Capture
             slots = slots with { Top = slots.Top.Length < 4 ? "" : slots.Top };
             // Party-slot dust guard (mirrors the monster one): standalone
             // single-kana rows (lone だ/ェ) never post; bare counts stay.
+            // Joined dust too (cited 2026-10-01: "マッシュ だ" fired — the
+            // だ timebar read joins the name's line, so row-length misses
+            // it): lone-kana tokens drop, names survive. Multi-char tokens
+            // (all real names) pass untouched.
             slots = slots with
             {
-                Right = slots.Right.Where(r =>
+                Right = slots.Right.Select(r =>
+                {
+                    var kept = new System.Collections.Generic.List<string>();
+                    foreach (var tok in r.Split(new[] { ' ', '　' }, System.StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string t = tok.Trim();
+                        if (t.Length == 1 && IsKanaChar(t[0])) continue;
+                        kept.Add(tok);
+                    }
+                    return string.Join(" ", kept);
+                }).Where(r =>
                 {
                     string t = r.Trim();
+                    if (t.Length == 0) return false;
                     if (t.Length != 1) return true;
                     SplitRowDigits(r, out string nm, out _);
                     return string.IsNullOrWhiteSpace(nm);
                 }).ToList()
             };
+            var commands = Packs.PackRegistry.Current.BattleCommands ?? new System.Collections.Generic.List<string>();
+            // Latched short-row rescue (cited 2026-10-01: scrolled to the
+            // last 2 rows, blocks go short (h~48), miss even lowered tall
+            // gates, scatter to monster/right — the box "closed itself").
+            // Content-gated (vocab/fixup shapes only; monster/party/dust can
+            // never match their disjoint shapes), so stale-latch monster
+            // phases assemble nothing and route normally. Circuit-breaker:
+            // any action-command row aborts (action box content must never
+            // become items). Synthetic \n-hard columns flow through the
+            // normal split/zip/anchor/memory/settle/fire below; rows pad to
+            // 4 with blanks (empties render, positions hold).
+            var rescueCols = _rescueCarry;
+            _rescueCarry = null;
+            rescueCols ??= TryAssembleShortRows(blocks, commands, cls);
+            if (rescueCols != null)
+                slots = slots with { Monster = new List<string>(), Action = new List<string>(), Right = new List<string>() };
             // Overlap bit: action rows normalize through pack fixups, then split
             // on pack command vocabulary into positional rows (blank magic gap).
             var normAction = slots.Action.ConvertAll(a => ApplyZeldaOcrFixups(a));
@@ -2181,7 +2343,6 @@ namespace WunderLanguage.Host.Capture
             // short enough to be a command fragment) stay; the rest spill back
             // to the monster column with their count. Unknown game (no vocab):
             // geometry as before.
-            var commands = Packs.PackRegistry.Current.BattleCommands ?? new System.Collections.Generic.List<string>();
             var actionLines = new List<string>();
             var spillMonster = new List<string>();
             if (commands.Count < 5) actionLines = new List<string>(normAction);
@@ -2210,30 +2371,45 @@ namespace WunderLanguage.Host.Capture
                 SplitRowDigits(r, out string nm, out _);
                 return !string.IsNullOrWhiteSpace(nm);
             });
-            var itemJa = BuildItemPairs(slots.Item);
+            var itemJa = BuildItemPairs(rescueCols ?? slots.Item, _battleItemSticky);
             // Item memory: fill blank sides from last-seen rows so grey-row
             // flicker holds positions instead of collapsing. Strict guards so
-            // memory can never invent or misplace: same pair count (same
-            // layout), blank sides only, and a blank side fills only when the
-            // pair's other side matches memory (same row) — or when both
-            // sides are blank (whole-row restore within a matched layout).
+            // memory can never invent or misplace: same pair count, blank
+            // sides only, and a blank side fills only when the pair's other
+            // side matches memory (same row). Whole-row restore is BANNED
+            // (cited 2026-10-01: scrolled layout kept pair count 4 while
+            // moving フェニックスのお to row 1, and the blind restore
+            // duplicated it into row 3 — pair count is not layout identity).
+            // A fully-blank flicker row simply stays blank until re-read.
             // Anything else posts fresh and rewarms memory. Counts ride
             // inside remembered rows verbatim; new sightings overwrite.
             {
                 var mem = _battleItemSticky;
                 if (mem.Count > 0 && itemJa.Count == mem.Count)
                 {
+                    // Fill-guard (cited 2026-10-01: mem-Y filled a blank side
+                    // while current also held Y elsewhere — duplicate smoke
+                    // bombs). Fresh reads win: skip any fill whose normalized
+                    // name already occurs in the current assembly, and feed
+                    // each fill back into the set so fossil mem can't spread
+                    // one name across two rows.
+                    var curNorms = new System.Collections.Generic.HashSet<string>();
+                    foreach (var cp in itemJa)
+                    {
+                        SplitItemPair(cp, out string ccl, out string ccr);
+                        if (!string.IsNullOrWhiteSpace(ccl)) curNorms.Add(NormItemKey(ccl));
+                        if (!string.IsNullOrWhiteSpace(ccr)) curNorms.Add(NormItemKey(ccr));
+                    }
                     var held = new List<string>(itemJa.Count);
                     for (int i = 0; i < itemJa.Count; i++)
                     {
                         SplitItemPair(itemJa[i], out string cl, out string cr);
                         SplitItemPair(mem[i], out string ml, out string mr);
                         string l = cl, r = cr;
-                        if (string.IsNullOrWhiteSpace(cl) && string.IsNullOrWhiteSpace(cr)) { l = ml; r = mr; }
-                        else
+                        if (!string.IsNullOrWhiteSpace(cl) || !string.IsNullOrWhiteSpace(cr))
                         {
-                            if (string.IsNullOrWhiteSpace(cl) && cr == mr) l = ml;
-                            if (string.IsNullOrWhiteSpace(cr) && cl == ml) r = mr;
+                            if (string.IsNullOrWhiteSpace(cl) && cr == mr && !curNorms.Contains(NormItemKey(ml))) { l = ml; curNorms.Add(NormItemKey(ml)); }
+                            if (string.IsNullOrWhiteSpace(cr) && cl == ml && !curNorms.Contains(NormItemKey(mr))) { r = mr; curNorms.Add(NormItemKey(mr)); }
                         }
                         held.Add(l + "\t" + r);
                     }
@@ -2241,11 +2417,63 @@ namespace WunderLanguage.Host.Capture
                 }
                 _battleItemSticky = new List<string>(itemJa);
             }
+            // Pair duplicate blanking (cited 2026-10-01: same canonical name
+            // twice — both sides checked, soup exempt — is always a ghost:
+            // inventory names are unique per box. Keep first top-down, blank
+            // later sides. Left column wins ties (cursor side reads cleaner).
+            // Runs after fills so fill-induced dupes die here too.
+            {
+                var seenPair = new System.Collections.Generic.HashSet<string>();
+                var canonPair = new System.Collections.Generic.HashSet<string>(
+                    Packs.PackRegistry.Current.ItemVocabulary ?? new System.Collections.Generic.List<string>());
+                for (int i = 0; i < itemJa.Count; i++)
+                {
+                    SplitItemPair(itemJa[i], out string pl, out string pr);
+                    bool ch = false;
+                    string nl = NormItemKey(pl), nr = NormItemKey(pr);
+                    if (!string.IsNullOrWhiteSpace(pl) && canonPair.Contains(nl))
+                    {
+                        if (!seenPair.Add(nl)) { pl = "　"; ch = true; }
+                    }
+                    if (!string.IsNullOrWhiteSpace(pr) && canonPair.Contains(nr))
+                    {
+                        if (!seenPair.Add(nr)) { pr = "　"; ch = true; }
+                    }
+                    if (ch) itemJa[i] = pl + "\t" + pr;
+                }
+            }
             // Weapon rows post verbatim (slot labels + weapon names, mockup
             // equip box — no counts, no command gate).
             var weaponJa = new List<string>(slots.Weapon);
             if (monsterLines.Count > 0) _battleMonsterSticky = new List<string>(monsterLines);
-            var shownMonster = (actionLines.Count > 0 || itemJa.Count > 0 || weaponJa.Count > 0) && _battleMonsterSticky.Count > 0 ? _battleMonsterSticky : monsterLines;
+            // Item content gate (moved here from the pair drop): blank pairs
+            // are positional rows, not content — firing rides on any side
+            // having text. All-blank assemblies (fully grey box) never fire,
+            // and the monster sticky no longer leaks through them either
+            // (that was the "refused" phantom shape).
+            bool itemHasContent = false;
+            foreach (var p in itemJa)
+                if (!string.IsNullOrWhiteSpace((p ?? "").Replace("\t", ""))) { itemHasContent = true; break; }
+            var shownMonster = (actionLines.Count > 0 || itemHasContent || weaponJa.Count > 0) && _battleMonsterSticky.Count > 0 ? _battleMonsterSticky : monsterLines;
+            // Latch tracking: item content means the box is open. Runs every
+            // loop (not per fire) so slow scroll dwells — which refire
+            // nothing — keep the latch. Clearing runs on box-close signals
+            // only (commands pre-extraction, full wipe, mid-band expiry):
+            // monster rows must NEVER clear it — bottom-of-list views ARE
+            // monster-shaped short rows (cited 2026-10-01: latch cleared at
+            // the bottom, item box "closed" itself and leaked items into
+            // the party box).
+            // Open edge (cited 2026-10-01: 19s dead panel on open while
+            // flicker never settled twice): a newly opened box posts its
+            // first sight immediately; later updates settle normally.
+            bool justOpened = itemHasContent && !_itemBoxOpen;
+            // Post-battle rewards expiry: a top bar with no enemies and no
+            // action box means the fight is over (mid-battle messages always
+            // have monsters or action rows present, so they never trip this).
+            // Placed before the set below so a visibly open box re-latches
+            // in the same pass.
+            if (_itemBoxOpen && cls == 2 && monsterLines.Count == 0 && actionLines.Count == 0) _itemBoxOpen = false;
+            if (itemHasContent) _itemBoxOpen = true;
             var actionRows = BattleFrame.SplitActionRows(actionLines, commands);
             var shown = new BattleFrame.BattleSlots(slots.Top, shownMonster, actionRows, slots.Right, itemJa, weaponJa);
             string sig = shown.Top + "\n" + string.Join("\n", shown.Monster) + "\n" + string.Join("\n", shown.Action) + "\n" + string.Join("\n", shown.Right) + "\n" + string.Join("\n", shown.Item) + "\n" + string.Join("\n", shown.Weapon);
@@ -2259,6 +2487,11 @@ namespace WunderLanguage.Host.Capture
             // drops) and only yielding fires ever publish. Stuck action boxes
             // and missing rewards traced to exactly this ordering.
             _battlePrevSig = sig;
+            // Slots telemetry (permanent, one line per battle loop): convicts
+            // silent no-fires (suppressed-but-empty assemblies) with cls and
+            // every slot count. Cited 2026-10-01: open-box frames suppressed
+            // 5 loops with zero fires and zero errors.
+            FileLogger.Log($"[battle] slots cls={cls} top={shown.Top.Length}ch mon={shown.Monster.Count} act={shown.Action.Count} right={shown.Right.Count} itemCols={slots.Item.Count} itemJa={shown.Item.Count} weapon={shown.Weapon.Count}");
             // Battle fires on first sight: the frame updates in place and stale
             // publishes drop, so a lone misread self-corrects next loop instead of
             // waiting out a stability bar while the game moves on. Dialogue and
@@ -2267,10 +2500,25 @@ namespace WunderLanguage.Host.Capture
             // Item rides it too (open/scroll/close refire in place). Weapon
             // rides it as well (mockup layering: each box opens on top of
             // the previous, and all refresh live as boxes open and close).
-            if (sig != _battleFiredSig && (shown.Top.Length > 0 || shown.Monster.Count > 0 || shown.Action.Count > 0 || shown.Item.Count > 0 || shown.Weapon.Count > 0))
+            // Item-carrying sigs wait for the settle gate above, now with
+            // hysteresis: gaining (or keeping) content fires at 2 repeats
+            // (fast scrolls and recoveries stay snappy), losing content
+            // needs 4 (a grey flicker-out must prove itself — the panel
+            // holds last-stable instead of blinking). Confident scrolls
+            // (anchor shift nonzero) bypass: real movement posts instantly,
+            // flicker never estimates a shift.
+            int itemContent = 0;
+            foreach (var p in itemJa)
+                if (!string.IsNullOrWhiteSpace((p ?? "").Replace("\t", ""))) itemContent++;
+            if (sig == _battleItemFirePrev) _battleItemFireRuns++;
+            else { _battleItemFirePrev = sig; _battleItemFireRuns = 1; }
+            bool itemSettled = !itemHasContent || _lastAnchorS != 0 || justOpened
+                || _battleItemFireRuns >= (itemContent < _battleItemFiredContent ? 4 : 2);
+            if (sig != _battleFiredSig && (shown.Top.Length > 0 || shown.Monster.Count > 0 || shown.Action.Count > 0 || itemHasContent || shown.Weapon.Count > 0) && itemSettled)
             {
                 _battleFiredSig = sig;
                 _battleCooldown = 6;
+                _battleItemFiredContent = itemContent;
                 FileLogger.Log($"[battle] fire top={shown.Top.Length}ch mon={shown.Monster.Count} act={shown.Action.Count} right={shown.Right.Count} item={shown.Item.Count} weapon={shown.Weapon.Count} sig={SigTag(sig)}");
                 _ = TranslateAndPublishBattleAsync(sig, shown);
             }
@@ -2387,7 +2635,23 @@ namespace WunderLanguage.Host.Capture
                 bool isDigits = s.Length > 0;
                 foreach (char c in s)
                     if (!((c >= '0' && c <= '9') || (c >= '０' && c <= '９'))) { isDigits = false; break; }
-                if (isDigits) digs.Add(k); else names.Add(k);
+                if (isDigits) { digs.Add(k); continue; }
+                // Glued suffix split: OCR glues Latin/digit/punct tails onto
+                // names ("マッシュFACHTASSORYURUBOOK.", "マッシュ231").
+                // Leading-JA head stays a name (pins keep hitting); tail
+                // digits join counts; tail junk drops (never name content,
+                // never counts). No JA lead (pure "MAP") preserves as-is.
+                int p = 0;
+                while (p < s.Length && IsJaNameChar(s[p])) p++;
+                if (p == 0) { names.Add(k); continue; }
+                if (p < s.Length)
+                {
+                    names.Add(s.Substring(0, p));
+                    foreach (char c in s.Substring(p))
+                        if ((c >= '0' && c <= '9') || (c >= '０' && c <= '９')) digs.Add(c.ToString());
+                    continue;
+                }
+                names.Add(k);
             }
             // Trailing single-kana dust (だ/は/が particles, ェ fragments
             // glued by same-Y joining) is never name content: strip it so
@@ -2408,6 +2672,14 @@ namespace WunderLanguage.Host.Capture
         private static bool IsKanaChar(char c)
         {
             return (c >= 'ぁ' && c <= 'ん') || (c >= 'ァ' && c <= 'ヶ') || c == 'ー' || (c >= 'ｦ' && c <= 'ﾟ');
+        }
+        // JA name characters for glued-suffix splitting: hiragana, katakana
+        // (full + half width), kanji, prolonged marks. Latin/digits/punct
+        // never start name content in battle rows.
+        private static bool IsJaNameChar(char c)
+        {
+            return (c >= 'ぁ' && c <= 'ん') || (c >= 'ァ' && c <= 'ヶ') || (c >= '一' && c <= '鿿') ||
+                   c == 'ー' || c == '々' || (c >= 'ｦ' && c <= 'ﾟ');
         }
         private async Task<string> TranslateRowSplitAsync(string row, System.Func<string, System.Threading.Tasks.Task<string>> translateOne, bool simMemo = false)
         {
@@ -2465,10 +2737,20 @@ namespace WunderLanguage.Host.Capture
             try
             {
                 if (string.IsNullOrWhiteSpace(ja) || string.IsNullOrWhiteSpace(en) || IsUnpublishable(en)) return;
+                // Soup self-lock guard (cited 2026-10-01: 10-char
+                // こういうのはあぐすり posted once, memoized, then kept
+                // matching as a splitter key forever, bypassing the gap
+                // bar). Longest cited legit names run 8 (ナイトのこころえ,
+                // フェニックスのお; monsters 7), so 9+ never memoizes —
+                // translation still serves them via cache, only sim-reuse
+                // and splitter keys are withheld.
+                if ((ja ?? "").Trim().Length > 8) return;
+                string jkey = (ja ?? "").Trim();
+                if (jkey.Length == 0) return;
                 lock (_prefetchLock)
                 {
                     if (_battleNameMemo.Count > 200) _battleNameMemo.Clear();
-                    _battleNameMemo[ja] = en;
+                    _battleNameMemo[jkey] = en;
                 }
             }
             catch { }
@@ -2502,6 +2784,99 @@ namespace WunderLanguage.Host.Capture
         // action slot only if it carries a known command (or is short enough
         // to be a command fragment). Long garble-free non-command lines are
         // merged monster lists and spill back to the monster column.
+        // Box-close detector helper: action commands visible in the bottom
+        // band mean the action box is back (item box closed). Item names
+        // never contain commands and monster names neither, so this only
+        // ever matches the action box. Unknown games (<5 commands) never
+        // clear: the latch never sets there either.
+        // Latch helpers: band/shape evidence for the open-box latch.
+        // Mid-band JA expires it (field/mid-dialogue on screen); bottom
+        // content with no wide block marks empty-box frames eligible for
+        // blank-fire.
+        private bool HasMidJa(List<OcrBlock> blocks)
+        {
+            try
+            {
+                if (blocks == null) return false;
+                foreach (var b in blocks)
+                {
+                    string t = (b.Text ?? "").Trim();
+                    if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                    if (!HasJapanese(t)) continue;
+                    double ny = (double)b.Y / System.Math.Max(1, _battleFrameH);
+                    if (ny >= 0.25 && ny < 0.65) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        // Blank-fire gate keeps the wider exclusion: only pure-bottom
+        // frames may post the empty box (a top message + empty bottom
+        // routes as today, unchanged).
+        private bool HasTopOrMidJa(List<OcrBlock> blocks)
+        {
+            try
+            {
+                if (blocks == null) return false;
+                foreach (var b in blocks)
+                {
+                    string t = (b.Text ?? "").Trim();
+                    if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                    if (!HasJapanese(t)) continue;
+                    if ((double)b.Y / System.Math.Max(1, _battleFrameH) < 0.65) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        private bool HasBottomContent(List<OcrBlock> blocks)
+        {
+            try
+            {
+                if (blocks == null) return false;
+                foreach (var b in blocks)
+                {
+                    string t = (b.Text ?? "").Trim();
+                    if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                    if ((double)b.Y / System.Math.Max(1, _battleFrameH) >= 0.5) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        private bool HasWideBlock(List<OcrBlock> blocks)
+        {
+            try
+            {
+                if (blocks == null) return false;
+                foreach (var b in blocks)
+                {
+                    string t = (b.Text ?? "").Trim();
+                    if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                    if ((double)b.Width / System.Math.Max(1, _battleFrameW) >= 0.60) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        private bool BottomHasCommands(List<OcrBlock> blocks)
+        {
+            try
+            {
+                var cmds = Packs.PackRegistry.Current.BattleCommands;
+                if (cmds == null || cmds.Count < 5 || blocks == null) return false;
+                foreach (var b in blocks)
+                {
+                    if ((double)b.Y / System.Math.Max(1, _battleFrameH) < 0.6) continue;
+                    string t = b.Text ?? "";
+                    if (t.Length < 1) continue;
+                    foreach (var c in cmds)
+                        if (!string.IsNullOrEmpty(c) && t.Contains(c, System.StringComparison.Ordinal)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
         private static bool ContainsBattleCommand(string line, System.Collections.Generic.IReadOnlyList<string> commands)
         {
             if (string.IsNullOrEmpty(line) || commands == null) return false;
@@ -2568,6 +2943,89 @@ namespace WunderLanguage.Host.Capture
         // Deliberately no trailing gap on count-less names: trailing space is
         // invisible in a left-aligned box but churns exact cache keys (an extra
         // full retranslation per row) — cost without gain.
+        // Latched short-row rescue: bottom-of-list views (1-2 content rows,
+        // blocks too short for tall columns) assemble here instead of
+        // scattering to monster/right. Returns synthetic \n-hard columns
+        // (or null when inapplicable) for the normal pipeline below.
+        private List<string>? TryAssembleShortRows(List<OcrBlock> blocks, System.Collections.Generic.IReadOnlyList<string> commands, int cls)
+        {
+            try
+            {
+                if (!_itemBoxOpen || (cls != 1 && cls != 0) || blocks == null || blocks.Count == 0) return null;
+                var vocab = new System.Collections.Generic.HashSet<string>(
+                    Packs.PackRegistry.Current.ItemVocabulary ?? new System.Collections.Generic.List<string>());
+                if (vocab.Count == 0) return null;
+                var fixupFroms = new System.Collections.Generic.HashSet<string>();
+                try
+                {
+                    foreach (var (from, to) in Packs.PackRegistry.Current.OcrFixups)
+                        if (!string.IsNullOrEmpty(from)) fixupFroms.Add(from);
+                }
+                catch { }
+                bool CitedShape(string raw)
+                {
+                    string t = (raw ?? "").Trim();
+                    if (t.Length < 1) return false;
+                    string nk = NormItemKey(t);
+                    if (vocab.Contains(nk)) return true;
+                    string key = t.Trim('、', '。', '，', ',', '.', '．', '…', '・');
+                    return vocab.Contains(key) || fixupFroms.Contains(key) || fixupFroms.Contains(t.Trim());
+                }
+                // Circuit-breaker: action content must never become items.
+                foreach (var b in blocks)
+                {
+                    if ((double)b.Y / System.Math.Max(1, _battleFrameH) < 0.6) continue;
+                    if (ContainsBattleCommand(b.Text ?? "", commands)) return null;
+                }
+                var rows = new System.Collections.Generic.List<(int y, System.Collections.Generic.List<OcrBlock> parts)>();
+                foreach (var b in blocks.OrderBy(b => b.Y))
+                {
+                    string t = (b.Text ?? "").Trim();
+                    if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                    if ((double)b.Y / System.Math.Max(1, _battleFrameH) < 0.6) continue;
+                    if (IsEllipsisOnly(t)) continue;
+                    SplitRowDigits(t, out string nm, out _);
+                    if (string.IsNullOrWhiteSpace(nm) || !CitedShape(nm)) continue;
+                    bool placed = false;
+                    foreach (var ln in rows)
+                    {
+                        if (System.Math.Abs(b.Y - ln.y) < System.Math.Min(b.Height, 60) / 2 + 8)
+                        {
+                            ln.parts.Add(b);
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if (!placed) rows.Add((b.Y, new System.Collections.Generic.List<OcrBlock> { b }));
+                }
+                if (rows.Count == 0) return null;
+                var left = new System.Collections.Generic.List<string>();
+                var right = new System.Collections.Generic.List<string>();
+                foreach (var ln in rows.OrderBy(l => l.y))
+                {
+                    string l = "", r = "";
+                    foreach (var p in ln.parts.OrderBy(p => p.X))
+                    {
+                        SplitRowDigits((p.Text ?? "").Trim(), out string nm, out _);
+                        if (string.IsNullOrWhiteSpace(nm) || !CitedShape(nm)) continue;
+                        double cx = (double)(p.X + p.Width / 2) / System.Math.Max(1, _battleFrameW);
+                        if (cx < 0.38) l = l.Length == 0 ? nm : l + " " + nm;
+                        else r = r.Length == 0 ? nm : r + " " + nm;
+                    }
+                    if (l.Length == 0 && r.Length == 0) continue;
+                    left.Add(l);
+                    right.Add(r);
+                }
+                if (left.Count == 0 && right.Count == 0) return null;
+                FileLogger.Log($"[battle] item-rescue rows={left.Count}");
+                return new System.Collections.Generic.List<string>
+                {
+                    string.Join("\n", left) + "\t",
+                    string.Join("\n", right) + "\t"
+                };
+            }
+            catch { return null; }
+        }
         // Item-pair assembly: raw "names\tcounts" columns become visual
         // "left\tRight" rows. Names split on pack vocabulary + memoized names
         // (longest first; unknown gaps stay as truthful remainder items);
@@ -2578,7 +3036,7 @@ namespace WunderLanguage.Host.Capture
         // (positions hold 1:1), tail-pad only when nothing unreadable marks a
         // spot, truncate past 4 (extras are flicker). Empty inventory rows
         // have no text, so scrolling and the endless blanks post nothing.
-        private List<string> BuildItemPairs(List<string> cols)
+        private List<string> BuildItemPairs(List<string> cols, List<string>? memPairs = null)
         {
             var colItems = new System.Collections.Generic.List<System.Collections.Generic.List<string>>();
             foreach (var c in cols ?? new System.Collections.Generic.List<string>())
@@ -2596,17 +3054,128 @@ namespace WunderLanguage.Host.Capture
                 var column = new System.Collections.Generic.List<string>();
                 // End-anchored zip (complete-window gate): bright reads whose
                 // middle rows vanished without a dots trace still place
-                // first↔first and last↔last, blanks in the middle. Only the
-                // full 4-digit window carries complete information; middles
-                // stay bare (a middle name could sit on either side of its
-                // digit). Logged: a grey first row would misplace its count.
+                // first↔first and last↔last. Only the full 4-digit window
+                // carries complete information. Middles pack top-down right
+                // after first (cited 2026-10-01: どくけし rode row 3 under a
+                // blank; truth row 2 — content packs top-down everywhere,
+                // blanks sink); middles stay bare (a middle name could sit on
+                // either side of its digit). Logged: a grey first row would
+                // misplace its count.
                 if (!hasHold && digits.Count == 4 && items.Count >= 2 && items.Count < 4)
                 {
                     FileLogger.Log($"[battle] item-endanchor names={items.Count}");
                     column.Add(items[0].TrimEnd() + " ： " + digits[0]);
-                    for (int b = 0; b < digits.Count - items.Count; b++) column.Add("　");
                     for (int k = 1; k < items.Count - 1; k++) column.Add(items[k]);
+                    for (int b = 0; b < digits.Count - items.Count; b++) column.Add("　");
                     column.Add(items[items.Count - 1].TrimEnd() + " ： " + digits[digits.Count - 1]);
+                }
+                else if (!hasHold && digits.Count > items.Count && items.Count >= 2 && CountSlots(countsRaw) >= 4)
+                {
+                    // Ghost-slot stretch (cited 2026-10-01 open: counts read
+                    // "Ｂ２２１" — slot 1 ghosted to Ｂ, grey names left no
+                    // dots trace, gluing ポーション to フェニックスのお in
+                    // row 2). Full-width window with more digits than names:
+                    // first name opens row 1 bare (its digit ghosted), last
+                    // name closes row 4 with the last digit, middles ride
+                    // bare, blanks fill. Short windows keep top-fill (their
+                    // digits are leading-complete, no ghost).
+                    FileLogger.Log($"[battle] item-stretch names={items.Count} digits={digits.Count}");
+                    column.Add(items[0]);
+                    for (int k = 1; k < items.Count - 1; k++) column.Add(items[k]);
+                    for (int b = 0; b < 4 - items.Count; b++) column.Add("　");
+                    column.Add(items[items.Count - 1].TrimEnd() + " ： " + digits[digits.Count - 1]);
+                }
+                else if (!hasHold && items.Count >= 2 && items.Count < 4 && digits.Count >= 2 && GhostSlots(countsRaw) is var gs && gs.Count == 4 && gs.Count(b => b) < 4)
+                {
+                    // Ghost-slot map (cited 2026-10-01: counts "６４－３"
+                    // with slot 3 ghosted to －; right names [P,Dk,Kd] with
+                    // ねぶくろ silent — index pairing starved the column and
+                    // Kd top-filled row 3). Ghosts mark unreadable rows
+                    // without digits: first↔row 1 and last↔row 4 (top-open
+                    // window), middles ride the earliest surviving digit
+                    // slots bare, blanks fill the ghost slots. Counts attach
+                    // only on real end slots (wrong counts worse than none).
+                    FileLogger.Log($"[battle] item-ghostslot names={items.Count} digits={digits.Count}");
+                    var placed4 = new string[4] { "　", "　", "　", "　" };
+                    placed4[0] = items[0] + (gs[0] ? " ： " + digits[0] : "");
+                    placed4[3] = items[items.Count - 1].TrimEnd() + (gs[3] ? " ： " + digits[digits.Count - 1] : "");
+                    var usedRows = new System.Collections.Generic.HashSet<int> { 0, 3 };
+                    for (int k = 1; k < items.Count - 1; k++)
+                    {
+                        int at = -1;
+                        for (int r = 1; r < 3; r++)
+                            if (gs[r] && !usedRows.Contains(r)) { at = r; break; }
+                        if (at < 0)
+                            for (int r = 0; r < 4; r++)
+                                if (!usedRows.Contains(r)) { at = r; break; }
+                        if (at >= 0) { placed4[at] = items[k]; usedRows.Add(at); }
+                    }
+                    foreach (var cell in placed4) column.Add(cell);
+                }
+                else if (hasHold && digits.Count == 4 && items.Count <= 4
+                    && (Packs.PackRegistry.Current.ItemVocabulary?.Count ?? 0) > 0
+                    && items.Count(s => !string.IsNullOrWhiteSpace(s)) >= 2 && !string.IsNullOrWhiteSpace(items[items.Count - 1]))
+                {
+                    // Full-window digit zip with holds (cited 2026-10-01:
+                    // right [_,Dk,Kd] + full digits sat Kd row 3 — bare+pad
+                    // can't place it, and the veto blocks every zip above).
+                    // 4 real digits = every row carries a count. Minimal
+                    // movement by design: leading blanks pin grey top rows
+                    // (their digits orphan correctly); first content holds
+                    // its slot + its positional digit; middles hold slots
+                    // bare (endanchor convention — ambiguous middles never
+                    // take counts); only the last content anchors to row 4
+                    // + last digit (nothing trails it, so nothing below it).
+                    // Anything else stays exactly where bare+pad puts it.
+                    FileLogger.Log($"[battle] item-holdzip names={items.Count} digits={digits.Count}");
+                    var placedH = new string[4] { "　", "　", "　", "　" };
+                    int firstAt = -1, lastAt = -1;
+                    for (int i = 0; i < items.Count; i++)
+                        if (!string.IsNullOrWhiteSpace(items[i])) { if (firstAt < 0) firstAt = i; lastAt = i; }
+                    placedH[firstAt] = items[firstAt].TrimEnd() + " ： " + digits[firstAt];
+                    if (lastAt != firstAt)
+                        placedH[3] = items[lastAt].TrimEnd() + " ： " + digits[3];
+                    else
+                        placedH[firstAt] = items[firstAt];
+                    for (int i = 0; i < items.Count && i < 4; i++)
+                    {
+                        if (string.IsNullOrWhiteSpace(items[i])) continue;
+                        if (i == firstAt || i == lastAt) continue;
+                        placedH[i] = items[i];
+                    }
+                    foreach (var cell in placedH) column.Add(cell);
+                }
+                else if (hasHold && items.Count <= 4
+                    && (Packs.PackRegistry.Current.ItemVocabulary?.Count ?? 0) > 0
+                    && items.Count(s => !string.IsNullOrWhiteSpace(s)) >= 2
+                    && string.IsNullOrWhiteSpace(items[0])
+                    && !string.IsNullOrWhiteSpace(items[items.Count - 1]))
+                {
+                    // Leading-hold tail anchor (cited 2026-10-01: right
+                    // [_,Dk,Kd] with N fully silent (no dots, partial digits
+                    // or none) sat Kd row 3 — pad-insert/append can't place
+                    // it, and every zip above needs fuller evidence).
+                    // Minimal movement: leading blanks pin grey top rows;
+                    // everything holds slots; only the last content anchors
+                    // to row 4 (nothing trails it). No counts attach here
+                    // (positional evidence only) — full windows use holdzip
+                    // above. Bottom views never qualify (content-top-aligned,
+                    // never leading-blank).
+                    FileLogger.Log($"[battle] item-tailanchor names={items.Count}");
+                    var placedT = new string[4] { "　", "　", "　", "　" };
+                    int lastA = -1;
+                    for (int i = 0; i < items.Count && i < 4; i++)
+                    {
+                        if (string.IsNullOrWhiteSpace(items[i])) continue;
+                        lastA = i;
+                    }
+                    for (int i = 0; i < items.Count && i < 4; i++)
+                    {
+                        if (string.IsNullOrWhiteSpace(items[i])) continue;
+                        if (i == lastA) placedT[3] = items[i];
+                        else placedT[i] = items[i];
+                    }
+                    foreach (var cell in placedT) column.Add(cell);
                 }
                 else for (int i = 0; i < items.Count; i++)
                 {
@@ -2616,13 +3185,50 @@ namespace WunderLanguage.Host.Capture
                 }
                 while (column.Count < 4)
                 {
-                    int bi = column.FindIndex(s => string.IsNullOrWhiteSpace(s));
-                    if (bi < 0) column.Add("　");
-                    else column.Insert(bi + 1, "　");
+                    // Tail-pad appends (cited 2026-10-02: insert-after-blank
+                    // pushed content down a row — [F,_,Y] became [F,_,_,Y]
+                    // stranding Y row 4 instead of 3. Blanks mark real grey
+                    // rows in place; missing slots are trailing empties or
+                    // scroll-off content, both of which live at the END.
+                    // Tailanchor/endanchor place content explicitly when
+                    // evidence exists; this never invents rows).
+                    column.Add("　");
                 }
-                if (column.Count > 4) column.RemoveRange(4, column.Count - 4);
+                // Overflow: drop blank holds before content (cited 2026-10-01:
+                // [H,_,F,_,Y] truncated Y, the only real loss, to keep two
+                // holds — holds are re-mintable noise, content is not).
+                // Leading holds stay (row-1 grey is real): drop the first
+                // blank past index 0, else the last element (flicker extra,
+                // as before).
+                while (column.Count > 4)
+                {
+                    int bi = -1;
+                    for (int k = 1; k < column.Count; k++)
+                        if (string.IsNullOrWhiteSpace(column[k])) { bi = k; break; }
+                    if (bi >= 0) column.RemoveAt(bi);
+                    else column.RemoveAt(column.Count - 1);
+                }
                 if (column.Count > 0) colItems.Add(column);
+                // TEMP-DIAG (2026-10-01): per-column assembly trace. The 17:57
+                // run fired [H,_,_,_] from blobs visibly containing F+Y — no
+                // static path explains it. Remove once convicted.
+                try
+                {
+                    var dit = new System.Collections.Generic.List<string>();
+                    foreach (var it in items) dit.Add(string.IsNullOrWhiteSpace(it) ? "_" : it.Trim());
+                    FileLogger.Log($"[battle] item-col rawLen={namesRaw.Length} items=[{string.Join("|", dit)}] digits={digits.Count}");
+                }
+                catch { }
             }
+            // Scroll anchor (cited 2026-10-01: after 1-down, silent-swallowed
+            // leading greys top-filled フェニックスのお into row 1 instead of
+            // row 3). Columns scroll together, so estimate the window shift s
+            // from BOTH columns' agreement with memory, then pin each matched
+            // item to (memoryIndex - s). Unmatched items hold their slots.
+            // Strict gates (unique best, score ≥ 2, contradictions penalized
+            // only when both sides are canonical vocab) make no-agreement a
+            // no-op: the assembly above stands.
+            AnchorItemColumns(colItems, memPairs);
             var rows = new System.Collections.Generic.List<string>();
             int n = 0;
             foreach (var col in colItems) n = System.Math.Max(n, col.Count);
@@ -2630,21 +3236,185 @@ namespace WunderLanguage.Host.Capture
             {
                 string l = colItems.Count > 0 && r < colItems[0].Count ? colItems[0][r] : "";
                 string rr = colItems.Count > 1 && r < colItems[1].Count ? colItems[1][r] : "";
-                // Blank holds ("　") are whitespace: an all-blank pair is an
-                // empty row, not content. The old Length==0 check let 4×blank
-                // phantoms fire and wipe real text (the "refused" item box).
-                if (string.IsNullOrWhiteSpace(l) && string.IsNullOrWhiteSpace(rr)) continue;
+                // Positional blanks stay: a both-blank row is a real empty
+                // game row (grey unreadable both sides), and dropping it
+                // collapses the rows below upward (cited 2026-10-01: two
+                // holds rendered as one gap, フェニックスのお riding row 3).
+                // The old drop caused that; phantom-fire safety moved to the
+                // fire gate (content check), which is where firing belongs.
                 rows.Add(l + "\t" + rr);
             }
             // Pack OCR fixups over assembled pairs: grey-item garbles cited per
             // game normalize here, before panel/translation/glossary.
             return rows.ConvertAll(r => ApplyZeldaOcrFixups(r));
         }
+        // Item key for scroll anchoring: name part only (counts change as
+        // items are used, rows do not), fixup-normalized so flicker variants
+        // match their canonical memory rows.
+        private static string NormItemKey(string s)
+        {
+            string t = s ?? "";
+            int ci = t.IndexOf('：');
+            if (ci >= 0) t = t.Substring(0, ci);
+            ci = t.IndexOf(':');
+            if (ci >= 0) t = t.Substring(0, ci);
+            return ApplyZeldaOcrFixups(t.Trim()).Trim();
+        }
+        // Returns the estimated window shift (0 when skipped): the fire gate
+        // bypasses settle on confident shifts (real scrolls post instantly;
+        // flicker never estimates nonzero). Field reset per frame by the
+        // caller path (BuildItemPairs runs every item assembly).
+        private int _lastAnchorS;
+        private int AnchorItemColumns(System.Collections.Generic.List<System.Collections.Generic.List<string>> colItems, List<string>? memPairs)
+        {
+            try
+            {
+                _lastAnchorS = 0;
+                if (colItems == null || colItems.Count != 2 || memPairs == null || memPairs.Count == 0) return 0;
+                var memCols = new System.Collections.Generic.List<System.Collections.Generic.List<string>> { new(), new() };
+                foreach (var mp in memPairs)
+                {
+                    SplitItemPair(mp, out string ml, out string mr);
+                    memCols[0].Add(NormItemKey(ml));
+                    memCols[1].Add(NormItemKey(mr));
+                }
+                if (memCols[0].Count != colItems[0].Count || memCols[1].Count != colItems[1].Count) return 0;
+                var canon = new System.Collections.Generic.HashSet<string>(
+                    Packs.PackRegistry.Current.ItemVocabulary ?? new System.Collections.Generic.List<string>());
+                var curKeys = new System.Collections.Generic.List<System.Collections.Generic.List<string>>();
+                foreach (var col in colItems)
+                {
+                    var ks = new System.Collections.Generic.List<string>();
+                    foreach (var cell in col) ks.Add(NormItemKey(cell));
+                    curKeys.Add(ks);
+                }
+                // Rigid-body gate (cited 2026-10-01: a flickered-off hold
+                // scored s=+1 and dragged やまびこえんまく 4→3 with no
+                // scroll — flicker mimics shifting). Both columns scroll
+                // together, so a real shift ALWAYS turns over both tops;
+                // if either side's first content matches memory's, s=0
+                // (unique names can't re-enter). Blank tops compare by
+                // first content, not first row.
+                for (int side = 0; side < 2; side++)
+                {
+                    string? cur0 = null, mem0 = null;
+                    foreach (var k in curKeys[side]) if (!string.IsNullOrWhiteSpace(k)) { cur0 = k; break; }
+                    foreach (var k in memCols[side]) if (!string.IsNullOrWhiteSpace(k)) { mem0 = k; break; }
+                    if (cur0 != null && mem0 != null && cur0 == mem0) return 0;
+                }
+                int bestS = 0, bestScore = int.MinValue, bestCount = 0;
+                for (int s = -3; s <= 3; s++)
+                {
+                    int sc = 0;
+                    for (int side = 0; side < 2; side++)
+                    {
+                        for (int i = 0; i < curKeys[side].Count; i++)
+                        {
+                            string ck = curKeys[side][i];
+                            if (string.IsNullOrWhiteSpace(ck)) continue;
+                            int mi = i + s;
+                            if (mi < 0 || mi >= memCols[side].Count) continue;
+                            string mk = memCols[side][mi];
+                            if (string.IsNullOrWhiteSpace(mk)) continue;
+                            // Agreements score only on canonical shapes (cited
+                            // 2026-10-01: soup==soup self-agreement must never
+                            // anchor positions). Single-item agreement is
+                            // vacuous by construction (trueIdx falls back to
+                            // obsIdx), so the ≥2 bar below stands.
+                            if (ck == mk && canon.Contains(ck)) sc++;
+                            else if (ck != mk && canon.Contains(ck) && canon.Contains(mk)) sc--;
+                        }
+                    }
+                    if (sc > bestScore) { bestScore = sc; bestS = s; bestCount = 1; }
+                    else if (sc == bestScore) bestCount++;
+                }
+                if (bestS == 0 || bestCount > 1 || bestScore < 2) return 0;
+                _lastAnchorS = bestS;
+                FileLogger.Log($"[battle] item-anchor s={bestS:+0;-0;+0}");
+                for (int side = 0; side < 2; side++)
+                {
+                    var placed = new string[4];
+                    var usedMem = new System.Collections.Generic.HashSet<int>();
+                    var fallback = new System.Collections.Generic.List<string>();
+                    for (int i = 0; i < curKeys[side].Count && i < 4; i++)
+                    {
+                        string ck = curKeys[side][i];
+                        if (string.IsNullOrWhiteSpace(ck)) continue;
+                        int found = -1;
+                        for (int mi = 0; mi < memCols[side].Count; mi++)
+                            if (!usedMem.Contains(mi) && memCols[side][mi] == ck) { found = mi; break; }
+                        if (found < 0) { fallback.Add(colItems[side][i]); continue; }
+                        usedMem.Add(found);
+                        int t = found - bestS;
+                        if (t >= 0 && t < 4 && placed[t] == null) placed[t] = colItems[side][i];
+                        else fallback.Add(colItems[side][i]);
+                    }
+                    foreach (var f in fallback)
+                    {
+                        int at = -1;
+                        for (int k = 0; k < 4; k++) if (placed[k] == null) { at = k; break; }
+                        // Fallbacks keep observed order in remaining slots;
+                        // (obs slot may be taken — first-free preserves order
+                        // without stacking.)
+                        if (at >= 0) placed[at] = f;
+                    }
+                    for (int k = 0; k < 4; k++)
+                        colItems[side][k] = placed[k] ?? "　";
+                }
+                return bestS;
+            }
+            catch { return 0; }
+        }
+        // Reduplicated grunt dust (cited 2026-10-01: ああ、ああ fired as an
+        // item row). Item-path only — dialogue agreement ("yeah, yeah")
+        // must never be touched, so this lives here, never in IsJunkOcr.
+        private static bool IsGruntGap(string g)
+        {
+            string bare = "";
+            foreach (char c in g ?? "")
+            {
+                if (c == '、' || c == '，' || c == ',' || c == '.' || c == '．' || c == '…' || c == '・' || c == ' ' || c == '　') continue;
+                bare += c;
+            }
+            if (bare.Length < 4 || bare.Length > 8 || bare.Length % 2 != 0) return false;
+            string unit = bare.Substring(0, 2);
+            if (unit != "ああ" && unit != "うう" && unit != "おお" && unit != "ええ" && unit != "はあ" && unit != "はぁ" && unit != "あぁ" && unit != "うぅ" && unit != "ふう" && unit != "ふぅ") return false;
+            for (int i = 2; i < bare.Length; i += 2)
+                if (bare.Substring(i, 2) != unit) return false;
+            return true;
+        }
+        // Tail-bleed set for the lastContent gate above: row separators that
+        // bound content but are never content in item chunks.
+        private static bool IsTailBleed(char ch)
+        {
+            return ch == ' ' || ch == '　' || ch == '：' || ch == ':' || ch == '．' || ch == '.' || ch == '…' || ch == '」' || ch == '』' || ch == '】' || ch == '〉' || ch == '》' || (ch >= '0' && ch <= '9') || (ch >= '０' && ch <= '９');
+        }
         private static List<string> DigitChars(string s)
         {
             var out_ = new System.Collections.Generic.List<string>();
             foreach (char c in s ?? "")
                 if ((c >= '0' && c <= '9') || (c >= '０' && c <= '９')) out_.Add(c.ToString());
+            return out_;
+        }
+        // Ghost-slot count: character slots in a counts column after
+        // stripping row separators (dots-runs, colons, brackets, spaces).
+        // A ghosted digit (cited: Ｂ for ７ in "Ｂ２２１") still occupies
+        // its slot, so slots > digits marks a full-width window with a
+        // ghost — the stretch gate. Short windows have no ghost.
+        private static int CountSlots(string s) => GhostSlots(s).Count;
+        // Ordered slot map: true where the slot holds a digit, false for
+        // ghosts (Ｂ/－-class). Parallel to DigitChars (digits[k] is the
+        // k-th true slot's value).
+        private static System.Collections.Generic.List<bool> GhostSlots(string s)
+        {
+            var out_ = new System.Collections.Generic.List<bool>();
+            foreach (char c in s ?? "")
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                if (c == '．' || c == '.' || c == '…' || c == '：' || c == ':' || c == '、' || c == '。' ||
+                    c == '「' || c == '」' || c == '『' || c == '』' || c == '【' || c == '】' || c == '〈' || c == '〉' || c == '《' || c == '》') continue;
+                out_.Add((c >= '0' && c <= '9') || (c >= '０' && c <= '９'));
+            }
             return out_;
         }
         // Item-name tokenizer: hard row breaks first (free perfect rows when
@@ -2658,12 +3428,33 @@ namespace WunderLanguage.Host.Capture
             if (t.Length == 0) return out_;
             var keys = new System.Collections.Generic.List<string>();
             var seen = new System.Collections.Generic.HashSet<string>();
+            var vocabOnly = new System.Collections.Generic.HashSet<string>();
             foreach (var k in Packs.PackRegistry.Current.ItemVocabulary ?? new System.Collections.Generic.List<string>())
-                if (!string.IsNullOrEmpty(k) && seen.Add(k)) keys.Add(k);
-            lock (_prefetchLock)
-                foreach (var k in _battleNameMemo.Keys)
-                    if (!string.IsNullOrEmpty(k) && k.Length >= 4 && seen.Add(k)) keys.Add(k);
+                if (!string.IsNullOrEmpty(k) && seen.Add(k)) { keys.Add(k); vocabOnly.Add(k); }
+            // Memo keys are OUT of the splitter pool (cited 2026-10-01 soup
+            // self-lock: a posted row rejoined as a key and matched itself
+            // forever). Translation sim-memo is untouched — splitting is
+            // pack-truth only now. Unknown games (empty vocab) keep raw
+            // passthrough below via the empty-keepSet rule.
             keys.Sort((a, b) => b.Length.CompareTo(a.Length));
+            // Keep-set for the canonical-or-blank policy: vocab names plus
+            // cited fixup sources (which the pair stage maps to canonical).
+            // Unknown games pass everything through (learning mode).
+            var fixupFroms = new System.Collections.Generic.HashSet<string>();
+            bool learnMode = vocabOnly.Count == 0;
+            try
+            {
+                foreach (var (from, to) in Packs.PackRegistry.Current.OcrFixups)
+                    if (!string.IsNullOrEmpty(from)) fixupFroms.Add(from);
+            }
+            catch { }
+            // Canonical dedup (cited 2026-10-01: やまびこえんまく posted
+            // twice in one column — scroll ghosts duplicate reads, but
+            // inventory names are unique per column). Second+ occurrences
+            // blank (slots preserved) instead of duplicating. Fixup-
+            // normalized, so variants dedup against their canonical form.
+            // Soup is exempt (non-canonical shapes may genuinely repeat).
+            var seenCanon = new System.Collections.Generic.HashSet<string>();
             foreach (var chunk in t.Split('\n'))
             {
                 // Recognition-bleed (digits/dots/colons) bounds content but is
@@ -2680,18 +3471,39 @@ namespace WunderLanguage.Host.Capture
                 // when content follows them (leading/middle grey rows).
                 // Trailing runs hold nothing — tail-pad covers the same slot,
                 // and chunk tails collect box-corner artifacts ("・」") that
-                // must never mint positioned rows.
+                // must never mint positioned rows. Trailing single-kana dust
+                // (cited 2026-10-01: "．．．と" anchored a phantom 4th slot,
+                // stranding やまびこえんまく in row 3) never counts as the
+                // content either: lone kana with bleed neighbors is dust.
+                // Single kanji still counts (月-class counters are content).
                 int lastContent = -1;
                 for (int k = c.Length - 1; k >= 0; k--)
                 {
                     char ch = c[k];
                     bool isBleed = ch == ' ' || ch == '　' || ch == '：' || ch == ':' || ch == '．' || ch == '.' || ch == '…' || ch == '」' || ch == '』' || ch == '】' || ch == '〉' || ch == '》' || (ch >= '0' && ch <= '9') || (ch >= '０' && ch <= '９');
-                    if (!isBleed) { lastContent = k; break; }
+                    if (isBleed) continue;
+                    bool isKana = (ch >= 'ぁ' && ch <= 'ん') || (ch >= 'ァ' && ch <= 'ヶ') || ch == 'ー';
+                    if (isKana)
+                    {
+                        bool leftContent = k > 0 && !IsTailBleed(c[k - 1]);
+                        bool rightContent = k < c.Length - 1 && !IsTailBleed(c[k + 1]);
+                        if (!leftContent && !rightContent) continue;
+                    }
+                    lastContent = k; break;
                 }
                 int pos = 0;
                 var gap = new System.Text.StringBuilder();
                 bool inDots = false;
-                void FlushGap() { string g = gap.ToString().Trim(); if (g.Length < 2) { gap.Clear(); return; } if (g.Length > 12) g = "　"; out_.Add(g); gap.Clear(); }
+                // Gap hold bar is 9: longest cited item names run 8
+                // (ナイトのこころえ, フェニックスのお), so 9+ gaps are
+                // sentence soup, never items (cited 2026-10-01: 10-char
+                // こういうのはあぐすり fired as an item row; 11-char
+                // こういうことはあくすり before it). Shop milestone
+                // revisits if longer names ever cite in.
+                // ダウン dust (cited 2026-10-01: bracketed 〈ダウン〉 scroll
+                // chrome read posted as an item; the brackets already split
+                // as boundaries, the word drops here — item-path only).
+                void FlushGap() { string g = gap.ToString().Trim(); if (g.Length < 2) { gap.Clear(); return; } if (g.Length > 9) g = "　"; else if (IsGruntGap(g) || g == "ダウン") { gap.Clear(); return; } out_.Add(g); gap.Clear(); }
                 void MatchSeg(string seg)
                 {
                     int p = 0;
@@ -2702,7 +3514,15 @@ namespace WunderLanguage.Host.Capture
                         {
                             if (p + k.Length <= seg.Length && string.Compare(seg, p, k, 0, k.Length, System.StringComparison.Ordinal) == 0) { hit = k; break; }
                         }
-                        if (hit != null) { FlushGap(); out_.Add(hit); p += hit.Length; }
+                        if (hit != null)
+                        {
+                            // NOTE: no seenCanon touch here — the blank pass
+                            // below owns dedup for ALL entries uniformly.
+                            // (Cited 2026-10-01: registering here made every
+                            // direct hit re-match itself below and blank —
+                            // only fixup-mediated rows survived.)
+                            FlushGap(); out_.Add(hit); p += hit.Length;
+                        }
                         else { gap.Append(seg[p]); p++; }
                     }
                 }
@@ -2718,6 +3538,12 @@ namespace WunderLanguage.Host.Capture
                     // boundary like colons, but never a grey-row hold
                     // (unlike dots-runs).
                     if (ch == '・') { FlushSeg(); FlushGap(); inDots = false; pos++; continue; }
+                    // Geometric shapes, corner brackets and fullwidth quotes
+                    // (● cursor/bullet artifacts, 〈〉《》 quotes, ＂＂『』 —
+                    // cited 2026-10-01: ＂』 posted as an item): boundaries
+                    // like ・ above — split around them, never hold, never
+                    // content.
+                    if (ch == '●' || ch == '○' || ch == '◆' || ch == '◇' || ch == '■' || ch == '□' || ch == '▲' || ch == '△' || ch == '▼' || ch == '▽' || ch == '★' || ch == '☆' || ch == '〈' || ch == '〉' || ch == '《' || ch == '》' || ch == '＂' || ch == '"' || ch == '『' || ch == '』') { FlushSeg(); FlushGap(); inDots = false; pos++; continue; }
                     bool isDots = ch == '．' || ch == '.' || ch == '…';
                     bool isBleed = isDots || ch == '：' || ch == ':' || (ch >= '0' && ch <= '9') || (ch >= '０' && ch <= '９');
                     if (!isBleed) { inDots = false; seg.Append(ch); pos++; continue; }
@@ -2728,14 +3554,71 @@ namespace WunderLanguage.Host.Capture
                 }
                 FlushSeg(); FlushGap();
             }
+            // Fragment completion: OCR line-breaks can split one name across
+            // rows ("ハイ" + "ポーション"). If a non-key gap plus its neighbor
+            // form an EXACT vocab key, merge (the gap was a fragment, never an
+            // item). Real items (keys themselves) never merge; blanks never
+            // merge (whitespace breaks exactness). Terminates: every merge
+            // shortens the list.
+            for (int m = 0; m < out_.Count - 1; m++)
+            {
+                if (vocabOnly.Contains(out_[m])) continue;
+                if (vocabOnly.Contains(out_[m] + out_[m + 1])) { out_[m] = out_[m] + out_[m + 1]; out_.RemoveAt(m + 1); m--; }
+            }
+            // Canonical-or-blank (cited 2026-10-01, user-endorsed): the full
+            // inventory is known, so item rows post only cited shapes — vocab
+            // hits and fixup sources (mapped canonical at pair stage); every
+            // other remainder blanks instead of posting soup (コナイフ,
+            // プラン, クリフ-class flicker all auto-resolve). Runs AFTER
+            // fragment completion so split names still merge. Unknown games
+            // (learnMode) keep raw passthrough for discovery; shop milestone
+            // revisits if shop stock needs different rules.
+            if (!learnMode)
+            {
+                for (int m = 0; m < out_.Count; m++)
+                {
+                    string o = out_[m];
+                    if (string.IsNullOrWhiteSpace(o)) continue;
+                    if (vocabOnly.Contains(o))
+                    {
+                        if (!seenCanon.Add(NormItemKey(o))) out_[m] = "　";
+                        continue;
+                    }
+                    string key = o.Trim();
+                    key = key.Trim('、', '。', '，', ',', '.', '．', '…', '・', '「', '」', '『', '』', '【', '】', '〈', '〉', '《', '》', '」');
+                    if (vocabOnly.Contains(key) || fixupFroms.Contains(key) || fixupFroms.Contains(o))
+                    {
+                        string nk = NormItemKey(o);
+                        if (vocabOnly.Contains(nk) && !seenCanon.Add(nk)) out_[m] = "　";
+                        continue;
+                    }
+                    out_[m] = "　";
+                }
+            }
             return out_;
         }
         private static List<string> AttachMonsterCounts(List<string> rows)
         {
+            // Leading digits-only rows merge into the FOLLOWING name row
+            // (cited 2026-10-01: bare "１" posted as a monster; OCR order
+            // flips put the count first). Same info, one row — the trailing
+            // behavior below is unchanged.
             var out_ = new List<string>(rows.Count);
+            string pending = "";
             foreach (var r in rows)
             {
                 SplitRowDigits(r, out string name, out string digits);
+                if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(digits) && out_.Count == 0)
+                {
+                    pending = pending.Length == 0 ? digits : pending + " " + digits;
+                    continue;
+                }
+                if (pending.Length > 0 && !string.IsNullOrWhiteSpace(name))
+                {
+                    SplitRowDigits(r, out _, out string ownDigits);
+                    if (string.IsNullOrWhiteSpace(ownDigits)) { out_.Add(r.TrimEnd() + "　" + pending); pending = ""; continue; }
+                }
+                if (pending.Length > 0) { out_.Add(pending); pending = ""; }
                 if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(digits) && out_.Count > 0)
                 {
                     SplitRowDigits(out_[^1], out string prevName, out _);
@@ -2743,6 +3626,7 @@ namespace WunderLanguage.Host.Capture
                 }
                 out_.Add(r);
             }
+            if (pending.Length > 0) out_.Add(pending);
             return out_;
         }
         // Battle context: the item-box class is trusted only mid-battle, so
