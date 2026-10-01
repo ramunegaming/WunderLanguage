@@ -51,41 +51,67 @@ namespace WunderLanguage.Host.Sidecar
 
             statusProgress?.Report("Starting translation engine...");
 
-            var psi = new ProcessStartInfo
+            // One-shot GPU-load-crash fallback (cited 2026-10-01: CAT 4-bit
+            // weight load segfaults at shard 1 under load, twice in a row —
+            // bitsandbytes fragility, fails fast in seconds). First attempt
+            // is full GPU; if the process dies during startup, retry once
+            // with the translator disabled (OCR stays GPU-fast, /translate
+            // degrades to the host fallback chain). No stale flags: every
+            // launch tries GPU first.
+            bool cpuFallback = false;
+            while (true)
             {
-                FileName = pythonExe,
-                Arguments = "-m uvicorn main:app --host 127.0.0.1 --port 8000",
-                WorkingDirectory = sidecarDir,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
+                var psi = new ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = "-m uvicorn main:app --host 127.0.0.1 --port 8000",
+                    WorkingDirectory = sidecarDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                if (cpuFallback)
+                    psi.Environment["WUNDER_NO_CAT"] = "1";
 
-            _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-            _process.OutputDataReceived += (_, e) =>
-            {
-                if (e.Data is null) return;
-                if (ShouldLogSidecarLine(e.Data))
-                    FileLogger.Log($"[sidecar stdout] {e.Data}");
-                lock (_recentOutput) _recentOutput.Add(e.Data);
-            };
-            _process.ErrorDataReceived += (_, e) =>
-            {
-                if (e.Data is null) return;
-                if (ShouldLogSidecarLine(e.Data))
-                    FileLogger.Log($"[sidecar stderr] {e.Data}");
-                lock (_recentOutput) _recentOutput.Add(e.Data);
-            };
+                _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                _process.OutputDataReceived += (_, e) =>
+                {
+                    if (e.Data is null) return;
+                    if (ShouldLogSidecarLine(e.Data))
+                        FileLogger.Log($"[sidecar stdout] {e.Data}");
+                    lock (_recentOutput) _recentOutput.Add(e.Data);
+                };
+                _process.ErrorDataReceived += (_, e) =>
+                {
+                    if (e.Data is null) return;
+                    if (ShouldLogSidecarLine(e.Data))
+                        FileLogger.Log($"[sidecar stderr] {e.Data}");
+                    lock (_recentOutput) _recentOutput.Add(e.Data);
+                };
 
-            if (!_process.Start())
-                throw new InvalidOperationException("Failed to start the OCR service process.");
+                if (!_process.Start())
+                    throw new InvalidOperationException("Failed to start the OCR service process.");
 
-            _process.BeginOutputReadLine();
-            _process.BeginErrorReadLine();
-            FileLogger.Log($"Sidecar process started, PID: {_process.Id}");
+                _process.BeginOutputReadLine();
+                _process.BeginErrorReadLine();
+                FileLogger.Log($"Sidecar process started, PID: {_process.Id} (OCR-only fallback: {cpuFallback})");
 
-            await WaitForHealthyAsync(statusProgress);
+                try
+                {
+                    await WaitForHealthyAsync(statusProgress);
+                    return;
+                }
+                catch (InvalidOperationException ex) when (!cpuFallback && ex.Message.Contains("exited unexpectedly"))
+                {
+                    FileLogger.Log($"Sidecar crashed during startup (likely CAT GPU load) - retrying once with translator disabled: {ex.Message.Split('\n')[0]}");
+                    statusProgress?.Report("Translation engine stumbled on GPU load - retrying in OCR-only mode (translations fall back)...");
+                    try { if (_process is { HasExited: false }) _process.Kill(entireProcessTree: true); } catch { }
+                    lock (_recentOutput) _recentOutput.Clear();
+                    await Task.Delay(2000);
+                    cpuFallback = true;
+                }
+            }
         }
 
         // Log hygiene: tqdm progress bars, per-line transformers warnings,
