@@ -10,16 +10,30 @@ namespace WunderLanguage.Host.Capture
     public static class BattleFrame
     {
         // 0 = not battle, 1 = bottom-only (suppress dialogue), 2 = top rewards (isolate).
-        public static int Classify(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels, out string topRaw)
+        public static int Classify(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels, out string topRaw, bool itemOpen = false)
         {
             topRaw = "";
-            if (fw <= 1 || fh <= 1 || blocks == null || blocks.Count < 3) return 0;
+            // Minimum 2: the item box merges to exactly 2 tall columns
+            // (left + right); a <3 gate misroutes every clean 2-block
+            // item frame to dialogue and wipes battle context (2026-09-30
+            // log: 2-block item fired as in-game text). Mid-band JA still
+            // vetoes below, so 2-block dialogue never routes here.
+            if (fw <= 1 || fh <= 1 || blocks == null || blocks.Count < 2) return 0;
             int bottomJa = 0, midJa = 0, topJa = 0;
             foreach (var b in blocks)
             {
+                // Chrome edge: capture slivers above the game canvas
+                // (emulator menu header at y=-1, 2026-09-30 log fired as a
+                // 130ch battle top bar). Game reward bars sit at y≈60+.
+                if (b.Y < 8) continue;
                 if (!isJa(b.Text)) continue;
                 double ny = (double)b.Y / fh;
-                if (ny < 0.25) topJa++;
+                if (ny < 0.25)
+                {
+                    // Reward bars are SHORT wide rows; tall top blocks are
+                    // emulator menu dropdowns (h310 at y83 cited), never tops.
+                    if ((double)b.Height / fh < 0.15) topJa++;
+                }
                 else if (ny < 0.65) midJa++;
                 else bottomJa++;
             }
@@ -32,7 +46,7 @@ namespace WunderLanguage.Host.Capture
             // multi-row text no normal battle box reaches (monster/action
             // talls stay well short of it). The controller trusts class 3 only
             // mid-battle (battle context), so tall field menus never route here.
-            if (ExtractItemColumns(blocks, fh, isJa).cols.Count >= 2) { topRaw = ""; return 3; }
+            if (ExtractItemColumns(blocks, fw, fh, isJa, itemOpen, weaponLabels).cols.Count >= 2) { topRaw = ""; return 3; }
             // Weapon-select arm (mockup "Weapon Select Open"): the on-top
             // equip box always shows its slot labels (pack WeaponLabels), so
             // labels — not geometry — mark the state. Geometry alone cannot
@@ -95,17 +109,50 @@ namespace WunderLanguage.Host.Capture
         {
             var tops = new List<string>();
             foreach (var b in blocks)
-                if (isJa(b.Text) && (double)b.Y / fh < 0.25)
+                // Same chrome/tall exclusions as the count above: menu
+                // dropdown text never joins a reward bar.
+                if (b.Y >= 8 && isJa(b.Text) && (double)b.Y / fh < 0.25 && (double)b.Height / fh < 0.15)
                     tops.Add(b.Text.Trim());
             if (tops.Count > 0) { topRaw = string.Join(" ", tops); return 2; }
             topRaw = "";
             return 1;
         }
 
-        public static bool IsBattle(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels)
+        public static bool IsBattle(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels, bool itemOpen = false)
         {
             string unused;
-            return Classify(blocks, fw, fh, isJa, weaponLabels, out unused) != 0;
+            return Classify(blocks, fw, fh, isJa, weaponLabels, out unused, itemOpen) != 0;
+        }
+
+        // Scroll-remnant hold (cited 2026-09-30: item scroll fragments into
+        // 1-col tall or short-row blocks that Classify can't own — 1 JA tall
+        // + dots + digits, h84 short rows — and the cls==0 wipe then kills
+        // battle context, so follow-up item frames fall to dialogue and fire
+        // hallucinations as in-game text). Remnant = bottom-only JA, no
+        // top/mid JA, no wide bottom block (wide = real dialogue box, which
+        // must still fire). Controller-only: suppresses dialogue and holds
+        // the battle frame (no wipe, no fire) while context is alive.
+        // Outside battle context it is never consulted: behavior identical.
+        public static bool IsBattleRemnant(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa)
+        {
+            if (blocks == null || fw <= 1 || fh <= 1 || blocks.Count == 0) return false;
+            bool anyBottomJa = false;
+            foreach (var b in blocks)
+            {
+                if (b.Y < 8 || b.Width < 10 || b.Height < 12) continue;
+                string t = (b.Text ?? "").Trim();
+                if (t.Length < 1) continue;
+                double ny = (double)b.Y / fh;
+                double nw = (double)b.Width / fw;
+                if (ny < 0.25) { if (isJa(t) && (double)b.Height / fh < 0.15) return false; }
+                else if (ny < 0.65) { if (isJa(t)) return false; }
+                else
+                {
+                    if (isJa(t)) anyBottomJa = true;
+                    if (nw >= 0.60) return false;
+                }
+            }
+            return anyBottomJa;
         }
 
         // Party-status cell: short+narrow, right of the enemy/action column.
@@ -140,7 +187,7 @@ namespace WunderLanguage.Host.Capture
         // stay unclaimed and route normally (base rows peeking through
         // transitions). No labels (unknown game) = everything empty, zero
         // behavior change.
-        private static bool ContainsWeaponLabel(string t, System.Collections.Generic.IReadOnlyList<string> labels)
+        private static bool ContainsWeaponLabel(string t, System.Collections.Generic.IReadOnlyList<string>? labels)
         {
             if (string.IsNullOrEmpty(t) || labels == null) return false;
             foreach (var l in labels)
@@ -215,49 +262,75 @@ namespace WunderLanguage.Host.Capture
                 }
                 if (!placed) lines.Add((p.Y, new System.Collections.Generic.List<OcrBlock> { p }));
             }
-            // Tail = bottom-most line strictly below the labels that carries
-            // JA names (the peeking item row). Halves ship count-less when
-            // counts flicker out (wrong counts are worse than none).
-            System.Collections.Generic.List<OcrBlock>? tail = null;
+            // Tail = bottom TWO lines strictly below the labels that carry
+            // JA names (the peeking item rows — usually one, two when the
+            // box sits higher). Halves ship count-less when counts flicker
+            // out (wrong counts are worse than none).
+            var tailLines = new System.Collections.Generic.List<System.Collections.Generic.List<OcrBlock>>();
             foreach (var ln in lines.OrderBy(l => l.y))
             {
                 if (ln.y <= labelBottom + 8) continue;
                 bool hasJa = false;
                 foreach (var c in ln.bs) if (isJa((c.Text ?? "").Trim())) { hasJa = true; break; }
-                if (hasJa) tail = ln.bs;
+                if (hasJa) tailLines.Add(ln.bs);
             }
+            // Bottom-align: peeking rows sit at the box bottom (rows 3-4 of
+            // the top-open window underneath — cited 2026-10-02 invariant:
+            // scroll-up-to-weapon always leaves rows 1-4 showing). Prepend
+            // blank hard-rows so top-fill never drags them upward; the
+            // normal split/pad/anchor/settle below then treats them like
+            // any rows (anchor agrees: mem holds the same row-4 positions).
             var tailSet = new System.Collections.Generic.HashSet<OcrBlock>();
             var tailCols = new System.Collections.Generic.List<string>();
-            if (tail != null && tail.Count > 0)
+            if (tailLines.Count > 0)
             {
-                foreach (var c in tail) tailSet.Add(c);
-                var ordered = new System.Collections.Generic.List<OcrBlock>(tail);
-                ordered.Sort((a, b2) => a.X.CompareTo(b2.X));
-                int split = ordered.Count;
-                if (ordered.Count > 1)
+                while (tailLines.Count > 2) tailLines.RemoveAt(0);
+                var leftNames = new System.Collections.Generic.List<string>();
+                var rightNames = new System.Collections.Generic.List<string>();
+                var leftDigs = new System.Collections.Generic.List<string>();
+                var rightDigs = new System.Collections.Generic.List<string>();
+                foreach (var tl in tailLines)
                 {
-                    int bestGap = 20, bestIx = ordered.Count;
-                    for (int i = 1; i < ordered.Count; i++)
+                    var ordered = new System.Collections.Generic.List<OcrBlock>(tl);
+                    ordered.Sort((a, b2) => a.X.CompareTo(b2.X));
+                    int split = ordered.Count;
+                    if (ordered.Count > 1)
                     {
-                        int gap = ordered[i].X - (ordered[i - 1].X + ordered[i - 1].Width);
-                        if (gap > bestGap) { bestGap = gap; bestIx = i; }
+                        int bestGap = 20, bestIx = ordered.Count;
+                        for (int i = 1; i < ordered.Count; i++)
+                        {
+                            int gap = ordered[i].X - (ordered[i - 1].X + ordered[i - 1].Width);
+                            if (gap > bestGap) { bestGap = gap; bestIx = i; }
+                        }
+                        split = bestIx;
                     }
-                    split = bestIx;
-                }
-                for (int h = 0; h < 2; h++)
-                {
-                    int lo = h == 0 ? 0 : split, hi = h == 0 ? split : ordered.Count;
-                    if (lo >= hi) continue;
-                    var names = new System.Collections.Generic.List<string>();
-                    var digs = new System.Collections.Generic.List<string>();
-                    for (int i = lo; i < hi; i++)
+                    var ln_ = new System.Collections.Generic.List<string>();
+                    var rn = new System.Collections.Generic.List<string>();
+                    var ld = new System.Collections.Generic.List<string>();
+                    var rd = new System.Collections.Generic.List<string>();
+                    for (int i = 0; i < ordered.Count; i++)
                     {
                         string t = (ordered[i].Text ?? "").Trim();
-                        if (isJa(t)) names.Add(t);
-                        else if (HasDigit(t)) digs.Add(t);
+                        if (isJa(t)) (i < split ? ln_ : rn).Add(t);
+                        else if (HasDigit(t)) (i < split ? ld : rd).Add(t);
                     }
-                    if (names.Count == 0) continue;
-                    tailCols.Add(string.Join("\n", names) + "\t" + string.Join(" ", digs));
+                    if (ln_.Count == 0 && rn.Count == 0) continue;
+                    leftNames.Add(string.Join(" ", ln_));
+                    rightNames.Add(string.Join(" ", rn));
+                    leftDigs.Add(string.Join(" ", ld));
+                    rightDigs.Add(string.Join(" ", rd));
+                }
+                foreach (var tl in tailLines) foreach (var c in tl) tailSet.Add(c);
+                int rows = System.Math.Max(leftNames.Count, rightNames.Count);
+                if (rows > 0)
+                {
+                    while (leftNames.Count < rows) leftNames.Add("");
+                    while (rightNames.Count < rows) rightNames.Add("");
+                    while (leftDigs.Count < rows) leftDigs.Add("");
+                    while (rightDigs.Count < rows) rightDigs.Add("");
+                    string pad = string.Concat(System.Linq.Enumerable.Repeat("　\n", System.Math.Max(0, 4 - rows)));
+                    tailCols.Add(pad + string.Join("\n", leftNames) + "\t" + string.Join(" ", leftDigs));
+                    tailCols.Add(pad + string.Join("\n", rightNames) + "\t" + string.Join(" ", rightDigs));
                 }
             }
             var cells = new System.Collections.Generic.HashSet<OcrBlock>();
@@ -266,20 +339,68 @@ namespace WunderLanguage.Host.Capture
             {
                 string lt = (l.Text ?? "").Trim();
                 cells.Add(l);
-                parts.Add((l.Y, l.X, l.Height, lt));
+                // Positional split (cited 2026-10-02: "みぎてゆメタルナックル"
+                // glued label row + name row into one tall block, posting +
+                // translating as a sentence). The label rides row 1; whatever
+                // follows it is the equipped name on row 2 below. Emitted
+                // label is the exact pack string (never OCR's spelling).
+                string? found = null;
+                int fix = -1;
+                if (weaponLabels != null)
+                    foreach (var w in weaponLabels)
+                    {
+                        if (string.IsNullOrEmpty(w)) continue;
+                        int q = lt.IndexOf(w, System.StringComparison.Ordinal);
+                        if (q >= 0 && (fix < 0 || q < fix)) { fix = q; found = w; }
+                    }
+                if (found != null)
+                {
+                    parts.Add((l.Y, l.X, l.Height, found));
+                    string rest = (lt.Substring(0, fix) + " " + lt.Substring(fix + found.Length)).Trim(' ', '　', '・', '…', '．', '.', '「', '」', '"', '\'', '、', '。');
+                    rest = StripGlovePrefix(rest);
+                    if (rest.Length >= 2) parts.Add((l.Y + System.Math.Max(30, l.Height / 2), l.X, l.Height, rest));
+                }
+                else parts.Add((l.Y, l.X, l.Height, lt));
             }
             foreach (var p in shorts)
             {
                 if (labels.Contains(p)) continue;
                 if (tailSet.Contains(p)) continue;
-                string t = (p.Text ?? "").Trim();
+                string t = StripGlovePrefix((p.Text ?? "").Trim());
                 if (!isJa(t)) continue;
                 cells.Add(p);
                 parts.Add((p.Y, p.X, p.Height, t));
             }
+            // Tail cells belong to the peeking item row, never to base rows:
+            // fold them into the claim set so monster/action/party slots
+            // can't pick them up during transitions (cited 2026-10-02:
+            // tail Y|Kd fired as action + party while the item box showed
+            // blanks).
+            foreach (var c in tailSet) cells.Add(c);
             return new WeaponLayer(cells, parts, tailCols, labels.Count);
         }
 
+        // Glove-cursor prefix strip, weapon path only (cited 2026-10-02:
+        // the selection glove reads as ゆ/お/の — and as Latin A (panel
+        // "Aメタルナックル", stable) — ahead of the equipped name; cited
+        // 2026-10-03: the glove also reads as ４ ("４メタルナックル").
+        // Icons are not text: they strip at extraction, never translate.
+        // Digits are safe here — item counts never pass this path, and no
+        // weapon name starts with one. Single leading glove char only,
+        // remainder must stay a real name (≥2 chars) so a genuine short
+        // ゆ-start (ゆみ-class, 2 chars) never strips. Dialogue text never
+        // passes here — ゆく-class verbs and Zelda Ａボタン prompts are
+        // safe (no labels there = layer off).
+        private static string StripGlovePrefix(string t)
+        {
+            string s = (t ?? "").TrimStart(' ', '　', '・', '…', '．', '.', '「', '」', '"', '\'', '、', '。', '!', '！', '?', '？', ',', '，');
+            if (s.Length >= 3 && (s[0] == 'ゆ' || s[0] == 'お' || s[0] == 'の' || s[0] == 'A' || s[0] == 'Ａ' || s[0] == '４' || s[0] == '4'))
+            {
+                string rest = s.Substring(1).TrimStart(' ', '　', '・', '…', '．', '.', '「', '」', '"', '\'', '、', '。');
+                if (rest.Length >= 2) return rest;
+            }
+            return s;
+        }
         private static bool HasDigit(string s)
         {
             foreach (char c in s)
@@ -303,19 +424,45 @@ namespace WunderLanguage.Host.Capture
         // right (splitting happens in the controller, which owns pack
         // vocabulary + the name memo). Claimed cells never leak into
         // monster/action/party slots during transitions.
-        private static (System.Collections.Generic.HashSet<OcrBlock> cells, System.Collections.Generic.List<string> cols) ExtractItemColumns(List<OcrBlock> blocks, int fh, System.Func<string, bool> isJa)
+        private static (System.Collections.Generic.HashSet<OcrBlock> cells, System.Collections.Generic.List<string> cols) ExtractItemColumns(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, bool itemOpen = false, System.Collections.Generic.IReadOnlyList<string>? weaponLabels = null)
         {
             var cells = new System.Collections.Generic.HashSet<OcrBlock>();
             var cols = new System.Collections.Generic.List<string>();
-            if (blocks == null || fh <= 1) return (cells, cols);
+            if (blocks == null || fw <= 1 || fh <= 1) return (cells, cols);
+            // Latched open box: scrolled short rows (bottom-of-list views too
+            // sparse for tall merges) assemble as item columns. Names gate at
+            // ~2 merged rows (single rows, monster h~48 and party h~42 stay
+            // out); counts ride lower; wide JA (dialogue boxes) never counts
+            // as a column. Unlatched path is byte-identical to before.
+            double nameGate = itemOpen ? 0.09 : 0.13;
+            double countGate = itemOpen ? 0.05 : 0.13;
             var names = new System.Collections.Generic.List<OcrBlock>();
             var counts = new System.Collections.Generic.List<OcrBlock>();
             foreach (var b in blocks)
             {
                 string t = (b.Text ?? "").Trim();
                 if (t.Length < 1 || b.Width < 10 || b.Height < 12) continue;
+                // Weapon slot labels (みぎて/ひだりて) are equip-box cells,
+                // never item columns — without this the weapon box's merged
+                // label+name block (tall!) routes into the item grid and its
+                // text blanks via the item canonical policy (cited
+                // 2026-10-02: whole weapon-open output went blank). Labels
+                // never occur in item text, so this is a no-op otherwise.
+                if (ContainsWeaponLabel(t, weaponLabels)) continue;
                 if ((double)b.Y / fh < 0.5) continue;
-                if ((double)b.Height / fh < 0.13) continue;
+                if (itemOpen && (double)b.Width / fw >= 0.60) continue;
+                if ((double)b.Height / fh < countGate) continue;
+                if ((double)b.Height / fh < nameGate)
+                {
+                    if (HasDigit(t)) counts.Add(b);
+                    continue;
+                }
+                // Count-ghost drop (cited 2026-10-01: narrow tall ニュース
+                // blocks posted as item names 3 runs): a tall narrow block
+                // with no digit is a ghosted counts column, never a name —
+                // real name columns are 3+ chars wide (shortest cited names
+                // run 3 chars ≈ 70px+). Digit blocks still route to counts.
+                if ((double)b.Width / fw < 0.065 && !HasDigit(t)) continue;
                 if (isJa(t)) names.Add(b);
                 else if (HasDigit(t)) counts.Add(b);
             }
@@ -338,11 +485,35 @@ namespace WunderLanguage.Host.Capture
             for (int i = 0; i < ncol.Count; i++)
             {
                 string nt = (ncol[i].Text ?? "").Trim();
-                string ct = i < ccol.Count ? (ccol[i].Text ?? "").Trim() : "";
+                // Counts pair by geometry, not index (cited 2026-10-01: the
+                // counts block sits at its own column's right edge — x671
+                // paired left by index while belonging right, starving the
+                // right column of the digits its endanchor needed). Overlap
+                // wins; else smallest edge gap; tie goes left (index order,
+                // the old behavior). Multiple blocks on one column concat
+                // (zip gates on agreement anyway, so extras only veto).
+                var ctb = new System.Text.StringBuilder();
+                foreach (var cb in ccol)
+                {
+                    int best = -1, bestGap = int.MaxValue;
+                    for (int ni = 0; ni < ncol.Count; ni++)
+                    {
+                        int nx0 = ncol[ni].X, nx1 = ncol[ni].X + ncol[ni].Width;
+                        int cx0 = cb.X, cx1 = cb.X + cb.Width;
+                        int gap = cx1 < nx0 ? nx0 - cx1 : (nx1 < cx0 ? cx0 - nx1 : 0);
+                        if (gap < bestGap) { bestGap = gap; best = ni; }
+                    }
+                    if (best == i)
+                    {
+                        if (ctb.Length > 0) ctb.Append(' ');
+                        ctb.Append((cb.Text ?? "").Trim());
+                    }
+                }
+                string ct = ctb.ToString();
                 cells.Add(ncol[i]);
-                if (i < ccol.Count) cells.Add(ccol[i]);
                 cols.Add(nt + "\t" + ct);
             }
+            foreach (var cb in ccol) cells.Add(cb);
             return (cells, cols);
         }
         // Slot split for the panel mirror: top reporting bar, bottom-left monster
@@ -350,7 +521,7 @@ namespace WunderLanguage.Host.Capture
         // JA mirror keeps count digits with monsters; party slot is JA names only
         // (HP/timebar never ship). Same-Y fragments join one line ("name 3").
         // Noise (ellipsis-only) never ships.
-        public static BattleSlots ExtractSlots(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels, System.Func<string, bool> isNoise)
+        public static BattleSlots ExtractSlots(List<OcrBlock> blocks, int fw, int fh, System.Func<string, bool> isJa, System.Collections.Generic.IReadOnlyList<string> weaponLabels, System.Func<string, bool> isNoise, bool itemOpen = false)
         {
             var top = new List<(int x, string t)>();
             var monster = new List<(int y, int x, int h, string t)>();
@@ -363,7 +534,7 @@ namespace WunderLanguage.Host.Capture
             // the right-side party slot (cx >= 0.38). The peeking item tail
             // regroups only under an open weapon box (stacking: item grid
             // underneath, labels pin the state).
-            var itemClaim = ExtractItemColumns(blocks, fh, isJa);
+            var itemClaim = ExtractItemColumns(blocks, fw, fh, isJa, itemOpen, weaponLabels);
             var weaponLayer = ExtractWeaponLayer(blocks, fw, fh, isJa, weaponLabels, itemClaim.cells);
             var itemCols = new System.Collections.Generic.List<string>(itemClaim.cols);
             itemCols.AddRange(weaponLayer.tailCols);
@@ -398,7 +569,7 @@ namespace WunderLanguage.Host.Capture
                 JoinLines(action),
                 JoinLines(right),
                 itemCols,
-                JoinLines(weaponLayer.parts));
+                JoinLinesPaired(weaponLayer.parts));
         }
 
         // Bounded fuzzy command search (the anti-whack-a-mole safeguard): OCR
@@ -571,6 +742,61 @@ namespace WunderLanguage.Host.Capture
             var rows = new List<string>();
             foreach (var ln in lines.OrderBy(l => l.y))
                 rows.Add(string.Join(" ", ln.cells.OrderBy(c => c.x).Select(c => c.t)));
+            return rows;
+        }
+        // Weapon 2×2 grid (cited 2026-10-03 screenshots: row 1 = slot labels
+        // みぎて|ひだりて side by side, row 2 = equipped names offset right
+        // under their labels). Same Y-grouping as JoinLines, but halves stay
+        // split as "left\tRight" pairs for the 2-column render + per-side
+        // glossary pins. Split point comes from the widest row (the label
+        // row, 2 cells); single-cell rows fall left/right of it. Unknown
+        // games never reach here (no labels = no weapon layer at all).
+        public static List<string> JoinLinesPaired(List<(int y, int x, int h, string t)> parts)
+        {
+            var lines = new List<(int y, List<(int x, string t)> cells)>();
+            foreach (var p in parts.OrderBy(p => p.y).ThenBy(p => p.x))
+            {
+                bool placed = false;
+                foreach (var ln in lines)
+                {
+                    if (System.Math.Abs(p.y - ln.y) < System.Math.Min(p.h, 60) / 2 + 8)
+                    {
+                        ln.cells.Add((p.x, p.t));
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) lines.Add((p.y, new List<(int x, string t)> { (p.x, p.t) }));
+            }
+            var ordered = lines.OrderBy(l => l.y).ToList();
+            // Split point = midpoint of the widest intra-line gap (the label
+            // row's inter-column gap dwarfs intra-cell spacing). No multi-cell
+            // line: everything lands left, right holds blank.
+            int splitX = int.MaxValue;
+            {
+                int bestGap = 40, bestMid = int.MaxValue;
+                foreach (var ln in ordered)
+                {
+                    var xs = ln.cells.OrderBy(c => c.x).ToList();
+                    for (int i = 1; i < xs.Count; i++)
+                    {
+                        int gap = xs[i].x - xs[i - 1].x;
+                        if (gap > bestGap) { bestGap = gap; bestMid = (xs[i - 1].x + xs[i].x) / 2; }
+                    }
+                }
+                if (bestMid != int.MaxValue) splitX = bestMid;
+            }
+            var rows = new List<string>();
+            foreach (var ln in ordered)
+            {
+                var left = new System.Collections.Generic.List<string>();
+                var right = new System.Collections.Generic.List<string>();
+                foreach (var c in ln.cells.OrderBy(c => c.x))
+                    (c.x < splitX ? left : right).Add(c.t);
+                // No multi-cell row anywhere: everything lands left, right
+                // stays a blank hold (positional, like item pairs).
+                rows.Add(string.Join(" ", left) + "\t" + string.Join(" ", right));
+            }
             return rows;
         }
     }

@@ -114,22 +114,124 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("オートバック", "オートボウガン"),
             ("ハイホーション", "ハイポーション"),
             ("イートボック", "オートボウガン"),
+            // Scroll-cited 2026-09-29 (log, stable across loops): more
+            // オートボウガン misreads (ボッカ―/ボウン/ネット variants).
+            ("オートボッカ―", "オートボウガン"),
+            ("オートボウン", "オートボウガン"),
+            ("オートネット", "オートボウガン"),
+            // Scroll-cited 2026-10-01 (log 00:35:44-50, alternating with
+            // clean reads loop-to-loop): fullwidth-A-prefixed ハイポーション
+            // read Ａイホージョン, オートボウガン read オートボッカー.
+            ("Ａイホージョン", "ハイポーション"),
+            ("オートボッカー", "オートボウガン"),
+            // Bottom-cited 2026-10-01 (screenshots: bottom rows are
+            // ナイトのこころえ/ダガー/レザーアーマー/ガントレット/
+            // かわのぼうし/めぐすり): grey レザーアーマー reads
+            // スレサーテーマー (00:36 fire, stable 16 loops),
+            // サーフォーマー/サーフォーマーク (00:54:15-18); grey
+            // オートボウガン reads プートだったら (00:53:54-54:01,
+            // between ハイポーション and エアナイフ = its home row).
+            ("スレサーテーマー", "レザーアーマー"),
+            ("サーフォーマー", "レザーアーマー"),
+            ("サーフォーマーク", "レザーアーマー"),
+            ("プートだったら", "オートボウガン"),
+            // Scroll-cited 2026-10-01 (log 01:14, stable across loops):
+            // スートだったら (right row 2, between ハイポーション and
+            // エアナイフ) and オートボウガンら (mined-fixup residual of
+            // オートだったら) → オートボウガン; ナイトのころえ (4th
+            // sighting shape of the ナイト row, after フェニックスのお =
+            // its home) → ナイトのこころえ; シガー (3rd left row =
+            // ダガー home, mid-list screenshot) → ダガー (dialogue risk:
+            // cigar-talk would rewrite — zero cites in FFVI corpus;
+            // revert phrase covers).
+            ("スートだったら", "オートボウガン"),
+            ("オートボウガンら", "オートボウガン"),
+            ("ナイトのころえ", "ナイトのこころえ"),
+            ("シガー", "ダガー"),
+            // Bottom-cited 2026-10-01 (log 11:32:46-56, stable 6+ loops in
+            // the ナイト slot after フェニックスのお): ごくごめんなさい
+            // → ナイトのこころえ. Distinctive; apology-shaped soup never
+            // occurs as a real item name.
+            ("ごくごめんなさい", "ナイトのこころえ"),
+            // Scroll-cited 2026-10-01 (log 12:14:07-17, stable across loops
+            // in right row 2 = オートボウガン home): フートボウル →
+            // オートボウガン (ブート/フート family). Pack-side permanence
+            // for two mined/sidecar-covered reads: ハイボーション →
+            // ハイポーション (ボ/ポ voicing, same shape as ハイホーション),
+            // スートボック → オートボウガン (スート family + ボック).
+            ("フートボウル", "オートボウガン"),
+            ("ハイボーション", "ハイポーション"),
+            ("スートボック", "オートボウガン"),
+            // Scroll-cited 2026-10-01 (log 14:02, row-homes stable):
+            // バイボーション (row 1 right ×2) → ハイポーション (voicing
+            // family: ハイホーション/ハイボーション/Ａイホージョン
+            // precedents). ホーション was cited here too but REVERTED
+            // 2026-10-01: proven inventory-ambiguous (5-char shape reads as
+            // ポーション-voicing-loss at P-slots just as often; corrupted
+            // right row 1 + stole P's count two runs running). Ambiguous
+            // shapes stay blank per policy — no literal row either way.
+            // メブートボット (row 2 right ×2) → オートボウガン
+            // (ブート×2 + フートボウル family).
+            ("バイボーション", "ハイポーション"),
+            ("メブートボット", "オートボウガン"),
+            // Scroll-cited 2026-10-01 (log 14:11:24-39, row-2 home,
+            // alternating stable ×4): オートボウカリ → オートボウガン
+            // (ン/リ flicker). Bottom-cited 2026-10-01 (log 14:11:58+,
+            // stable 6 loops in bottom-left rows): レヴーアーマー →
+            // レザーアーマー (ザ/ヴ katakana confusion).
+            ("オートボウカリ", "オートボウガン"),
+            ("レヴーアーマー", "レザーアーマー"),
+            // Scroll-cited 2026-10-01 (log 15:59:43+, stable ×6 in right
+            // row 2): ムオートボット → オートボウガン (ム prefix +
+            // オートボット; メブートボット/スートボック family).
+            // Pack permanence for a mined-covered read (mine table already
+            // maps it; host must own it too): オートだったら →
+            // オートボウガン (プートだったら/スートだったら family).
+            ("ムオートボット", "オートボウガン"),
+            ("オートだったら", "オートボウガン"),
+            // Weapon-open peeking tail (cited 2026-10-02 screenshots: bottom
+            // item row [やまびこ|けむりだま] peeks under the weapon box,
+            // stable 10+ loops): grey misreads map canonical so the tail
+            // posts instead of blanking via the item canonical policy.
+            // けむりたま carries the usual soup caveat (たま = ball is a real
+            // word; dialogue about smoke balls ~never — same call as シガー).
+            ("やまりこえんまくこっ", "やまびこえんまく"),
+            ("けむりたま", "けむりだま"),
+            // Weapon glove variant (cited 2026-10-03 panel: "シメタルナックル",
+            // stable — glove misread as シ this time). Full-string distinctive;
+            // generic シ-strip would eat shield-class names, so literal row.
+            ("シメタルナックル", "メタルナックル"),
+            // Scroll-cited 2026-10-01 (log 19:44:38+, stable 7 loops in
+            // bottom-right last row): けむソだま → けむりだま (り/ソ
+            // confusion). Bottom-cited same run (stable 7 loops, bottom-left
+            // last row): やまびこえんまくうっ → やまびこえんまく (うっ
+            // suffix). Both nonsense shapes outside items — zero risk.
+            ("けむソだま", "けむりだま"),
+            ("やまびこえんまくうっ", "やまびこえんまく"),
+            // Pack permanence for the single most-read H form (cited dozens
+            // of loops; sidecar/mine already cover it, host must own it —
+            // without this row the keep-set blanks left row 1 entirely).
+            ("ハイホーション", "ハイポーション"),
+            // Scroll-cited 2026-10-01 (log 12:46:29-33, stable 3 loops in
+            // right row 2): イートボット → オートボウガン (イートボック
+            // family + ト).
+            ("イートボット", "オートボウガン"),
         };
         // Battle command vocabulary (cited): fight / ability / magic / item.
         // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
         public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まほう", "アイテム" };
         // Battle monster vocabulary (cited: panel/screenshot/log loops this
         // chat — OCR flickers エビオルニス/エピオルニス/エヒオルニス/
-        // エヒプルニス and シビーラビット/シピーラビット/ンビーラビット,
-        // so all variants split). Pre-warms the session memo
+        // エヒプルニス/エビオリニス/エロストリニス and シビーラビット/シピーラビット/
+        // ンビーラビット, so all variants split). Pre-warms the session memo
         // so cold multi-type fights split one-line-each on first sight.
-        public static readonly string[] MonsterVocabulary = { "エビオルニス", "エピオルニス", "エヒオルニス", "エヒプルニス", "シビーラビット", "シピーラビット", "ンビーラビット" };
+        public static readonly string[] MonsterVocabulary = { "エビオルニス", "エピオルニス", "エヒオルニス", "エヒプルニス", "エビオリニス", "エロストリニス", "シビーラビット", "シピーラビット", "ンビーラビット" };
         // Battle item vocabulary (cited: item-box screenshots, incl. scrolled
         // rows 2026-09-26). だっシューズ rides as a spelling variant (game
         // pixels read ダッシューズ; both split). デッシューズ (log-cited
-        // 2026-09-28 misread) rides too, split-only. Extend as scrolling
-        // reveals more.
-        public static readonly string[] ItemVocabulary = { "ポーション", "ハイポーション", "ねぶくろ", "テント", "フェニックスのお", "オートボウガン", "エアナイフ", "ダッシューズ", "だっシューズ", "デッシューズ", "ナイトのこころえ", "ガントレット", "ダガー", "かわのぼうし", "レザーアーマー", "めぐすり" };
+        // 2026-09-28 misread) and タッシューズ (log-cited 2026-09-29
+        // misread) ride too, split-only. Extend as scrolling reveals more.
+        public static readonly string[] ItemVocabulary = { "ポーション", "ハイポーション", "ねぶくろ", "テント", "フェニックスのお", "オートボウガン", "エアナイフ", "ダッシューズ", "だっシューズ", "デッシューズ", "タッシューズ", "ナイトのこころえ", "ガントレット", "ダガー", "かわのぼうし", "レザーアーマー", "めぐすり", "やまびこえんまく", "どくけし", "けむりだま" };
         // Weapon-select slot labels (cited: equip box). ひだりで rides along:
         // OCR reads ひだりて's て as で about half the time.
         public static readonly string[] WeaponLabels = { "みぎて", "ひだりて", "ひだりで" };
@@ -161,9 +263,17 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("かわのぼうし", "Leather Hat"),
             ("レザーアーマー", "Leather Armor"),
             ("めぐすり", "Eye Drops"),
+            // Restored-save inventory (cited 2026-10-01 screenshot, exact
+            // strings; official EN).
+            ("やまびこえんまく", "Echo Screen"),
+            ("どくけし", "Antidote"),
+            ("けむりだま", "Smoke Bomb"),
             ("みぎて", "Right"),
             ("ひだりて", "Left"),
             ("ひだりで", "Left"),
+            // Weapon-select equipped name (cited 2026-10-02 screenshot:
+            // メタルナックル under みぎて, left hand empty). Official EN.
+            ("メタルナックル", "Metal Knuckle"),
         };
         public static readonly (string from, string to)[] DisplayFixups = { };
         public const string TitleMarker = "FINAL FANTASY";
