@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
 using WunderLanguage.Host.Settings;
@@ -42,7 +43,14 @@ namespace WunderLanguage.Host
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            // Perf baseline, batch 1 (cited Systems Performance: baseline
+            // statistics + latency breakdown). Observe-only: a stopwatch and
+            // one env line per launch. No behavior change. Revert: delete
+            // the sw/LogStartupStage/LogEnvLines calls + the two helpers.
+            var sw = Stopwatch.StartNew();
             FileLogger.Log("App starting up");
+            LogEnvLine();
+            FileLogger.Log($"[startup] stage=app-start ms=0");
             // M7b offline replay: --replay <corpus.jsonl> refeeds recorded OCR through the real
             // fixup/normalize/hold path. No emulator, no sidecar, no GPU. Revert: delete this block.
             try
@@ -74,6 +82,7 @@ namespace WunderLanguage.Host
             loading.Show();
             loading.Activate();
             FileLogger.Log("Loading window shown");
+            FileLogger.Log($"[startup] stage=loading-shown ms={sw.ElapsedMilliseconds}");
 
             try
             {
@@ -84,6 +93,7 @@ namespace WunderLanguage.Host
                 });
                 await _sidecar.StartAsync(progress);
                 FileLogger.Log("Sidecar reported healthy");
+                FileLogger.Log($"[startup] stage=sidecar-healthy ms={sw.ElapsedMilliseconds}");
             }
             catch (Exception ex)
             {
@@ -104,6 +114,44 @@ namespace WunderLanguage.Host
             connectWindow.Show();
             connectWindow.Activate();
             FileLogger.Log("Connect window shown");
+            FileLogger.Log($"[startup] stage=connect-shown ms={sw.ElapsedMilliseconds}");
+        }
+
+        // One env line per launch: every future crash/perf log carries its
+        // own machine context (CPU/RAM/GPU/runtime/config). Best-effort —
+        // never throws, never blocks startup (nvidia-smi capped at 3s).
+        private static void LogEnvLine()
+        {
+            try
+            {
+                string config =
+#if DEBUG
+                    "Debug";
+#else
+                    "Release";
+#endif
+                double ramGB = 0;
+                try { ramGB = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1073741824.0; } catch { }
+                string gpu = "unknown";
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "nvidia-smi",
+                        Arguments = "--query-gpu=name --format=csv,noheader",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                    };
+                    using var p = Process.Start(psi);
+                    if (p is not null && p.WaitForExit(3000) && p.ExitCode == 0)
+                        gpu = (p.StandardOutput.ReadToEnd() ?? "").Trim().Replace('\r', ' ').Replace('\n', ' ');
+                    if (string.IsNullOrWhiteSpace(gpu)) gpu = "none";
+                }
+                catch { gpu = "unknown"; }
+                FileLogger.Log($"[env] cpus={Environment.ProcessorCount} ramGB={ramGB:0.0} os={Environment.OSVersion.VersionString} x64={Environment.Is64BitProcess} fx={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} config={config} gpu={gpu}");
+            }
+            catch { }
         }
 
         protected override void OnExit(ExitEventArgs e)

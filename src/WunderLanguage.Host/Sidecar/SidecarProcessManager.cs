@@ -59,6 +59,7 @@ namespace WunderLanguage.Host.Sidecar
             // degrades to the host fallback chain). No stale flags: every
             // launch tries GPU first.
             bool cpuFallback = false;
+            var spawnSw = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
                 var psi = new ProcessStartInfo
@@ -100,6 +101,7 @@ namespace WunderLanguage.Host.Sidecar
                 try
                 {
                     await WaitForHealthyAsync(statusProgress);
+                    FileLogger.Log($"[startup] stage=sidecar-spawn-healthy ms={spawnSw.ElapsedMilliseconds} fallback={cpuFallback}");
                     return;
                 }
                 catch (InvalidOperationException ex) when (!cpuFallback && ex.Message.Contains("exited unexpectedly"))
