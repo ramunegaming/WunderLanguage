@@ -108,6 +108,16 @@ namespace WunderLanguage.Host.Capture
         // consistency needs content-aware patience).
         private int _battleItemFireRuns;
         private int _battleItemFiredContent;
+        // Weapon settle (cited 2026-10-03 log: cls=4 weapon=2 extracted for
+        // 4+ loops but never published — the item peeking strip flickers
+        // every loop, resetting the whole-sig item runs counter, so the
+        // combined gate never settles). Weapon rows get their own
+        // stability counter on the weapon sub-signature; a stable NEW
+        // weapon layer publishes even while the item tail flickers.
+        // Item-only changes still wait on the item gate above.
+        private string _battleWeaponFirePrev = "";
+        private int _battleWeaponFireRuns;
+        private string _battleWeaponFired = "";
         // Menu grace after battle: transitions clear the fired mark before the
         // frame refires; menus stay silent a few loops more so no MENU dupe
         // lands mid-fight. Decremented per menu pass; battle frames never see it.
@@ -426,7 +436,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -2273,7 +2283,7 @@ namespace WunderLanguage.Host.Capture
                     return;
                 }
                 if (_battleCooldown > 0 || _itemBoxOpen) return;
-                _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); _itemBoxOpen = false; _battleItemFirePrev = ""; _battleBlankFirePrev = ""; _battleItemFireRuns = 0; _battleItemFiredContent = 0; return;
+                _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); _itemBoxOpen = false; _battleItemFirePrev = ""; _battleBlankFirePrev = ""; _battleItemFireRuns = 0; _battleItemFiredContent = 0; _battleWeaponFirePrev = ""; _battleWeaponFireRuns = 0; _battleWeaponFired = ""; return;
                 }
             }
             // Any battle-classified loop refreshes grace, so the countdown only
@@ -2514,9 +2524,17 @@ namespace WunderLanguage.Host.Capture
             else { _battleItemFirePrev = sig; _battleItemFireRuns = 1; }
             bool itemSettled = !itemHasContent || _lastAnchorS != 0 || justOpened
                 || _battleItemFireRuns >= (itemContent < _battleItemFiredContent ? 4 : 2);
-            if (sig != _battleFiredSig && (shown.Top.Length > 0 || shown.Monster.Count > 0 || shown.Action.Count > 0 || itemHasContent || shown.Weapon.Count > 0) && itemSettled)
+            // Weapon-new bypass: stable weapon rows the last publish hasn't
+            // seen post at 2 repeats, even mid item-tail flicker. Closing
+            // (empty weapon) never bypasses — the item gate owns the close.
+            string wsig = string.Join("\n", shown.Weapon);
+            if (wsig == _battleWeaponFirePrev) _battleWeaponFireRuns++;
+            else { _battleWeaponFirePrev = wsig; _battleWeaponFireRuns = 1; }
+            bool weaponNew = shown.Weapon.Count > 0 && wsig != _battleWeaponFired && _battleWeaponFireRuns >= 2;
+            if (sig != _battleFiredSig && (shown.Top.Length > 0 || shown.Monster.Count > 0 || shown.Action.Count > 0 || itemHasContent || shown.Weapon.Count > 0) && (itemSettled || weaponNew))
             {
                 _battleFiredSig = sig;
+                _battleWeaponFired = wsig;
                 _battleCooldown = 6;
                 _battleItemFiredContent = itemContent;
                 FileLogger.Log($"[battle] fire top={shown.Top.Length}ch mon={shown.Monster.Count} act={shown.Action.Count} right={shown.Right.Count} item={shown.Item.Count} weapon={shown.Weapon.Count} sig={SigTag(sig)}");
@@ -2554,7 +2572,14 @@ namespace WunderLanguage.Host.Capture
                     // provider serve ("Massh") would shadow the pinned EN.
                     foreach (var n in slots.Right) { SplitRowDigits(n, out string rn, out _); string key = string.IsNullOrWhiteSpace(rn) ? n : rn; PrefetchNeed(key, () => TranslateMenuJaRowAsync(key), fresh); }
                     foreach (var l in slots.Item) PrefetchNeed(l, () => TranslateItemRowAsync(l), fresh);
-                    foreach (var l in slots.Weapon) PrefetchNeed(l, () => TranslateMenuJaRowAsync(l), fresh);
+                    // Weapon pairs prefetch per side (the publish path looks
+                    // up sides, never whole pairs — same glossary pins).
+                    foreach (var w in slots.Weapon)
+                    {
+                        SplitItemPair(w, out string wl, out string wr);
+                        if (!string.IsNullOrWhiteSpace(wl)) PrefetchNeed(wl, () => TranslateMenuJaRowAsync(wl), fresh);
+                        if (!string.IsNullOrWhiteSpace(wr)) PrefetchNeed(wr, () => TranslateMenuJaRowAsync(wr), fresh);
+                    }
                     if (_prefetch.Count > 1000) _prefetch.Clear();
                 }
                 foreach (var (ja, tx) in fresh)
@@ -2710,6 +2735,24 @@ namespace WunderLanguage.Host.Capture
         // Item-pair translation: "left\tRight" sides translate independently
         // (name→EN via the menu path, counts reattach verbatim), concurrently.
         // Missing sides stay blank (the panel pads for alignment).
+        // Weapon-pair translation (cited 2026-10-03: whole-row CAT turned
+        // "みぎて ひだりで" into sentence salad and typo'd the name).
+        // Sides translate independently through the menu path (glossary
+        // pins: みぎて→Right, ひだりで→Left, メタルナックル→Metal Knuckle),
+        // simMemo OFF (weapon names must never join the battle splitter
+        // keys or sim pool — equip states, not names to memorize).
+        private async Task<string> TranslateWeaponRowAsync(string row)
+        {
+            string src = row ?? "";
+            int ti = src.IndexOf('\t');
+            string l = ti < 0 ? src : src.Substring(0, ti);
+            string r = ti < 0 ? "" : src.Substring(ti + 1);
+            var lt = string.IsNullOrWhiteSpace(l) ? Task.FromResult("") : TranslateRowSplitAsync(l, t => TranslateMenuJaRowAsync(t), false);
+            var rt = string.IsNullOrWhiteSpace(r) ? Task.FromResult("") : TranslateRowSplitAsync(r, t => TranslateMenuJaRowAsync(t), false);
+            await Task.WhenAll(lt, rt);
+            string le = await lt, re = await rt;
+            return ti < 0 ? le : le + "\t" + re;
+        }
         private async Task<string> TranslateItemRowAsync(string row)
         {
             string src = row ?? "";
@@ -3045,6 +3088,20 @@ namespace WunderLanguage.Host.Capture
                 int ti = src.IndexOf('\t');
                 string namesRaw = ti < 0 ? src : src.Substring(0, ti);
                 string countsRaw = ti < 0 ? "" : src.Substring(ti + 1);
+                // Tail-pad lead (cited 2026-10-03 weapon-open fire: tail
+                // cols carry Battleframe's leading blank hard-rows to sit
+                // row 4, but the splitter below drops blank chunks — the
+                // content top-filled row 1, hiding behind the weapon box
+                // while the panel showed blanks underneath). A blob that
+                // OPENS with blank lines is tail-pad only (scroll windows
+                // are content-top-aligned, never leading-blank) — count it
+                // so the assembled column re-anchors to the bottom below.
+                int leadingPad = 0;
+                foreach (var chunk in namesRaw.Split('\n'))
+                {
+                    if (string.IsNullOrWhiteSpace(chunk)) leadingPad++;
+                    else break;
+                }
                 var items = SplitItemNames(namesRaw);
                 var digits = DigitChars(countsRaw);
                 // Any blank hold vetoes the zip: with rows unreadable the
@@ -3207,6 +3264,27 @@ namespace WunderLanguage.Host.Capture
                         if (string.IsNullOrWhiteSpace(column[k])) { bi = k; break; }
                     if (bi >= 0) column.RemoveAt(bi);
                     else column.RemoveAt(column.Count - 1);
+                }
+                // Tail-pad re-anchor (cited 2026-10-03): the leading blank
+                // hard-rows above pinned real top rows — content keeps its
+                // order and counts, riding the window bottom instead of
+                // row 1. No-op for full-content columns and for branches
+                // that already placed bottom-up (order preserved either
+                // way); scroll windows never carry a lead pad, so their
+                // top-fill is untouched.
+                if (leadingPad > 0)
+                {
+                    var tailContent = new System.Collections.Generic.List<string>();
+                    foreach (var cell in column)
+                        if (!string.IsNullOrWhiteSpace(cell)) tailContent.Add(cell);
+                    if (tailContent.Count > 0 && tailContent.Count < column.Count)
+                    {
+                        FileLogger.Log($"[battle] item-tailpad rows={column.Count} content={tailContent.Count}");
+                        column.Clear();
+                        for (int b = 0; b < 4 - tailContent.Count; b++) column.Add("　");
+                        column.AddRange(tailContent);
+                        while (column.Count > 4) column.RemoveAt(0);
+                    }
                 }
                 if (column.Count > 0) colItems.Add(column);
                 // TEMP-DIAG (2026-10-01): per-column assembly trace. The 17:57
@@ -3681,7 +3759,7 @@ namespace WunderLanguage.Host.Capture
                 var actFull = TranslateBattleRowsAsync(slots.Action, _lastBattleActJa, _lastBattleActEn, l => TranslateMenuJaRowAsync(l));
                 var rightFull = TranslateBattleRowsAsync(slots.Right, _lastBattleRightJa, _lastBattleRightEn, n => _translationManager.TranslateAsync(n), true);
                 var itemFull = TranslateBattleRowsAsync(slots.Item, _lastBattleItemJa, _lastBattleItemEn, TranslateItemRowAsync, true, true);
-                var weaponFull = TranslateBattleRowsAsync(slots.Weapon, _lastBattleWeaponJa, _lastBattleWeaponEn, l => TranslateMenuJaRowAsync(l), true);
+                var weaponFull = TranslateBattleRowsAsync(slots.Weapon, _lastBattleWeaponJa, _lastBattleWeaponEn, TranslateWeaponRowAsync, false);
                 // Fast leg: best-effort inside the state's lifetime. All six
                 // start before the first await, so the frame costs ~1.2s max.
                 var topFastTask = WithTimeout(topFull, slots.Top, BattleFastMs);
