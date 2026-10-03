@@ -1,3 +1,14 @@
+import time as _ptime
+_SSTART = _ptime.perf_counter()
+def _slog(stage):
+    # Perf baseline batch 2 (observe-only): startup stage timestamps so
+    # the 22s spawn-to-healthy window splits into import/model stages.
+    # Lines flow to app.log via the host's sidecar-stdout relay.
+    # Revert: delete this helper + all _slog calls.
+    try:
+        print(f"[sstartup] stage={stage} ms={int((_ptime.perf_counter() - _SSTART) * 1000)}", flush=True)
+    except Exception:
+        pass
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 from manga_ocr import MangaOcr
@@ -17,6 +28,7 @@ except Exception:
 from packs import zelda_pack as _zelda_pack
 import hashlib as _hashlib
 import pathlib as _pathlib
+_slog("imports-done")
 try:
     CODE_VERSION = "py-" + _hashlib.sha256(_pathlib.Path(__file__).read_bytes()).hexdigest()[:8]
 except Exception:
@@ -46,7 +58,9 @@ def resolve_device() -> str:
 DEVICE = resolve_device()
 USE_GPU = DEVICE == "cuda"
 mocr = MangaOcr()
+_slog("mangaocr-loaded")
 reader = easyocr.Reader(["ja"], gpu=USE_GPU)
+_slog("easyocr-loaded")
 MIN_BOX_WIDTH = 10
 MIN_BOX_HEIGHT = 10
 DETECTION_UPSCALE_FACTOR = 1
@@ -213,6 +227,7 @@ def detect_and_ocr(pil_image: Image.Image):
 
 CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
+_slog("transformers-imported")
 # No-CAT fallback (cited 2026-10-01: CAT 4-bit GPU weight load segfaults
 # (-1073741819) at shard 1 under load — bitsandbytes-on-Windows fragility,
 # not our code; host retries with WUNDER_NO_CAT=1 after a load crash).
@@ -228,6 +243,7 @@ else:
     print(f"[WunderLanguage] CAT-Translate: loading tokenizer for {CAT_TRANSLATE_MODEL_ID}...")
     _cat_translate_tokenizer = AutoTokenizer.from_pretrained(CAT_TRANSLATE_MODEL_ID)
     print("[WunderLanguage] CAT-Translate: tokenizer loaded.")
+    _slog("cat-tokenizer")
     if DEVICE == "cuda":
         print(f"[WunderLanguage] CAT-Translate: loading 4-bit quantized weights...")
         _quant_config = BitsAndBytesConfig(
@@ -242,6 +258,7 @@ else:
             device_map="auto",
         )
         print("[WunderLanguage] CAT-Translate: 4-bit quantized model loaded on GPU.")
+        _slog("cat-weights-gpu")
     else:
         print(f"[WunderLanguage] CAT-Translate: loading full-precision on CPU.")
         _cat_translate_model = AutoModelForCausalLM.from_pretrained(
@@ -249,6 +266,7 @@ else:
             dtype=_cat_translate_dtype,
         )
         print("[WunderLanguage] CAT-Translate: model loaded on CPU.")
+        _slog("cat-weights-cpu")
     print("[WunderLanguage] CAT-Translate: constructing generation pipeline...")
     cat_translate_pipeline = hf_pipeline(
         "text-generation",
@@ -256,7 +274,9 @@ else:
         tokenizer=_cat_translate_tokenizer,
     )
     print(f"[WunderLanguage] CAT-Translate ready on {DEVICE}.")
+    _slog("cat-pipeline-ready")
 print(f"[WunderLanguage] sidecar code version {CODE_VERSION}.")
+_slog("sidecar-imports-done")
 LANGUAGE_CODE_NAMES = {"ja": "Japanese", "en": "English"}
 import re
 import difflib
