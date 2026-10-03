@@ -54,6 +54,54 @@ namespace WunderLanguage.Host.Capture
             catch { }
         }
         private bool _flashFired;
+        // Perf batch: per-loop cost accounting (distributions, not means).
+        // Loop-thread rings need no lock; per-fire publish samples share
+        // _costLock (push-only, contention ~nil). pub samples the fast leg
+        // only (fire-to-first-paint, the user-facing number; silent refresh
+        // legs excluded). One flush line per 60s — no per-loop logging
+        // (observer effect). Revert: delete this block plus the Cost* sites.
+        private const int CostRing = 64;
+        private readonly double[] _costCap = new double[CostRing];
+        private readonly double[] _costOcr = new double[CostRing];
+        private readonly double[] _costDet = new double[CostRing];
+        private readonly double[] _costRec = new double[CostRing];
+        private readonly double[] _costPub = new double[CostRing];
+        private int _costCapIx, _costCapN, _costOcrIx, _costOcrN, _costDetIx, _costDetN, _costRecIx, _costRecN, _costPubIx, _costPubN;
+        private long _costLoops, _costOcrLoops, _costSkipped, _costHolds;
+        private DateTime _costFlushAt = DateTime.UtcNow;
+        private readonly object _costLock = new();
+        private static void CostPush(double[] ring, ref int ix, ref int n, double v)
+        {
+            ring[ix] = v; ix = (ix + 1) % CostRing; if (n < CostRing) n++;
+        }
+        private void CostPubSample(double ms)
+        {
+            lock (_costLock) CostPush(_costPub, ref _costPubIx, ref _costPubN, ms);
+        }
+        private static double CostPct(double[] ring, int n, double p)
+        {
+            if (n <= 0) return 0;
+            var s = new double[n]; Array.Copy(ring, s, n); Array.Sort(s);
+            return s[Math.Min(n - 1, (int)(p * n))];
+        }
+        private void MaybeFlushLoopCost()
+        {
+            try
+            {
+                if ((DateTime.UtcNow - _costFlushAt).TotalSeconds < 60) return;
+                _costFlushAt = DateTime.UtcNow;
+                double[] pub; int pn;
+                lock (_costLock) { pub = (double[])_costPub.Clone(); pn = _costPubN; }
+                FileLogger.Log($"[loop-cost] loops={_costLoops} ocr={_costOcrLoops} skipped={_costSkipped} holds={_costHolds} " +
+                    $"capN={_costCapN} p50/p99={CostPct(_costCap, _costCapN, 0.5):F0}/{CostPct(_costCap, _costCapN, 0.99):F0}ms " +
+                    $"ocrN={_costOcrN} p50/p99={CostPct(_costOcr, _costOcrN, 0.5):F0}/{CostPct(_costOcr, _costOcrN, 0.99):F0}ms " +
+                    $"det p50/p99={CostPct(_costDet, _costDetN, 0.5):F0}/{CostPct(_costDet, _costDetN, 0.99):F0}ms " +
+                    $"rec p50/p99={CostPct(_costRec, _costRecN, 0.5):F0}/{CostPct(_costRec, _costRecN, 0.99):F0}ms " +
+                    $"pubN={pn} p50/p99={CostPct(pub, pn, 0.5):F0}/{CostPct(pub, pn, 0.99):F0}ms");
+                _costLoops = 0; _costOcrLoops = 0; _costSkipped = 0; _costHolds = 0;
+            }
+            catch { }
+        }
         private string _lastOcrText = string.Empty;
         private int _lastOcrContent;
         private int _lastOcrTotal;
@@ -458,12 +506,15 @@ namespace WunderLanguage.Host.Capture
             while (!token.IsCancellationRequested)
             {
                 iteration++;
+                _costLoops++;
+                MaybeFlushLoopCost();
                 try
                 {
                     // Focus gate: minimized or behind another window -> hold.
                     // No OCR, no publish, until the emulator is foreground.
                     if (WindowCapture.IsMinimized(_hWnd))
                     {
+                        _costHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator minimized, holding");
                         await Task.Delay(IdleDelayMs, token);
@@ -473,6 +524,7 @@ namespace WunderLanguage.Host.Capture
                     if (fgFocus != _hWnd && !(_isCompanionWindow?.Invoke(fgFocus) ?? false))
                     {
                         _focusHoldActive = true;
+                        _costHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator not focused (fg=0x{fgFocus:X}), holding");
                         await Task.Delay(IdleDelayMs, token);
@@ -488,12 +540,16 @@ namespace WunderLanguage.Host.Capture
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
+                    var capSw = System.Diagnostics.Stopwatch.StartNew();
                     using var bitmap = WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
                     _consecutiveCaptureFailures = 0;
 
                     string frameHash = ComputeFrameHash(bitmap);
+                    capSw.Stop();
+                    CostPush(_costCap, ref _costCapIx, ref _costCapN, capSw.Elapsed.TotalMilliseconds);
                     if (frameHash == _lastFrameHash)
                     {
+                        _costSkipped++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] frame unchanged, skipping OCR");
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
@@ -557,7 +613,12 @@ namespace WunderLanguage.Host.Capture
                     while (_recentFrameHashes.Count > 8) _recentFrameHashes.Dequeue();
                     FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
 
+                    var ocrSw = System.Diagnostics.Stopwatch.StartNew();
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
+                    ocrSw.Stop();
+                    CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
+                    CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
+                    CostPush(_costRec, ref _costRecIx, ref _costRecN, _ocrClient.LastRecMs);
                     _settledOcrLoops++;
                     if (_settledOcrLoops <= StartupWarmupOcrLoops)
                     {
@@ -1231,6 +1292,7 @@ namespace WunderLanguage.Host.Capture
 
         private async Task TranslateAndPublishAsync(string text)
         {
+            var pubSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 if (IsLatinChrome(text))
@@ -1296,6 +1358,7 @@ namespace WunderLanguage.Host.Capture
                 {
                     FileLogger.Log($"[translate] untranslatable -> ------ for \"{text}\" (DeepL fallback exhausted/no key)");
                     if (_stopped) { FileLogger.Log($"[translate] id={_id} dropped (stopped)"); return; }
+                    CostPubSample(pubSw.Elapsed.TotalMilliseconds);
                     TextTranslated?.Invoke(text, "------");
                     return;
                 }
@@ -1311,6 +1374,7 @@ namespace WunderLanguage.Host.Capture
                 FileLogger.Log($"[translate] id={_id} \"{text}\" -> \"{translated}\"");
                 if (_stopped) { FileLogger.Log($"[translate] id={_id} dropped (stopped)"); return; }
                 try { CorpusRecordBubble("dialogue-fire", text, translated); } catch { }
+                CostPubSample(pubSw.Elapsed.TotalMilliseconds);
                 TextTranslated?.Invoke(text, translated);
             }
             catch (Exception ex)
@@ -3749,6 +3813,7 @@ namespace WunderLanguage.Host.Capture
 
         private async Task TranslateAndPublishBattleAsync(string sig, BattleFrame.BattleSlots slots)
         {
+            var pubSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 // Whole-frame fan-out: top + all rows start together, wall time is
@@ -3780,6 +3845,7 @@ namespace WunderLanguage.Host.Capture
                 // dropping wrong beats posting wrong.
                 if (_battleFiredSig != sig || _battlePrevSig != sig) { FileLogger.Log($"[battle] stale publish dropped fire={SigTag(sig)} cur={SigTag(_battleFiredSig)}"); return; }
                 FileLogger.Log($"[battle] frame publish top={slots.Top.Length}ch mon={slots.Monster.Count} act={slots.Action.Count} right={slots.Right.Count} item={slots.Item.Count} weapon={slots.Weapon.Count} fast sig={SigTag(sig)}");
+                CostPubSample(pubSw.Elapsed.TotalMilliseconds);
                 BattleFramePublished?.Invoke(slots.Top, topEn, slots.Monster, monEn, slots.Action, actEn, slots.Right, rightEn, slots.Item, itemEn, slots.Weapon, weaponEn);
                 // Refresh leg: real EN when the slow rows land, if still current.
                 // Corpus records the full pair only (never JA-verbatim fallbacks).
@@ -3873,6 +3939,7 @@ namespace WunderLanguage.Host.Capture
         }
         private async Task TranslateAndPublishMenuAsync(string kind, List<(int y, string t, bool ja)> rows)
         {
+            var pubSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 // Fan-out like the battle path: every row starts together, wall time
@@ -3891,6 +3958,7 @@ namespace WunderLanguage.Host.Capture
                 var en = new List<string>(got);
                 FileLogger.Log($"[menu] {kind} -> {en.Count} lines");
                 try { CorpusRecordBubble("menu-fire:" + kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en)); } catch { }
+                CostPubSample(pubSw.Elapsed.TotalMilliseconds);
                 MenuTranslated?.Invoke(kind, string.Join("\n", rows.ConvertAll(r => r.t)), string.Join("\n", en));
             }
             catch (Exception ex) { FileLogger.Log($"[menu] ERROR: {ex.Message}"); }
