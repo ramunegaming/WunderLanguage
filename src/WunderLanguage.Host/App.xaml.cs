@@ -50,6 +50,7 @@ namespace WunderLanguage.Host
             var sw = Stopwatch.StartNew();
             FileLogger.Log("App starting up");
             LogEnvLine();
+            ProbeLogCost();
             FileLogger.Log($"[startup] stage=app-start ms=0");
             // M7b offline replay: --replay <corpus.jsonl> refeeds recorded OCR through the real
             // fixup/normalize/hold path. No emulator, no sidecar, no GPU. Revert: delete this block.
@@ -110,6 +111,17 @@ namespace WunderLanguage.Host
             FileLogger.Log("Loading window closed, showing connect window");
 
             var settings = AppSettings.Load();
+            // Test automation (perf batch: unattended loop-cost smoke test).
+            // --connect <title-substring> attaches to the first matching
+            // visible window with a whole-window region and skips the
+            // calibration prompt. No match (or no flag) = ConnectWindow as
+            // before. Revert: delete this block + TryAutoConnect.
+            string? autoSub = null;
+            var autoArgs = e?.Args ?? System.Array.Empty<string>();
+            for (int i = 0; i < autoArgs.Length; i++)
+                if (autoArgs[i] == "--connect" && i + 1 < autoArgs.Length) autoSub = autoArgs[i + 1];
+            if (!string.IsNullOrWhiteSpace(autoSub) && TryAutoConnect(autoSub, settings, sw))
+                return;
             var connectWindow = new ConnectWindow(settings);
             connectWindow.Show();
             connectWindow.Activate();
@@ -154,8 +166,63 @@ namespace WunderLanguage.Host
             catch { }
         }
 
-        protected override void OnExit(ExitEventArgs e)
+        // Observer-effect audit (perf batch): what one FileLogger.Log call
+        // costs on THIS machine/disk/AV — same syscalls (open/append/close
+        // on a scratch file in the same dir), 200 iterations, one summary
+        // line, zero pollution of app.log. Single-thread floor; lock
+        // contention under threading only adds. Revert: delete call + method.
+        private static void ProbeLogCost()
         {
+            try
+            {
+                string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage");
+                System.IO.Directory.CreateDirectory(dir);
+                string probe = System.IO.Path.Combine(dir, "logprobe.tmp");
+                string line = "[probe] 0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\n";
+                var sw = Stopwatch.StartNew();
+                for (int i = 0; i < 200; i++)
+                    System.IO.File.AppendAllText(probe, line);
+                sw.Stop();
+                try { System.IO.File.Delete(probe); } catch { }
+                FileLogger.Log($"[log-cost] filelog mean={sw.Elapsed.TotalMilliseconds / 200:F3}ms over 200 (single-thread floor)");
+            }
+            catch (Exception ex) { FileLogger.Log($"[log-cost] probe failed: {ex.Message}"); }
+        }
+
+        // Headless attach for smoke tests: same AppShell path as the
+        // Connect button, minus the calibration prompt (whole-window
+        // region). Never throws into startup: false = normal window.
+        private static bool TryAutoConnect(string substr, AppSettings settings, System.Diagnostics.Stopwatch sw)
+        {
+            try
+            {
+                var wins = Capture.WindowCapture.ListVisibleWindows();
+                var hit = wins.Find(w => (w.Title ?? "").Contains(substr, StringComparison.OrdinalIgnoreCase));
+                if (hit is null || hit.Handle == IntPtr.Zero)
+                {
+                    FileLogger.Log($"[startup] auto-connect no match for \"{substr}\" ({wins.Count} windows)");
+                    return false;
+                }
+                Capture.WindowCapture.RestoreIfMinimized(hit.Handle);
+                if (!Capture.WindowCapture.TryGetWindowBounds(hit.Handle, out var bounds))
+                {
+                    FileLogger.Log("[startup] auto-connect bounds failed");
+                    return false;
+                }
+                var region = new Capture.GameRegion(bounds, bounds);
+                var shell = new Windows.AppShell(hit.Handle, region, settings);
+                shell.Start();
+                FileLogger.Log($"[startup] stage=auto-connect ms={sw.ElapsedMilliseconds} window=\"{hit.Title}\"");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[startup] auto-connect failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        protected override void OnExit(ExitEventArgs e)        {
             // The sidecar exits with the app: a lingering python.exe causes more
             // confusion than the cold-start seconds it saves (stale-pipeline
             // mismatch, orphaned GPU memory). Crash orphans are still replaced
