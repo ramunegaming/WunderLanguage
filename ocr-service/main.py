@@ -9,16 +9,14 @@ def _slog(stage):
         print(f"[sstartup] stage={stage} ms={int((_ptime.perf_counter() - _SSTART) * 1000)}", flush=True)
     except Exception:
         pass
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
-from manga_ocr import MangaOcr
 from PIL import Image
 import numpy as np
 import io
 import os
+import threading as _threading
 import time
-import torch
-import easyocr
 import sys
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -55,12 +53,18 @@ def resolve_device() -> str:
         return "cpu"
     print("[WunderLanguage] No CUDA-capable GPU detected - using CPU.")
     return "cpu"
-DEVICE = resolve_device()
-USE_GPU = DEVICE == "cuda"
-mocr = MangaOcr()
-_slog("mangaocr-loaded")
-reader = easyocr.Reader(["ja"], gpu=USE_GPU)
-_slog("easyocr-loaded")
+# Staged readiness (perf batch: serve the API first, warm models
+# behind). Uvicorn binds in seconds; the loader thread started below
+# brings OCR then CAT online in order. Endpoints 503 with the stage
+# reason while their stage warms; /health reports per-stage state.
+# torch/easyocr/MangaOcr import inside the OCR stage (they pull ~24s
+# cold: torch CUDA wheels + torchvision + sympy/scipy). Globals below
+# are rebound by the loader thread before first use.
+DEVICE = "warming"
+USE_GPU = False
+mocr = None
+reader = None
+READY = {"ocr": "warming", "cat": "warming"}
 MIN_BOX_WIDTH = 10
 MIN_BOX_HEIGHT = 10
 DETECTION_UPSCALE_FACTOR = 1
@@ -226,8 +230,6 @@ def detect_and_ocr(pil_image: Image.Image):
     return primary_text, blocks, words, _timing
 
 CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
-_slog("transformers-imported")
 # No-CAT fallback (cited 2026-10-01: CAT 4-bit GPU weight load segfaults
 # (-1073741819) at shard 1 under load — bitsandbytes-on-Windows fragility,
 # not our code; host retries with WUNDER_NO_CAT=1 after a load crash).
@@ -236,45 +238,84 @@ _slog("transformers-imported")
 # below are pure-python and keep working in this mode.
 _NO_CAT = os.environ.get("WUNDER_NO_CAT", "").strip() == "1"
 cat_translate_pipeline = None
-if _NO_CAT:
-    print("[WunderLanguage] CAT-Translate disabled by WUNDER_NO_CAT=1 (OCR-only mode).")
-else:
-    _cat_translate_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
-    print(f"[WunderLanguage] CAT-Translate: loading tokenizer for {CAT_TRANSLATE_MODEL_ID}...")
-    _cat_translate_tokenizer = AutoTokenizer.from_pretrained(CAT_TRANSLATE_MODEL_ID)
-    print("[WunderLanguage] CAT-Translate: tokenizer loaded.")
-    _slog("cat-tokenizer")
-    if DEVICE == "cuda":
-        print(f"[WunderLanguage] CAT-Translate: loading 4-bit quantized weights...")
-        _quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
+def _load_ocr_stage():
+    # Stage 1: torch + OCR models (~24s cold, ~4s warm). Sequential on
+    # one daemon thread; the API is already serving /health by now.
+    global torch, easyocr, MangaOcr, DEVICE, USE_GPU, mocr, reader
+    import torch
+    import easyocr
+    from manga_ocr import MangaOcr
+    DEVICE = resolve_device()
+    USE_GPU = DEVICE == "cuda"
+    mocr = MangaOcr()
+    _slog("mangaocr-loaded")
+    reader = easyocr.Reader(["ja"], gpu=USE_GPU)
+    _slog("easyocr-loaded")
+    READY["ocr"] = "ready"
+    print("[WunderLanguage] OCR stage ready.", flush=True)
+def _load_cat_stage():
+    # Stage 2: translator. Runs after OCR (GPU contention + the quantize
+    # segfault must never take OCR down with it). Exceptions mark the
+    # stage failed (reported via /health; /translate keeps fallback
+    # blank) instead of killing the process blind. A segfault still
+    # kills the process — the host's nocatfb retry owns that path.
+    global cat_translate_pipeline
+    if _NO_CAT:
+        READY["cat"] = "disabled"
+        print("[WunderLanguage] CAT-Translate disabled by WUNDER_NO_CAT=1 (OCR-only mode).", flush=True)
+        return
+    try:
+        from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
+        _slog("transformers-imported")
+        _cat_translate_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+        print(f"[WunderLanguage] CAT-Translate: loading tokenizer for {CAT_TRANSLATE_MODEL_ID}...", flush=True)
+        _cat_translate_tokenizer = AutoTokenizer.from_pretrained(CAT_TRANSLATE_MODEL_ID)
+        print("[WunderLanguage] CAT-Translate: tokenizer loaded.", flush=True)
+        _slog("cat-tokenizer")
+        if DEVICE == "cuda":
+            print(f"[WunderLanguage] CAT-Translate: loading 4-bit quantized weights...", flush=True)
+            _quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            _cat_translate_model = AutoModelForCausalLM.from_pretrained(
+                CAT_TRANSLATE_MODEL_ID,
+                quantization_config=_quant_config,
+                device_map="auto",
+            )
+            print("[WunderLanguage] CAT-Translate: 4-bit quantized model loaded on GPU.", flush=True)
+            _slog("cat-weights-gpu")
+        else:
+            print(f"[WunderLanguage] CAT-Translate: loading full-precision on CPU.", flush=True)
+            _cat_translate_model = AutoModelForCausalLM.from_pretrained(
+                CAT_TRANSLATE_MODEL_ID,
+                dtype=_cat_translate_dtype,
+            )
+            print("[WunderLanguage] CAT-Translate: model loaded on CPU.", flush=True)
+            _slog("cat-weights-cpu")
+        print("[WunderLanguage] CAT-Translate: constructing generation pipeline...", flush=True)
+        cat_translate_pipeline = hf_pipeline(
+            "text-generation",
+            model=_cat_translate_model,
+            tokenizer=_cat_translate_tokenizer,
         )
-        _cat_translate_model = AutoModelForCausalLM.from_pretrained(
-            CAT_TRANSLATE_MODEL_ID,
-            quantization_config=_quant_config,
-            device_map="auto",
-        )
-        print("[WunderLanguage] CAT-Translate: 4-bit quantized model loaded on GPU.")
-        _slog("cat-weights-gpu")
-    else:
-        print(f"[WunderLanguage] CAT-Translate: loading full-precision on CPU.")
-        _cat_translate_model = AutoModelForCausalLM.from_pretrained(
-            CAT_TRANSLATE_MODEL_ID,
-            dtype=_cat_translate_dtype,
-        )
-        print("[WunderLanguage] CAT-Translate: model loaded on CPU.")
-        _slog("cat-weights-cpu")
-    print("[WunderLanguage] CAT-Translate: constructing generation pipeline...")
-    cat_translate_pipeline = hf_pipeline(
-        "text-generation",
-        model=_cat_translate_model,
-        tokenizer=_cat_translate_tokenizer,
-    )
-    print(f"[WunderLanguage] CAT-Translate ready on {DEVICE}.")
-    _slog("cat-pipeline-ready")
+        print(f"[WunderLanguage] CAT-Translate ready on {DEVICE}.", flush=True)
+        _slog("cat-pipeline-ready")
+        READY["cat"] = "ready"
+    except Exception as ex:
+        READY["cat"] = f"failed: {ex}"
+        print(f"[WunderLanguage] CAT stage failed ({ex}) - /translate keeps fallback-blank.", flush=True)
+def _load_all_stages():
+    try:
+        _load_ocr_stage()
+    except Exception as ex:
+        READY["ocr"] = f"failed: {ex}"
+        print(f"[WunderLanguage] OCR stage failed ({ex}).", flush=True)
+        return
+    _load_cat_stage()
+_threading.Thread(target=_load_all_stages, daemon=True).start()
 print(f"[WunderLanguage] sidecar code version {CODE_VERSION}.")
 _slog("sidecar-imports-done")
 LANGUAGE_CODE_NAMES = {"ja": "Japanese", "en": "English"}
@@ -702,7 +743,8 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
     tgt_lang_name = LANGUAGE_CODE_NAMES.get(target_lang.lower(), target_lang)
     if cat_translate_pipeline is None:
         print("[WunderLanguage] CAT unavailable (OCR-only mode), leaving blank for fallback chain")
-        return "", True, "cat-unavailable"
+        reason = "cat-warming" if READY.get("cat") == "warming" else "cat-unavailable"
+        return "", True, reason
     out = apply_english_fixups(_run_generation(src_text, src_lang_name, tgt_lang_name), src_text)
     bad = _output_bad(src_text, out, target_lang)
     if bad in ("degenerate-loop", "wrong-language"):
@@ -736,9 +778,15 @@ class TranslateRequest(BaseModel):
     target_lang: str = "en"
 @app.get("/health")
 async def health():
-    return {"status": "ok", "device": DEVICE, "code_version": CODE_VERSION, "cat": "disabled" if _NO_CAT else "ready"}
+    ocr = READY.get("ocr", "ready")
+    cat = READY.get("cat", "ready")
+    if _NO_CAT:
+        cat = "disabled"
+    return {"status": "ok" if ocr == "ready" else "starting", "ocr": ocr, "device": DEVICE, "code_version": CODE_VERSION, "cat": cat}
 @app.post("/ocr")
 async def ocr_image(file: UploadFile = File(...)):
+    if READY.get("ocr") != "ready" or mocr is None or reader is None:
+        raise HTTPException(status_code=503, detail=f"ocr-{READY.get('ocr', 'warming')}")
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     primary_text, blocks, words, timing = detect_and_ocr(image)

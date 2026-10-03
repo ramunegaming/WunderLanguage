@@ -28,6 +28,10 @@ namespace WunderLanguage.Host.Sidecar
                 // so Stop() reaps it on OUR exit instead of leaving it immortal.
                 FileLogger.Log($"Reusing healthy sidecar version={runningVersion} - matches disk.");
                 statusProgress?.Report("Translation engine already running.");
+                // Adopted mid-warm is still warming: gate on OCR readiness
+                // (returns instantly when already ready) so the capture loop
+                // never meets a 503 /ocr.
+                await WaitForHealthyAsync(statusProgress);
                 return;
             }
             if (runningVersion is not null)
@@ -173,10 +177,33 @@ namespace WunderLanguage.Host.Sidecar
                     var response = await http.GetAsync("http://127.0.0.1:8000/health");
                     if (response.IsSuccessStatusCode)
                     {
-                        FileLogger.Log("Sidecar health check succeeded.");
-                        return;
+                        // Staged readiness: HTTP up means the API is bound,
+                        // not that models are loaded. Startup completes on
+                        // OCR ready (CAT warms behind; /translate falls back
+                        // meanwhile). A reported stage failure throws with
+                        // the reason instead of waiting out the cap blind.
+                        string ocr = "ready";
+                        try
+                        {
+                            string body = await response.Content.ReadAsStringAsync();
+                            using var doc = System.Text.Json.JsonDocument.Parse(body);
+                            if (doc.RootElement.TryGetProperty("ocr", out var o) && o.ValueKind == System.Text.Json.JsonValueKind.String)
+                                ocr = o.GetString() ?? "ready";
+                        }
+                        catch { }
+                        if (ocr == "ready")
+                        {
+                            FileLogger.Log("Sidecar health check succeeded.");
+                            return;
+                        }
+                        if (ocr.StartsWith("failed", StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException($"The translation engine reported an OCR failure: {ocr}.");
+                        statusProgress?.Report($"Warming up OCR models... ({i}s elapsed)");
+                        await Task.Delay(1000);
+                        continue;
                     }
                 }
+                catch (InvalidOperationException) { throw; }
                 catch (Exception ex)
                 {
                     if (i % 10 == 0)
