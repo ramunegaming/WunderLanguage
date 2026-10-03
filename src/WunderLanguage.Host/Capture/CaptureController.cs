@@ -68,6 +68,7 @@ namespace WunderLanguage.Host.Capture
         private readonly double[] _costPub = new double[CostRing];
         private int _costCapIx, _costCapN, _costOcrIx, _costOcrN, _costDetIx, _costDetN, _costRecIx, _costRecN, _costPubIx, _costPubN;
         private long _costLoops, _costOcrLoops, _costSkipped, _costHolds;
+        private long _costPrefHit, _costPrefMiss, _costStickyHit, _costStickyMiss, _costSimHit, _costSimMiss;
         private DateTime _costFlushAt = DateTime.UtcNow;
         private readonly object _costLock = new();
         private static void CostPush(double[] ring, ref int ix, ref int n, double v)
@@ -99,6 +100,19 @@ namespace WunderLanguage.Host.Capture
                     $"rec p50/p99={CostPct(_costRec, _costRecN, 0.5):F0}/{CostPct(_costRec, _costRecN, 0.99):F0}ms " +
                     $"pubN={pn} p50/p99={CostPct(pub, pn, 0.5):F0}/{CostPct(pub, pn, 0.99):F0}ms");
                 _costLoops = 0; _costOcrLoops = 0; _costSkipped = 0; _costHolds = 0;
+                // Cache-hit visibility, same cadence (interval rates, not
+                // cumulative): tcache = persistent translation cache,
+                // sticky = last-published row reuse, prefetch = stability-wait
+                // memo, sim = flicker-tolerant name memo.
+                var (tcReq, tcHit) = _translationManager.CacheStats();
+                long ph = Interlocked.Exchange(ref _costPrefHit, 0);
+                long pm = Interlocked.Exchange(ref _costPrefMiss, 0);
+                long sh = Interlocked.Exchange(ref _costStickyHit, 0);
+                long sm = Interlocked.Exchange(ref _costStickyMiss, 0);
+                long ih = Interlocked.Exchange(ref _costSimHit, 0);
+                long im = Interlocked.Exchange(ref _costSimMiss, 0);
+                static string Rate(long h, long m) => (h + m) == 0 ? "-/-" : $"{h}/{h + m} ({100.0 * h / (h + m):F0}%)";
+                FileLogger.Log($"[cache-hit] tcache={Rate(tcHit, tcReq - tcHit)} sticky={Rate(sh, sm)} prefetch={Rate(ph, pm)} sim={Rate(ih, im)}");
             }
             catch { }
         }
@@ -2673,7 +2687,8 @@ namespace WunderLanguage.Host.Capture
         }
         private async Task<string> PrefetchOrTranslateAsync(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)
         {
-            if (TryPrefetch(ja, out var pre)) return pre;
+            if (TryPrefetch(ja, out var pre)) { Interlocked.Increment(ref _costPrefHit); return pre; }
+            Interlocked.Increment(ref _costPrefMiss);
             return await tx();
         }
         private async Task<List<string>> TranslateBattleRowsAsync(List<string> ja, List<string> lastJa, List<string> lastEn, System.Func<string, System.Threading.Tasks.Task<string>> translateOne, bool simMemo = false, bool rowsFinal = false)
@@ -2695,8 +2710,8 @@ namespace WunderLanguage.Host.Capture
             {
                 string l = ja[i];
                 if (string.IsNullOrEmpty(l)) { tasks[i] = Task.FromResult(""); emptyBypass[i] = true; }
-                else if (sticky.TryGetValue(l, out var e)) tasks[i] = Task.FromResult(e);
-                else tasks[i] = rowsFinal ? translateOne(l) : TranslateRowSplitAsync(l, translateOne, simMemo);
+                else if (sticky.TryGetValue(l, out var e)) { Interlocked.Increment(ref _costStickyHit); tasks[i] = Task.FromResult(e); }
+                else { Interlocked.Increment(ref _costStickyMiss); tasks[i] = rowsFinal ? translateOne(l) : TranslateRowSplitAsync(l, translateOne, simMemo); }
             }
             var ens = await Task.WhenAll(tasks);
             var result = new List<string>(ens.Length);
@@ -2786,11 +2801,13 @@ namespace WunderLanguage.Host.Capture
             string en;
             if (simMemo && TrySimilarBattleEn(name, out var simEn))
             {
+                Interlocked.Increment(ref _costSimHit);
                 en = simEn;
                 FileLogger.Log($"[battle] memo-sim \"{name}\" -> \"{en}\"");
             }
             else
             {
+                if (simMemo) Interlocked.Increment(ref _costSimMiss);
                 en = await PrefetchOrTranslateAsync(name, () => translateOne(name));
                 if (simMemo) MemoizeBattleName(name, en);
             }
