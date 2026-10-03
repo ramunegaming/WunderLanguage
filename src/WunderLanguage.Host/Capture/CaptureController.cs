@@ -619,6 +619,7 @@ namespace WunderLanguage.Host.Capture
                     CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
                     CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
                     CostPush(_costRec, ref _costRecIx, ref _costRecN, _ocrClient.LastRecMs);
+                    _costOcrLoops++;
                     _settledOcrLoops++;
                     if (_settledOcrLoops <= StartupWarmupOcrLoops)
                     {
