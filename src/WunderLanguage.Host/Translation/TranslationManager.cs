@@ -40,6 +40,16 @@ namespace WunderLanguage.Host.Translation
 
         public string ActiveProviderName { get; private set; } = "Unknown";
 
+        // Perf batch: cache-hit visibility. Interval counters (Interlocked;
+        // the loop-cost flush reads+resets). Revert: delete + Increments.
+        private long _cacheReqs, _cacheHits;
+        public (long req, long hit) CacheStats()
+        {
+            long r = Interlocked.Exchange(ref _cacheReqs, 0);
+            long h = Interlocked.Exchange(ref _cacheHits, 0);
+            return (r, h);
+        }
+
         public TranslationManager(
             TranslationProviderPreference preference,
             DeepLProvider? deepL,
@@ -61,6 +71,7 @@ namespace WunderLanguage.Host.Translation
         {
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
+            Interlocked.Increment(ref _cacheReqs);
 
             // Cache key is provider-scoped: Offline tracks the sidecar's
             // reported code version (any Python output-shaping change orphans
@@ -78,6 +89,7 @@ namespace WunderLanguage.Host.Translation
             {
                 ActiveProviderName = "Cache";
                 _lastSourceLine = text;
+                Interlocked.Increment(ref _cacheHits);
                 FileLogger.Log($"[translate-metrics] cache-hit chars={text.Length}");
                 return cachedCurrent;
             }
