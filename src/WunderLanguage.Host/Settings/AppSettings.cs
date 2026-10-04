@@ -10,6 +10,12 @@ namespace WunderLanguage.Host.Settings
     {
         public string TranslationProvider { get; set; } = "DeepL"; // "DeepL" or "Offline"
         public string MenuDisplayMode { get; set; } = "Text"; // "Text" or "Ascii"
+        // Diagnostics mode (file-only, default OFF): gates dev artifacts —
+        // corpus recording, troubleshoot snapshots, per-loop verbose log
+        // lines. Enabled via "Diagnostics": true in settings.json or the
+        // --diagnostics flag. Translation cache + mined corrections stay
+        // always-on (user-facing benefits, tiny).
+        public bool Diagnostics { get; set; } = false;
 
         // Encrypted at rest (DPAPI, CurrentUser). Never plaintext on disk.
         public string? DeepLApiKeyEncrypted { get; set; }
@@ -50,6 +56,9 @@ namespace WunderLanguage.Host.Settings
                         string m = md.GetString() ?? "Text";
                         settings.MenuDisplayMode = (m == "Ascii") ? "Ascii" : "Text";
                     }
+
+                    if (root.TryGetProperty(nameof(Diagnostics), out var dg) && (dg.ValueKind == JsonValueKind.True || dg.ValueKind == JsonValueKind.False))
+                        settings.Diagnostics = dg.GetBoolean();
 
                     string? encrypted = null;
                     if (root.TryGetProperty(nameof(DeepLApiKeyEncrypted), out var enc) && enc.ValueKind == JsonValueKind.String)
@@ -109,11 +118,20 @@ namespace WunderLanguage.Host.Settings
             {
                 TranslationProvider,
                 MenuDisplayMode,
+                Diagnostics,
                 DeepLApiKeyEncrypted = encrypted,
             };
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(FilePath, json);
             FileLogger.Log($"Settings saved: provider={TranslationProvider}, keyPresent={DeepLApiKey is not null}, encryptedPresent={!string.IsNullOrEmpty(encrypted)}");
         }
+    }
+
+    // Process-wide diagnostics gate (see AppSettings.Diagnostics). Set once
+    // at startup from settings file / --diagnostics flag; read everywhere.
+    // Revert: delete class + gate sites.
+    public static class Diag
+    {
+        public static bool Enabled { get; set; }
     }
 }
