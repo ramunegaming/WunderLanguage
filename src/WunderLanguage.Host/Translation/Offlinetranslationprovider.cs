@@ -28,7 +28,9 @@ namespace WunderLanguage.Host.Translation
         public string LastCodeVersion { get; private set; } = "unknown";
         // Auto-versioned: sidecar reports its own hash, no manual expected const.
 
-        public OfflineTranslationProvider(string endpoint = "http://localhost:8000")
+        // Micro-hygiene (perf batch): 127.0.0.1, same rationale as
+        // OcrClient — this default serves every offline translate.
+        public OfflineTranslationProvider(string endpoint = "http://127.0.0.1:8000")
         {
             _endpoint = endpoint;
             _http = new HttpClient();

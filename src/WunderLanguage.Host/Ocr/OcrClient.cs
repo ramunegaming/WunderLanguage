@@ -20,7 +20,10 @@ namespace WunderLanguage.Host.Ocr
         public double LastDetMs { get; private set; }
         public double LastRecMs { get; private set; }
 
-        public OcrClient(string endpoint = "http://localhost:8000")
+        // Micro-hygiene (perf batch): 127.0.0.1 skips name resolution
+        // entirely and matches the health polls; localhost added a
+        // resolver hop on every fresh connection for zero benefit.
+        public OcrClient(string endpoint = "http://127.0.0.1:8000")
         {
             _endpoint = endpoint;
             _http = new HttpClient();
