@@ -69,6 +69,10 @@ namespace WunderLanguage.Host.Capture
         private int _costCapIx, _costCapN, _costOcrIx, _costOcrN, _costDetIx, _costDetN, _costRecIx, _costRecN, _costPubIx, _costPubN;
         private long _costLoops, _costOcrLoops, _costSkipped, _costHolds;
         private long _costPrefHit, _costPrefMiss, _costStickyHit, _costStickyMiss, _costSimHit, _costSimMiss;
+        // PNG-encode mean (stable cost — mean suffices, no ring). Loop
+        // thread only; reset per flush with the counters.
+        private double _costPngSum;
+        private long _costPngN;
         private DateTime _costFlushAt = DateTime.UtcNow;
         private readonly object _costLock = new();
         private static void CostPush(double[] ring, ref int ix, ref int n, double v)
@@ -98,8 +102,10 @@ namespace WunderLanguage.Host.Capture
                     $"ocrN={_costOcrN} p50/p99={CostPct(_costOcr, _costOcrN, 0.5):F0}/{CostPct(_costOcr, _costOcrN, 0.99):F0}ms " +
                     $"det p50/p99={CostPct(_costDet, _costDetN, 0.5):F0}/{CostPct(_costDet, _costDetN, 0.99):F0}ms " +
                     $"rec p50/p99={CostPct(_costRec, _costRecN, 0.5):F0}/{CostPct(_costRec, _costRecN, 0.99):F0}ms " +
-                    $"pubN={pn} p50/p99={CostPct(pub, pn, 0.5):F0}/{CostPct(pub, pn, 0.99):F0}ms");
+                    $"pubN={pn} p50/p99={CostPct(pub, pn, 0.5):F0}/{CostPct(pub, pn, 0.99):F0}ms " +
+                    $"pngMean={(_costPngN == 0 ? 0 : _costPngSum / _costPngN):F1}ms over {_costPngN}");
                 _costLoops = 0; _costOcrLoops = 0; _costSkipped = 0; _costHolds = 0;
+                _costPngSum = 0; _costPngN = 0;
                 // Cache-hit visibility, same cadence (interval rates, not
                 // cumulative): tcache = persistent translation cache,
                 // sticky = last-published row reuse, prefetch = stability-wait
@@ -636,6 +642,8 @@ namespace WunderLanguage.Host.Capture
                     CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
                     CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
                     CostPush(_costRec, ref _costRecIx, ref _costRecN, _ocrClient.LastRecMs);
+                    _costPngSum += _ocrClient.LastPngMs;
+                    _costPngN++;
                     _costOcrLoops++;
                     _settledOcrLoops++;
                     if (_settledOcrLoops <= StartupWarmupOcrLoops)

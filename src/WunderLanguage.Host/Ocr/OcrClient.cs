@@ -19,6 +19,10 @@ namespace WunderLanguage.Host.Ocr
         // S1.2: last-loop timings retained for the min-spec verdict (elsewhere log-only).
         public double LastDetMs { get; private set; }
         public double LastRecMs { get; private set; }
+        // Perf batch (PNG-encode split): host-side encode cost, separated
+        // from the HTTP round trip to decide if the transport format is
+        // ever worth revisiting. Revert: delete + 2 lines.
+        public double LastPngMs { get; private set; }
 
         // Micro-hygiene (perf batch): 127.0.0.1 skips name resolution
         // entirely and matches the health polls; localhost added a
@@ -38,7 +42,10 @@ namespace WunderLanguage.Host.Ocr
         public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap)
         {
             using var ms = new MemoryStream();
+            var pngSw = System.Diagnostics.Stopwatch.StartNew();
             bitmap.Save(ms, ImageFormat.Png);
+            pngSw.Stop();
+            LastPngMs = pngSw.Elapsed.TotalMilliseconds;
             ms.Position = 0;
 
             using var content = new MultipartFormDataContent();
