@@ -68,6 +68,12 @@ namespace WunderLanguage.Host.Capture
         private readonly double[] _costPub = new double[CostRing];
         private int _costCapIx, _costCapN, _costOcrIx, _costOcrN, _costDetIx, _costDetN, _costRecIx, _costRecN, _costPubIx, _costPubN;
         private long _costLoops, _costOcrLoops, _costSkipped, _costHolds;
+        // Session input fingerprint (ML book: shift detection without
+        // labels — per-session totals enabling cross-session/game
+        // comparison at onboarding). Accumulated alongside the flush
+        // counters, reported once in Stop(). Revert with the Stop block.
+        private long _sessLoops, _sessOcr, _sessSkipped, _sessHolds, _sessBlocks, _sessJaFrames;
+        private double _sessDetSum, _sessRecSum;
         private long _costPrefHit, _costPrefMiss, _costStickyHit, _costStickyMiss, _costSimHit, _costSimMiss;
         // PNG-encode mean (stable cost — mean suffices, no ring). Loop
         // thread only; reset per flush with the counters.
@@ -517,6 +523,17 @@ namespace WunderLanguage.Host.Capture
         {
             FileLogger.Log($"CaptureController.Stop called id={_id}");
             _stopped = true;
+            // Session input fingerprint (one line per session — the
+            // cross-session/game comparison input for shift detection).
+            try
+            {
+                double jaRate = _sessOcr == 0 ? 0 : 100.0 * _sessJaFrames / _sessOcr;
+                double bpf = _sessOcr == 0 ? 0 : (double)_sessBlocks / _sessOcr;
+                double detM = _sessOcr == 0 ? 0 : _sessDetSum / _sessOcr;
+                double recM = _sessOcr == 0 ? 0 : _sessRecSum / _sessOcr;
+                FileLogger.Log($"[session] loops={_sessLoops} ocr={_sessOcr} skipped={_sessSkipped} holds={_sessHolds} blocks={_sessBlocks} jaframes={_sessJaFrames} jarate={jaRate:F0}% boxesperframe={bpf:F1} detmean={detM:F0}ms recmean={recM:F0}ms");
+            }
+            catch { }
             try { CorpusRotate(); } catch { }
             _cts?.Cancel();
         }
@@ -530,6 +547,7 @@ namespace WunderLanguage.Host.Capture
             {
                 iteration++;
                 _costLoops++;
+                _sessLoops++;
                 MaybeFlushLoopCost();
                 try
                 {
@@ -538,6 +556,7 @@ namespace WunderLanguage.Host.Capture
                     if (WindowCapture.IsMinimized(_hWnd))
                     {
                         _costHolds++;
+                        _sessHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator minimized, holding");
                         await Task.Delay(IdleDelayMs, token);
@@ -548,6 +567,7 @@ namespace WunderLanguage.Host.Capture
                     {
                         _focusHoldActive = true;
                         _costHolds++;
+                        _sessHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator not focused (fg=0x{fgFocus:X}), holding");
                         await Task.Delay(IdleDelayMs, token);
@@ -581,6 +601,7 @@ namespace WunderLanguage.Host.Capture
                     if (frameHash == _lastFrameHash)
                     {
                         _costSkipped++;
+                        _sessSkipped++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] frame unchanged, skipping OCR");
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
@@ -657,6 +678,12 @@ namespace WunderLanguage.Host.Capture
                     _costPngSum += _ocrClient.LastPngMs;
                     _costPngN++;
                     _costOcrLoops++;
+                    _sessOcr++;
+                    _sessDetSum += _ocrClient.LastDetMs;
+                    _sessRecSum += _ocrClient.LastRecMs;
+                    _sessBlocks += ocrBlocks.Count;
+                    foreach (var _sb in ocrBlocks)
+                        if (HasJapanese(_sb.Text)) { _sessJaFrames++; break; }
                     _settledOcrLoops++;
                     if (_settledOcrLoops <= StartupWarmupOcrLoops)
                     {
