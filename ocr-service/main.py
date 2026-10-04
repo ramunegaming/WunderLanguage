@@ -237,6 +237,7 @@ CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
 # (glossary pins + DeepL path keep battle UI intact). Title/script matches
 # below are pure-python and keep working in this mode.
 _NO_CAT = os.environ.get("WUNDER_NO_CAT", "").strip() == "1"
+_CAT_SKIP_REASON = ""
 cat_translate_pipeline = None
 def _load_ocr_stage():
     # Stage 1: torch + OCR models (~24s cold, ~4s warm). Sequential on
@@ -264,6 +265,29 @@ def _load_cat_stage():
         READY["cat"] = "disabled"
         print("[WunderLanguage] CAT-Translate disabled by WUNDER_NO_CAT=1 (OCR-only mode).", flush=True)
         return
+    # VRAM pre-check (perf batch, 2nd book pass: check the limit before
+    # hitting it — the quantize segfaults under memory pressure and the
+    # nocatfb retry only rescues afterwards). Fail-OPEN: a broken query
+    # must never disable translation by itself. CPU path skips (host-RAM
+    # pressure is a different question). Threshold override for tests:
+    # WUNDER_CAT_MIN_FREE_MB (default 3072).
+    global _CAT_SKIP_REASON
+    if DEVICE == "cuda":
+        try:
+            _min_free_mb = int(os.environ.get("WUNDER_CAT_MIN_FREE_MB", "3072"))
+        except Exception:
+            _min_free_mb = 3072
+        try:
+            _free_b, _ = torch.cuda.mem_get_info()
+            _free_mb = _free_b // (1024 * 1024)
+            if _free_mb < _min_free_mb:
+                _CAT_SKIP_REASON = "low-vram"
+                READY["cat"] = "disabled-low-vram"
+                print(f"[WunderLanguage] CAT-Translate skipped: only {_free_mb}MB VRAM free (need {_min_free_mb}MB) - /translate keeps fallback-blank.", flush=True)
+                return
+            print(f"[WunderLanguage] CAT-Translate VRAM check: {_free_mb}MB free, proceeding.", flush=True)
+        except Exception as _ex:
+            print(f"[WunderLanguage] CAT-Translate VRAM check inconclusive ({_ex}) - proceeding.", flush=True)
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline as hf_pipeline, BitsAndBytesConfig
         _slog("transformers-imported")
@@ -743,7 +767,10 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
     tgt_lang_name = LANGUAGE_CODE_NAMES.get(target_lang.lower(), target_lang)
     if cat_translate_pipeline is None:
         print("[WunderLanguage] CAT unavailable (OCR-only mode), leaving blank for fallback chain")
-        reason = "cat-warming" if READY.get("cat") == "warming" else "cat-unavailable"
+        if _CAT_SKIP_REASON == "low-vram":
+            reason = "cat-low-vram"
+        else:
+            reason = "cat-warming" if READY.get("cat") == "warming" else "cat-unavailable"
         return "", True, reason
     out = apply_english_fixups(_run_generation(src_text, src_lang_name, tgt_lang_name), src_text)
     bad = _output_bad(src_text, out, target_lang)
