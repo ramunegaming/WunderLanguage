@@ -10,11 +10,10 @@ using System.Threading.Tasks;
 
 namespace WunderLanguage.Host.Ocr
 {
-    // Vision batch (box confidence v0): Conf carries the sidecar's
-    // geometric prior (0..1, uncalibrated — NOT a probability), NMerge
-    // the detector multiplicity. Defaults keep old payloads working.
-    // No consumer yet (plumbing batch); thresholds come next.
-    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1);
+    // Vision batch item 2: Src tags the proposer ("detector" or
+    // "classical"). Host unions classical only in learning mode
+    // (empty item vocab) — the tuned path never sees them.
+    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1, string Src = "detector");
 
     public class OcrClient
     {
@@ -43,7 +42,7 @@ namespace WunderLanguage.Host.Ocr
             return text;
         }
 
-        public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap)
+        public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap, bool includeClassical = false)
         {
             using var ms = new MemoryStream();
             var pngSw = System.Diagnostics.Stopwatch.StartNew();
@@ -92,7 +91,15 @@ namespace WunderLanguage.Host.Ocr
                         int nmerge = 1;
                         if (item.TryGetProperty("nmerge", out var nm) && nm.ValueKind == JsonValueKind.Number && nm.TryGetInt32(out var ni))
                             nmerge = Math.Max(1, ni);
-                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge));
+                        string src = "detector";
+                        if (item.TryGetProperty("src", out var sc) && sc.ValueKind == JsonValueKind.String)
+                            src = sc.GetString() ?? "detector";
+                        // Learning-mode union (vision item 2): classical
+                        // proposals reach assembly only with empty item
+                        // vocab; vocab games never see them (tuned path
+                        // byte-identical).
+                        if (src == "classical" && !includeClassical) continue;
+                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge, src));
                     }
                     catch { }
                 }
