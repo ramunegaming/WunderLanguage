@@ -39,8 +39,11 @@ Biggest historical win: Windows Defender exclusions for
 
 Loop cadence ≈ 70 iterations/min, roughly half skipped as
 unchanged frames. Larger capture windows double capture cost
-(~25 ms) but detect/recognize *faster* (bigger glyphs) — tight
-capture regions remain the best loop-speed lever (4–7× observed).
+(~25 ms) but detect/recognize *faster* (bigger glyphs); small
+windows (408×313) run the fastest profile yet (OCR ~220 ms p50).
+Tight capture regions remain the best loop-speed lever (4–7× observed).
+Geometry verified size-proof in both directions (0.43×–2.16×):
+same rows post, no drops or merges from the absolute thresholds.
 
 Warm refires publish in ~2 ms (persistent translation cache +
 prefetch + last-published reuse + flicker-tolerant name memo —
