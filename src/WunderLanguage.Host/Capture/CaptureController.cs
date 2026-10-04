@@ -560,6 +560,7 @@ namespace WunderLanguage.Host.Capture
                         _pendingFrameHash = null;
                         _recentFrameHashes.Clear();
                         _lastFrameNovel = true;
+                        _prevSmall = null;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
@@ -570,6 +571,13 @@ namespace WunderLanguage.Host.Capture
                     string frameHash = ComputeFrameHash(bitmap);
                     capSw.Stop();
                     CostPush(_costCap, ref _costCapIx, ref _costCapN, capSw.Elapsed.TotalMilliseconds);
+                    // Vision item 4 (temporal derivative v0): downscaled
+                    // diff energy + change band, logged on settled frames.
+                    // Classify-only — the settle machinery below is untouched;
+                    // acting on the signal (blink-hold, scroll-fastpath) waits
+                    // for cited distributions. Revert: delete fields/method +
+                    // the two call sites.
+                    string frameDiff = ComputeFrameDiff(bitmap);
                     if (frameHash == _lastFrameHash)
                     {
                         _costSkipped++;
@@ -634,7 +642,7 @@ namespace WunderLanguage.Host.Capture
                     _lastFrameNovel = !_recentFrameHashes.Contains(frameHash);
                     _recentFrameHashes.Enqueue(frameHash);
                     while (_recentFrameHashes.Count > 8) _recentFrameHashes.Dequeue();
-                    FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
+                    FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height} {frameDiff})");
 
                     var ocrSw = System.Diagnostics.Stopwatch.StartNew();
                     // Learning mode (empty item vocab) unions the classical
@@ -4283,6 +4291,71 @@ namespace WunderLanguage.Host.Capture
             small.Save(ms, ImageFormat.Bmp);
             using var md5 = MD5.Create();
             return Convert.ToBase64String(md5.ComputeHash(ms.ToArray()));
+        }
+        // Temporal derivative v0 (vision item 4): downscaled grayscale
+        // diff vs the previous captured frame. Returns "diff=F band=T-B
+        // low=S kind=K": F = changed fraction (|d|>12), T-B = changed
+        // row band, S = share of change in the text zone (ny>0.65),
+        // K = static (F<0.002) | lowband (S>0.7, text-zone change:
+        // typewriter/scroll/dialogue) | spread (UI-wide change:
+        // transitions, flashes). Reference updates every captured frame
+        // (even skips) so the derivative is always one frame apart.
+        // Classify-only: no firing behavior reads this yet.
+        private byte[]? _prevSmall;
+        private int _prevSmallW, _prevSmallH;
+        private string ComputeFrameDiff(Bitmap bitmap)
+        {
+            try
+            {
+                int tw = 160;
+                int th = Math.Max(1, bitmap.Height * tw / Math.Max(1, bitmap.Width));
+                byte[] cur;
+                using (var thumb = new Bitmap(bitmap, new Size(tw, th)))
+                {
+                    var rect = new Rectangle(0, 0, tw, th);
+                    var data = thumb.LockBits(rect, ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                    try
+                    {
+                        cur = new byte[tw * th];
+                        int stride = Math.Abs(data.Stride);
+                        var row = new byte[stride];
+                        for (int y = 0; y < th; y++)
+                        {
+                            System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, stride);
+                            for (int x = 0; x < tw; x++)
+                                cur[y * tw + x] = (byte)((row[x * 3 + 2] * 77 + row[x * 3 + 1] * 150 + row[x * 3] * 29) >> 8);
+                        }
+                    }
+                    finally { thumb.UnlockBits(data); }
+                }
+                string res = "diff=noref";
+                if (_prevSmall is not null && _prevSmall.Length == cur.Length && _prevSmallW == tw && _prevSmallH == th)
+                {
+                    int changed = 0, low = 0, top = th, bot = -1;
+                    for (int y = 0; y < th; y++)
+                    {
+                        bool rowHit = false;
+                        for (int x = 0; x < tw; x++)
+                        {
+                            int d = cur[y * tw + x] - _prevSmall[y * tw + x];
+                            if (d < -12 || d > 12)
+                            {
+                                changed++;
+                                rowHit = true;
+                                if ((double)y / th > 0.65) low++;
+                            }
+                        }
+                        if (rowHit) { if (y < top) top = y; bot = y; }
+                    }
+                    double frac = (double)changed / cur.Length;
+                    string kind = frac < 0.002 ? "static" : ((double)low / Math.Max(1, changed) > 0.7 ? "lowband" : "spread");
+                    res = bot < 0 ? "diff=0.000 band=-- low=0.00 kind=static"
+                        : $"diff={frac:0.000} band={(double)top / th:0.00}-{(double)bot / th:0.00} low={(double)low / Math.Max(1, changed):0.00} kind={kind}";
+                }
+                _prevSmall = cur; _prevSmallW = tw; _prevSmallH = th;
+                return res;
+            }
+            catch { _prevSmall = null; return "diff=err"; }
         }
     }
 }
