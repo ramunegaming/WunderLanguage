@@ -70,6 +70,12 @@ MIN_BOX_HEIGHT = 10
 DETECTION_UPSCALE_FACTOR = 1
 RECOGNITION_UPSCALE_FACTOR = 2
 def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
+    # Perf/vision batch (box confidence v0): also returns detector
+    # multiplicity per merged box — a region where the detector fired
+    # 5 overlapping boxes is stronger text evidence than a singleton.
+    # Returns [(box, nmerged)]. Single caller below.
+    merged = []
+    used = [False] * len(boxes)
     if not boxes:
         return []
     # M6.2 (steadiness): horizontal gap scales with the frame's tallest
@@ -89,6 +95,7 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
             continue
         x_min, y_min, x_max, y_max = box
         used[i] = True
+        _nmerged = 1
         changed = True
         while changed:
             changed = False
@@ -103,7 +110,8 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
                     x_max, y_max = max(x_max, ox_max), max(y_max, oy_max)
                     used[j] = True
                     changed = True
-        merged.append((x_min, y_min, x_max, y_max))
+                    _nmerged += 1
+        merged.append(((x_min, y_min, x_max, y_max), _nmerged))
     return merged
 def detect_and_ocr(pil_image: Image.Image):
     det_scale = DETECTION_UPSCALE_FACTOR
@@ -129,7 +137,7 @@ def detect_and_ocr(pil_image: Image.Image):
     # dominant block; HUD riders are short and tiny beside it. Menu
     # scenes have no dominant block, so every row survives this.
     _dom_area = 0.0
-    for _qx0, _qy0, _qx1, _qy1 in merged_boxes:
+    for (_qx0, _qy0, _qx1, _qy1), _qn in merged_boxes:
         _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
         if _qa > _dom_area:
             _dom_area = _qa
@@ -138,7 +146,7 @@ def detect_and_ocr(pil_image: Image.Image):
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
-    for x_min, y_min, x_max, y_max in merged_boxes:
+    for (x_min, y_min, x_max, y_max), _nmerge in merged_boxes:
         orig_x_min = x_min / det_scale
         orig_y_min = y_min / det_scale
         orig_x_max = x_max / det_scale
@@ -162,10 +170,25 @@ def detect_and_ocr(pil_image: Image.Image):
         text = mocr(recognition_crop)
         if not text.strip():
             continue
+        # Box confidence v0 (geometric prior ONLY — not a calibrated
+        # probability; fusion with text/temporal cues is the roadmap).
+        # size_m: margin above the MIN noise floors, saturating.
+        # dom: share of the frame-dominant area (dialogue blocks ~1,
+        # HUD riders ~0). nmerge: detector multiplicity (free evidence).
+        try:
+            _size_m = ((orig_width - MIN_BOX_WIDTH) / 60.0 + (orig_height - MIN_BOX_HEIGHT) / 48.0) / 2.0
+            _size_m = max(0.0, min(1.0, _size_m))
+            _dom = (orig_width * orig_height) / max(1.0, 0.05 * _dom_area)
+            _dom = max(0.0, min(1.0, _dom))
+            _conf = round(0.5 * _size_m + 0.5 * _dom, 3)
+        except Exception:
+            _conf = 0.0
         blocks.append({
             "text": text,
             "box": [int(orig_x_min), int(orig_y_min), int(orig_width), int(orig_height)],
             "area": orig_width * orig_height,
+            "conf": _conf,
+            "nmerge": int(_nmerge),
         })
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:
