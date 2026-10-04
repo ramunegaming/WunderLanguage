@@ -113,6 +113,62 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
                     _nmerged += 1
         merged.append(((x_min, y_min, x_max, y_max), _nmerged))
     return merged
+def propose_classical_boxes(img_np):
+    # Vision batch item 2 (classical box proposer, learning-mode
+    # fallback): dialogue boxes ARE blocks world — axis-aligned
+    # rectangles on flat fills. Gradient/contour proposal with zero
+    # training, for games whose styling the frozen detector misses.
+    # Runs for every frame but tagged src=classical; the HOST decides
+    # (learning mode unions, vocab mode drops — tuned path untouched).
+    # Returns [(x0,y0,x1,y1, rect_score)] in DETECTION coords.
+    out = []
+    try:
+        import cv2 as _cv2
+    except Exception:
+        return out
+    try:
+        h, w = img_np.shape[0], img_np.shape[1]
+        if h < 40 or w < 40:
+            return out
+        gray = _cv2.cvtColor(img_np, _cv2.COLOR_RGB2GRAY) if len(img_np.shape) == 3 else img_np
+        frame_area = float(w * h)
+        seen = []
+        for thresh, _ in ((_cv2.THRESH_BINARY + _cv2.THRESH_OTSU, False), (_cv2.THRESH_BINARY_INV + _cv2.THRESH_OTSU, True)):
+            _, bw = _cv2.threshold(gray, 0, 255, thresh)
+            contours, _ = _cv2.findContours(bw, _cv2.RETR_EXTERNAL, _cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                area = float(_cv2.contourArea(c))
+                if area < 800.0 or area > 0.70 * frame_area:
+                    continue
+                peri = _cv2.arcLength(c, True)
+                approx = _cv2.approxPolyDP(c, 0.02 * peri, True)
+                if len(approx) != 4 or not _cv2.isContourConvex(approx):
+                    continue
+                x, y, bw_, bh_ = _cv2.boundingRect(approx)
+                if bw_ < 1 or bh_ < 1:
+                    continue
+                if float(bw_) / float(bh_) < 1.2:
+                    continue
+                rect_score = area / float(bw_ * bh_)
+                if rect_score < 0.75:
+                    continue
+                # Dedupe across polarities (same box found twice).
+                dup = False
+                for (sx0, sy0, sx1, sy1, _) in seen:
+                    ix0, iy0 = max(x, sx0), max(y, sy0)
+                    ix1, iy1 = min(x + bw_, sx1), min(y + bh_, sy1)
+                    iw, ih = max(0, ix1 - ix0), max(0, iy1 - iy0)
+                    union = bw_ * bh_ + (sx1 - sx0) * (sy1 - sy0) - iw * ih
+                    if union > 0 and (iw * ih) / union > 0.5:
+                        dup = True
+                        break
+                if dup:
+                    continue
+                seen.append((x, y, x + bw_, y + bh_, round(min(1.0, rect_score), 3)))
+        out = seen
+    except Exception:
+        out = []
+    return out
 def detect_and_ocr(pil_image: Image.Image):
     det_scale = DETECTION_UPSCALE_FACTOR
     if pil_image.width * det_scale > 900:
@@ -143,10 +199,31 @@ def detect_and_ocr(pil_image: Image.Image):
             _dom_area = _qa
     _raw_n = len(raw_boxes)
     _skipped = 0
+    # Classical fallback runs every frame (cheap contours) but is TAGGED;
+    # the host unions it only in learning mode. Deduped here so the
+    # detector always wins overlaps (tuned path byte-identical).
+    _work = [(_b, _n, None) for (_b, _n) in merged_boxes]
+    try:
+        for (_px0, _py0, _px1, _py1, _ps) in propose_classical_boxes(img_np):
+            _dup = False
+            for (_qb, _qn) in merged_boxes:
+                _qx0, _qy0, _qx1, _qy1 = _qb
+                _ix0, _iy0 = max(_px0, _qx0), max(_py0, _qy0)
+                _ix1, _iy1 = min(_px1, _qx1), min(_py1, _qy1)
+                _iw, _ih = max(0, _ix1 - _ix0), max(0, _iy1 - _iy0)
+                _un = (_px1 - _px0) * (_py1 - _py0) + (_qx1 - _qx0) * (_qy1 - _qy0) - _iw * _ih
+                if _un > 0 and (_iw * _ih) / _un > 0.5:
+                    _dup = True
+                    break
+            if not _dup:
+                _work.append((((_px0, _py0, _px1, _py1), 0, _ps)))
+    except Exception:
+        pass
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
-    for (x_min, y_min, x_max, y_max), _nmerge in merged_boxes:
+    for (_wb, _nmerge, _cls) in _work:
+        (x_min, y_min, x_max, y_max) = _wb
         orig_x_min = x_min / det_scale
         orig_y_min = y_min / det_scale
         orig_x_max = x_max / det_scale
@@ -172,23 +249,29 @@ def detect_and_ocr(pil_image: Image.Image):
             continue
         # Box confidence v0 (geometric prior ONLY — not a calibrated
         # probability; fusion with text/temporal cues is the roadmap).
-        # size_m: margin above the MIN noise floors, saturating.
-        # dom: share of the frame-dominant area (dialogue blocks ~1,
-        # HUD riders ~0). nmerge: detector multiplicity (free evidence).
-        try:
-            _size_m = ((orig_width - MIN_BOX_WIDTH) / 60.0 + (orig_height - MIN_BOX_HEIGHT) / 48.0) / 2.0
-            _size_m = max(0.0, min(1.0, _size_m))
-            _dom = (orig_width * orig_height) / max(1.0, 0.05 * _dom_area)
-            _dom = max(0.0, min(1.0, _dom))
-            _conf = round(0.5 * _size_m + 0.5 * _dom, 3)
-        except Exception:
-            _conf = 0.0
+        # Classical boxes carry their rectangularity score instead.
+        if _cls is not None:
+            _conf = round(max(0.0, min(1.0, float(_cls))), 3)
+            _src = "classical"
+        else:
+            _src = "detector"
+            try:
+                # size_m: margin above the MIN noise floors, saturating.
+                # dom: share of the frame-dominant area (dialogue ~1, riders ~0).
+                _size_m = ((orig_width - MIN_BOX_WIDTH) / 60.0 + (orig_height - MIN_BOX_HEIGHT) / 48.0) / 2.0
+                _size_m = max(0.0, min(1.0, _size_m))
+                _dom = (orig_width * orig_height) / max(1.0, 0.05 * _dom_area)
+                _dom = max(0.0, min(1.0, _dom))
+                _conf = round(0.5 * _size_m + 0.5 * _dom, 3)
+            except Exception:
+                _conf = 0.0
         blocks.append({
             "text": text,
             "box": [int(orig_x_min), int(orig_y_min), int(orig_width), int(orig_height)],
             "area": orig_width * orig_height,
             "conf": _conf,
             "nmerge": int(_nmerge),
+            "src": _src,
         })
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:

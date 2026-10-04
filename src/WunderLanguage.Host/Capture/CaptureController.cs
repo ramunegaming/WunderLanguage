@@ -637,7 +637,11 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[loop {iteration}] frame settled - running OCR (bitmap {bitmap.Width}x{bitmap.Height})");
 
                     var ocrSw = System.Diagnostics.Stopwatch.StartNew();
-                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap);
+                    // Learning mode (empty item vocab) unions the classical
+                    // box proposer; vocab games keep the tuned detector-only
+                    // path (vision item 2 — byte-identical for FFVI).
+                    bool learningMode = (Packs.PackRegistry.Current.ItemVocabulary?.Count ?? 0) == 0;
+                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap, learningMode);
                     ocrSw.Stop();
                     CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
                     CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
@@ -680,7 +684,7 @@ namespace WunderLanguage.Host.Capture
                             string t = b.Text.Replace("\n", " ");
                             if (t.Length > 28) t = t.Substring(0, 28) + "…";
                             double nx = (double)b.X / fw, ny = (double)b.Y / fh;
-                            preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} c={b.Conf:0.00} n={b.NMerge} \"{t}\"]");
+                            preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} c={b.Conf:0.00} n={b.NMerge}{(b.Src == "classical" ? " cls" : "")} \"{t}\"]");
                             shown++;
                         }
                         if (Settings.Diag.Enabled) FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
