@@ -641,7 +641,7 @@ namespace WunderLanguage.Host.Capture
                     // box proposer; vocab games keep the tuned detector-only
                     // path (vision item 2 — byte-identical for FFVI).
                     bool learningMode = (Packs.PackRegistry.Current.ItemVocabulary?.Count ?? 0) == 0;
-                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap, learningMode);
+                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
                     ocrSw.Stop();
                     CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
                     CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
