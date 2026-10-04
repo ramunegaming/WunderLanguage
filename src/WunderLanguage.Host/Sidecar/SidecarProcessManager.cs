@@ -27,6 +27,21 @@ namespace WunderLanguage.Host.Sidecar
                 // (Task Manager / debugger stop skips OnExit AND ProcessExit),
                 // so Stop() reaps it on OUR exit instead of leaving it immortal.
                 FileLogger.Log($"Reusing healthy sidecar version={runningVersion} - matches disk.");
+                // Polite-tenant priority applies to adopted engines too (a
+                // previous host may predate the policy).
+                try
+                {
+                    foreach (var p in Process.GetProcessesByName("python"))
+                    {
+                        try
+                        {
+                            if ((p.MainModule?.FileName ?? "").StartsWith(sidecarDir ?? "?", StringComparison.OrdinalIgnoreCase))
+                                p.PriorityClass = ProcessPriorityClass.BelowNormal;
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
                 statusProgress?.Report("Translation engine already running.");
                 // Adopted mid-warm is still warming: gate on OCR readiness
                 // (returns instantly when already ready) so the capture loop
@@ -98,6 +113,14 @@ namespace WunderLanguage.Host.Sidecar
 
                 if (!_process.Start())
                     throw new InvalidOperationException("Failed to start the OCR service process.");
+
+                // Perf batch B (polite tenant, 2nd book pass: priorities,
+                // not limits — we yield CPU to the game, never cap it).
+                // BelowNormal, never Idle: starvation would break the
+                // product, a notch down just schedules the game first.
+                // Host loop stays Normal (UI responsiveness). Revert:
+                // delete this block.
+                try { _process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
 
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
