@@ -30,7 +30,7 @@ namespace WunderLanguage.Host.Capture
                     if (m == null) return false;
                     return (bool)m.Invoke(null, new object[] { arg })!;
                 }
-                foreach (var line in File.ReadLines(path))
+                foreach (var line in ReadCorpusLines(path))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     JsonDocument doc;
@@ -59,6 +59,25 @@ namespace WunderLanguage.Host.Capture
             catch (Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); return 9999; }
             FileLogger.Log($"[replay] done checked={checked_} match={match} drift={drift} mined-or-stale={minedOrStale} holds={holds}");
             return drift;
+        }
+        // Transparent reader: .gz (current) and legacy plaintext side by
+        // side, so old sessions replay without migration pressure.
+        private static System.Collections.Generic.IEnumerable<string> ReadCorpusLines(string path)
+        {
+            if (path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+            {
+                using var fs = File.OpenRead(path);
+                using var gz = new System.IO.Compression.GZipStream(fs, System.IO.Compression.CompressionMode.Decompress);
+                using var sr = new StreamReader(gz);
+                string? line;
+                while ((line = sr.ReadLine()) != null)
+                    yield return line;
+            }
+            else
+            {
+                foreach (var line in File.ReadLines(path))
+                    yield return line;
+            }
         }
     }
 }
