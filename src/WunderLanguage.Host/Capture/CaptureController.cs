@@ -276,7 +276,7 @@ namespace WunderLanguage.Host.Capture
                 {
                     Packs.PackRegistry.SetCurrent(content);
                     try { LoadMinedCorrections(); } catch { }
-                    _corpusPath = "";
+                    CorpusRotate();
                     // New game, new timeline: stale quiet must not mint a TITLE.
                     _quietCount = 0; _quietSeen = "";
                     return;
@@ -286,7 +286,7 @@ namespace WunderLanguage.Host.Capture
                 _gameId = fresh;
                 try { Packs.PackRegistry.SetSession(_gameId); } catch { }
                 try { LoadMinedCorrections(); } catch { }
-                _corpusPath = "";
+                CorpusRotate();
                 _quietCount = 0; _quietSeen = "";
             }
             catch { }
@@ -509,6 +509,7 @@ namespace WunderLanguage.Host.Capture
         {
             FileLogger.Log($"CaptureController.Stop called id={_id}");
             _stopped = true;
+            try { CorpusRotate(); } catch { }
             _cts?.Cancel();
         }
 
@@ -1455,12 +1456,44 @@ namespace WunderLanguage.Host.Capture
         private static readonly bool RecordCorpus = true;
         private string _corpusPath = "";
         private readonly object _corpusLock = new();
+        // Compressed corpus (perf batch: 302 files / 13.6MB and growing —
+        // one held gzip member per session instead of plaintext). Single
+        // open stream per session (best ratio); every line sync-flushed so
+        // a dirty kill keeps a decompressible prefix. Rotation (game
+        // switch) and Stop() close first — never orphan a stream.
+        // Reader (ReplayChecker) transparently handles .gz and legacy
+        // plaintext side by side. Revert: path back to .jsonl + plain
+        // appends + delete fields/methods.
+        private System.IO.FileStream? _corpusFs;
+        private System.IO.Compression.GZipStream? _corpusGz;
+        private System.IO.StreamWriter? _corpusWr;
         private void CorpusEnsure()
         {
             if (_corpusPath != "") return;
             string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corpus");
             Directory.CreateDirectory(dir);
-            _corpusPath = Path.Combine(dir, _gameId + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jsonl");
+            _corpusPath = Path.Combine(dir, _gameId + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jsonl.gz");
+            try
+            {
+                _corpusFs = new System.IO.FileStream(_corpusPath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.Read);
+                _corpusGz = new System.IO.Compression.GZipStream(_corpusFs, System.IO.Compression.CompressionLevel.Fastest);
+                _corpusWr = new System.IO.StreamWriter(_corpusGz, System.Text.Encoding.UTF8);
+            }
+            catch { CorpusClose(); }
+        }
+        private void CorpusClose()
+        {
+            try { _corpusWr?.Dispose(); } catch { } finally { _corpusWr = null; }
+            try { _corpusGz?.Dispose(); } catch { } finally { _corpusGz = null; }
+            try { _corpusFs?.Dispose(); } catch { } finally { _corpusFs = null; }
+        }
+        private void CorpusRotate()
+        {
+            try
+            {
+                lock (_corpusLock) { CorpusClose(); _corpusPath = ""; }
+            }
+            catch { _corpusPath = ""; }
         }
         private void CorpusLine(string line)
         {
@@ -1468,7 +1501,13 @@ namespace WunderLanguage.Host.Capture
             {
                 if (!RecordCorpus) return;
                 CorpusEnsure();
-                lock (_corpusLock) File.AppendAllText(_corpusPath, line + "\n");
+                lock (_corpusLock)
+                {
+                    if (_corpusWr is null || _corpusGz is null) return;
+                    _corpusWr.WriteLine(line);
+                    _corpusWr.Flush();
+                    _corpusGz.Flush();
+                }
             }
             catch { }
         }
