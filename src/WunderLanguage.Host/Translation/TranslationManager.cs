@@ -139,14 +139,18 @@ namespace WunderLanguage.Host.Translation
 
         // Tier-agnostic shadow: DeepL + CAT + future providers all observed.
         // Fire-and-forget, instant endpoint, never blocks translation.
+        // Shared clients (micro-hygiene batch): per-call HttpClients churn
+        // connections; these two timeouts differ so two statics. Loopback
+        // only — no DNS-staleness concern.
+        private static readonly HttpClient _observeHttp = new() { Timeout = TimeSpan.FromMilliseconds(800) };
+        private static readonly HttpClient _guideHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
         private async Task ObserveAsync(string text)
         {
             try
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(800) };
                 var payload = JsonSerializer.Serialize(new { text });
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-                await http.PostAsync($"{_offline.Endpoint}/observe", content);
+                await _observeHttp.PostAsync($"{_offline.Endpoint}/observe", content);
             }
             catch { }
         }
@@ -157,10 +161,9 @@ namespace WunderLanguage.Host.Translation
         {
             try
             {
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
                 var payload = JsonSerializer.Serialize(new { text });
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-                var response = await http.PostAsync($"{_offline.Endpoint}/define", content);
+                var response = await _guideHttp.PostAsync($"{_offline.Endpoint}/define", content);
                 response.EnsureSuccessStatusCode();
                 using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 if (!doc.RootElement.TryGetProperty("words", out var words) || words.ValueKind != JsonValueKind.Array)
