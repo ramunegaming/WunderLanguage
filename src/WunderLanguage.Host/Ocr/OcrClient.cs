@@ -42,7 +42,7 @@ namespace WunderLanguage.Host.Ocr
             return text;
         }
 
-        public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap, bool includeClassical = false)
+        public async Task<(string Text, List<OcrBlock> Blocks, int ContentWords, int TotalWords)> ExtractTextWithBlocksAsync(Bitmap bitmap, bool includeClassical = false, double minConf = 0.0)
         {
             using var ms = new MemoryStream();
             var pngSw = System.Diagnostics.Stopwatch.StartNew();
@@ -88,6 +88,14 @@ namespace WunderLanguage.Host.Ocr
                         double conf = 1.0;
                         if (item.TryGetProperty("conf", out var cf) && cf.ValueKind == JsonValueKind.Number && cf.TryGetDouble(out var cd))
                             conf = Math.Min(1.0, Math.Max(0.0, cd));
+                        // Vision item 3 gate: pack-calibrated floor. Neutral
+                        // 0.0 never fires (conf clamps >= 0) — the pipe is
+                        // proven live the first time a pack sets it nonzero.
+                        if (conf < minConf)
+                        {
+                            if (Settings.Diag.Enabled) FileLogger.Log($"[calib] below-threshold conf={conf:0.00} min={minConf:0.00} text=\"{(item.TryGetProperty("text", out var ct) ? ct.GetString() : "")}\"");
+                            continue;
+                        }
                         int nmerge = 1;
                         if (item.TryGetProperty("nmerge", out var nm) && nm.ValueKind == JsonValueKind.Number && nm.TryGetInt32(out var ni))
                             nmerge = Math.Max(1, ni);

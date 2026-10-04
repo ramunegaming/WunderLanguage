@@ -42,5 +42,16 @@ namespace WunderLanguage.Host.Packs
         // translation — no CAT/DeepL burn, no JA-verbatim flicker while the
         // refresh leg crawls. Empty = unknown game, everything live.
         System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary { get; }
+        // Vision item 3 — per-game calibration (estimated in learning
+        // mode, required at publish). Neutral defaults reproduce today's
+        // global behavior exactly; tuned packs override per citation.
+        // BoxScoreThreshold: boxes below drop before assembly (0.0 = all).
+        // BoxInsetPx: OCR crop inset inside detected borders (0.0 = none).
+        // NmsIou: overlap suppression threshold (1.0 = none).
+        // FontScale: panel font multiplier (1.0 = global size).
+        double BoxScoreThreshold { get; }
+        double BoxInsetPx { get; }
+        double NmsIou { get; }
+        double FontScale { get; }
     }
 }

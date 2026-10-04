@@ -65,6 +65,11 @@ namespace WunderLanguage.Host.Packs
         public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => UniversalPack.ItemVocabulary;
         public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => UniversalPack.WeaponLabels;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => UniversalPack.BattleGlossary;
+        // Vision item 3 calibration: neutral (unknown games stay fully open).
+        public double BoxScoreThreshold => 0.0;
+        public double BoxInsetPx => 0.0;
+        public double NmsIou => 1.0;
+        public double FontScale => 1.0;
         public bool IsMenuHeaderRow(string ascii) => UniversalPack.IsMenuHeaderRow(ascii);
     }
 }

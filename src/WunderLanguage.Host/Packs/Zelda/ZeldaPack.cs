@@ -301,6 +301,12 @@ namespace WunderLanguage.Host.Packs.Zelda
         public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => ZeldaPack.ItemVocabulary;
         public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => ZeldaPack.WeaponLabels;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => ZeldaPack.BattleGlossary;
+        // Vision item 3 calibration: neutral (learning mode estimates,
+        // publish requires — nothing tuned yet).
+        public double BoxScoreThreshold => 0.0;
+        public double BoxInsetPx => 0.0;
+        public double NmsIou => 1.0;
+        public double FontScale => 1.0;
         public bool IsMenuHeaderRow(string ascii) => ZeldaPack.IsMenuHeaderRow(ascii);
     }
 }
