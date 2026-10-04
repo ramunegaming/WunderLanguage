@@ -92,7 +92,7 @@ namespace WunderLanguage.Host.Ocr
             {
                 if (root.TryGetProperty("timing", out var tm) && tm.ValueKind == JsonValueKind.Object)
                 {
-                    FileLogger.Log($"[ocr-timing] {tm}");
+                    if (Settings.Diag.Enabled) FileLogger.Log($"[ocr-timing] {tm}");
                     if (tm.TryGetProperty("det_ms", out var dm) && dm.TryGetDouble(out var dd)) LastDetMs = dd;
                     if (tm.TryGetProperty("rec_ms", out var rm) && rm.TryGetDouble(out var rd)) LastRecMs = rd;
                 }

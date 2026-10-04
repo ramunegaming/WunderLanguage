@@ -390,6 +390,9 @@ namespace WunderLanguage.Host.Windows
         // no alt-tab needed. Remove post-Zelda.
         private void OnShotRequested()
         {
+            // Diagnostics-gated: snapshots are dev artifacts (customers
+            // accumulate nothing). Whole handler skipped when off.
+            if (!Settings.Diag.Enabled) return;
             try
             {
                 string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot");

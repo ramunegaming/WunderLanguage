@@ -57,6 +57,11 @@ namespace WunderLanguage.Host
             try
             {
                 var args = e?.Args ?? System.Array.Empty<string>();
+                // --diagnostics honored pre-settings: replay exits before
+                // settings load, and the normal path re-decides with the
+                // file value below (CLI stays sticky via || there).
+                foreach (var a in args)
+                    if (a == "--diagnostics") { Settings.Diag.Enabled = true; FileLogger.Log("[diag] enabled=True (cli, pre-settings)"); break; }
                 for (int i = 0; i < args.Length; i++)
                 {
                     if (args[i] == "--replay" && i + 1 < args.Length)
@@ -111,16 +116,24 @@ namespace WunderLanguage.Host
             loading.Close();
             FileLogger.Log("Loading window closed, showing connect window");
 
+            var autoArgs = e?.Args ?? System.Array.Empty<string>();
             var settings = AppSettings.Load();
+            // Diagnostics gate: settings file and/or --diagnostics flag.
+            // Decided here, read everywhere via Settings.Diag.Enabled.
+            bool diagCli = false;
+            string? autoSub = null;
+            for (int i = 0; i < autoArgs.Length; i++)
+            {
+                if (autoArgs[i] == "--diagnostics") diagCli = true;
+                if (autoArgs[i] == "--connect" && i + 1 < autoArgs.Length) autoSub = autoArgs[i + 1];
+            }
+            Settings.Diag.Enabled = settings.Diagnostics || diagCli;
+            FileLogger.Log($"[diag] enabled={Settings.Diag.Enabled} (file={settings.Diagnostics} cli={diagCli})");
             // Test automation (perf batch: unattended loop-cost smoke test).
             // --connect <title-substring> attaches to the first matching
             // visible window with a whole-window region and skips the
             // calibration prompt. No match (or no flag) = ConnectWindow as
             // before. Revert: delete this block + TryAutoConnect.
-            string? autoSub = null;
-            var autoArgs = e?.Args ?? System.Array.Empty<string>();
-            for (int i = 0; i < autoArgs.Length; i++)
-                if (autoArgs[i] == "--connect" && i + 1 < autoArgs.Length) autoSub = autoArgs[i + 1];
             if (!string.IsNullOrWhiteSpace(autoSub) && TryAutoConnect(autoSub, settings, sw))
                 return;
             var connectWindow = new ConnectWindow(settings);

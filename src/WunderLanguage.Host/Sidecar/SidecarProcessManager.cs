@@ -128,7 +128,14 @@ namespace WunderLanguage.Host.Sidecar
         // _recentOutput. POST /ocr + POST /translate stay (latency gaps).
         private static bool ShouldLogSidecarLine(string data)
         {
-            if (data.Contains("Loading weights:", StringComparison.Ordinal)) return false;
+            // Diagnostics-gated chatter: per-line word/confusion stats are
+            // dev evidence (highest-volume sidecar lines after POSTs).
+            // POST /ocr + /translate + stage/error lines always stay.
+            if (!Settings.Diag.Enabled)
+            {
+                if (data.Contains("[confusion]", StringComparison.Ordinal)) return false;
+                if (data.Contains("[words]", StringComparison.Ordinal)) return false;
+            }            if (data.Contains("Loading weights:", StringComparison.Ordinal)) return false;
             if (data.Contains("it/s]", StringComparison.Ordinal)) return false;
             if (data.Contains("POST /observe", StringComparison.Ordinal)) return false;
             if (data.Contains("POST /define", StringComparison.Ordinal)) return false;
