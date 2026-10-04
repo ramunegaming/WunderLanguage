@@ -350,7 +350,7 @@ namespace WunderLanguage.Host.Capture
                     catch { map = new Dictionary<string, string>(); }
                     if (map.TryGetValue(raw, out string? prev) && prev == fixed_)
                         return;
-                    FileLogger.Log($"[mine] \"{raw}\" -> \"{fixed_}\"");
+                    if (Settings.Diag.Enabled) FileLogger.Log($"[mine] \"{raw}\" -> \"{fixed_}\"");
                     map[raw] = fixed_;
                     File.WriteAllText(path, JsonSerializer.Serialize(map, new JsonSerializerOptions { WriteIndented = true }));
                 }
@@ -429,7 +429,9 @@ namespace WunderLanguage.Host.Capture
             // M8-4a moved: guard lives in Packs/Zelda/ZeldaPack.cs. Same position, same order.
             fixed_ = Packs.PackRegistry.Current.ApplyGuardFixups(fixed_);
             if (!ReferenceEquals(fixed_, text) && fixed_ != text)
-                FileLogger.Log($"[ocr-fixup] \"{text}\" -> \"{fixed_}\"");
+            {
+                if (Settings.Diag.Enabled) FileLogger.Log($"[ocr-fixup] \"{text}\" -> \"{fixed_}\"");
+            }
             return fixed_;
         }
 
@@ -673,7 +675,7 @@ namespace WunderLanguage.Host.Capture
                             preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} \"{t}\"]");
                             shown++;
                         }
-                        FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
+                        if (Settings.Diag.Enabled) FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
                         string? quietTitleSettled = CheckQuietTitle(iteration, ocrBlocks);
                         // A live battle owns the screen: the logo/title detector must
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
@@ -1453,7 +1455,10 @@ namespace WunderLanguage.Host.Capture
         // %AppData%/WunderLanguage/corpus/. M7b replays raw+blocks through the real fixup/
         // stability/publish path with translation stubbed; exit = identical Japanese bubbles.
         // Off-switch: RecordCorpus=false. Never throws; never blocks OCR.
-        private static readonly bool RecordCorpus = true;
+        // Diagnostics-gated (file setting / --diagnostics): customers never
+        // accumulate session files. Translation cache + mined corrections
+        // are separate and stay always-on.
+        private static bool RecordCorpus => Settings.Diag.Enabled;
         private string _corpusPath = "";
         private readonly object _corpusLock = new();
         // Compressed corpus (perf batch: 302 files / 13.6MB and growing —
