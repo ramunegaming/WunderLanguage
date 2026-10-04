@@ -24,8 +24,11 @@ Translations requested while CAT warms fall back silently
 (glossary → DeepL path); OCR works the moment the app is usable.
 
 Biggest historical win: Windows Defender exclusions for
-`ocr-service\venv` + the HuggingFace cache cut the import phase ~4×
-(27 s → 7 s). Keep them on release machines.
+`ocr-service\venv` + the HuggingFace cache cut the import phase ~25×
+(27 s → under 1 s even reboot-cold). Model weight reads stay
+cache-sensitive (MangaOCR load 16 s cold vs 9 s warm), so total
+cold startup is ~23 s vs ~14 s warm. Keep exclusions on release
+machines.
 
 ## Steady-state loop (per settled frame)
 
