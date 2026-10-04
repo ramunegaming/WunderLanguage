@@ -680,7 +680,7 @@ namespace WunderLanguage.Host.Capture
                             string t = b.Text.Replace("\n", " ");
                             if (t.Length > 28) t = t.Substring(0, 28) + "…";
                             double nx = (double)b.X / fw, ny = (double)b.Y / fh;
-                            preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} \"{t}\"]");
+                            preview.Append($" [b{shown} x={b.X} y={b.Y} w={b.Width} h={b.Height} nx={nx:0.00} ny={ny:0.00} ja={HasJapanese(b.Text)} c={b.Conf:0.00} n={b.NMerge} \"{t}\"]");
                             shown++;
                         }
                         if (Settings.Diag.Enabled) FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
