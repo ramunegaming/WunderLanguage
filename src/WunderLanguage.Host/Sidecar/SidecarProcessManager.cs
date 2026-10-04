@@ -331,6 +331,23 @@ namespace WunderLanguage.Host.Sidecar
             catch { return null; }
         }
 
+        // Perf batch (pressure logging): owned sidecar PID for the
+        // App-owned 60s [pressure] line. Host-side bytes are not the
+        // signal (safetensors weights are file mappings, CUDA allocs
+        // live on-device — an idle torch sidecar commits ~1MB), so the
+        // line attributes per-PID VRAM via nvidia-smi instead. Adopted
+        // (null _process) reports 0. Never throws.
+        public int SidecarPid()
+        {
+            try
+            {
+                var p = _process;
+                if (p is null || p.HasExited) return 0;
+                return p.Id;
+            }
+            catch { return 0; }
+        }
+
         public void Stop()
         {
             try { _catWatchCts?.Cancel(); } catch { }
