@@ -29,6 +29,16 @@ namespace WunderLanguage.Host.Settings
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "WunderLanguage", "settings.json");
 
+        // API key lives apart from human-edited settings (perf/hygiene
+        // batch: a 500-char blob next to 3 readable lines invites bad
+        // edits). Same DPAPI protection, separate file. Reads fall back
+        // to the legacy embedded blob (migrates on next Save).
+        // Revert: delete KeyPath + fallback, restore payload field.
+        private static string KeyPath =>
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "WunderLanguage", ".deeplkey");
+
         public static AppSettings Load()
         {
             try
@@ -61,7 +71,14 @@ namespace WunderLanguage.Host.Settings
                         settings.Diagnostics = dg.GetBoolean();
 
                     string? encrypted = null;
-                    if (root.TryGetProperty(nameof(DeepLApiKeyEncrypted), out var enc) && enc.ValueKind == JsonValueKind.String)
+                    try
+                    {
+                        if (File.Exists(KeyPath))
+                            encrypted = File.ReadAllText(KeyPath).Trim();
+                    }
+                    catch { }
+                    if (string.IsNullOrEmpty(encrypted)
+                        && root.TryGetProperty(nameof(DeepLApiKeyEncrypted), out var enc) && enc.ValueKind == JsonValueKind.String)
                         encrypted = enc.GetString();
 
                     // Legacy plaintext installs (pre-DPAPI).
@@ -119,10 +136,17 @@ namespace WunderLanguage.Host.Settings
                 TranslationProvider,
                 MenuDisplayMode,
                 Diagnostics,
-                DeepLApiKeyEncrypted = encrypted,
             };
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(FilePath, json);
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(DeepLApiKey))
+                    File.WriteAllText(KeyPath, encrypted ?? "");
+                else if (File.Exists(KeyPath))
+                    File.Delete(KeyPath);
+            }
+            catch { }
             FileLogger.Log($"Settings saved: provider={TranslationProvider}, keyPresent={DeepLApiKey is not null}, encryptedPresent={!string.IsNullOrEmpty(encrypted)}");
         }
     }
