@@ -133,6 +133,13 @@ namespace WunderLanguage.Host.Windows
             _tracker.ForegroundChanged += OnForegroundChanged;
             _tracker.Minimized += OnEmulatorMinimized;
             _tracker.Restored += OnEmulatorRestored;
+            // Teardown (vision batch: corpus stream + session fingerprint
+            // only flush in Stop — previously never ran on app close,
+            // silently truncating session .gz files. All closes funnel
+            // here; controller.Stop is idempotent for repeats.
+            _topBar.Closed += (_, _) => ShutdownCapture();
+            _sidePanel.Closed += (_, _) => ShutdownCapture();
+            _bottomBar.Closed += (_, _) => ShutdownCapture();
             _captureController = BuildCaptureController();
             _zOrderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
             _zOrderTimer.Tick += (_, _) => UpdateTopmost();
@@ -475,6 +482,14 @@ namespace WunderLanguage.Host.Windows
                 _captureController.Stop();
             else if (_hasCalibratedRegion)
                 _captureController.Start();
+        }
+
+        private bool _captureStopped;
+        private void ShutdownCapture()
+        {
+            if (_captureStopped) return;
+            _captureStopped = true;
+            try { _captureController.Stop(); } catch { }
         }
 
         private void OnSettingsRequested()
