@@ -3448,6 +3448,9 @@ namespace WunderLanguage.Host.Capture
                 // TEMP-DIAG (2026-10-01): per-column assembly trace. The 17:57
                 // run fired [H,_,_,_] from blobs visibly containing F+Y — no
                 // static path explains it. Remove once convicted.
+                // Diagnostics-gated (perf batch: panel confirmed assembly long
+                // ago; customers never pay for this window, devs keep it).
+                if (Settings.Diag.Enabled)
                 try
                 {
                     var dit = new System.Collections.Generic.List<string>();
