@@ -45,7 +45,9 @@ capture regions remain the best loop-speed lever (4–7× observed).
 Warm refires publish in ~2 ms (persistent translation cache +
 prefetch + last-published reuse + flicker-tolerant name memo —
 see `[cache-hit]` rates). Cold rows burn one full CAT translate
-each; a frame costs its slowest row (fan-out).
+each; a frame costs its slowest row (fan-out, capped at 4 concurrent
+offline translates after ramp-proving GPU serialization — wide cold
+fires dropped from ~8 s to ~1.2 s p99).
 
 ## Design rules that produced these numbers
 
@@ -55,5 +57,8 @@ each; a frame costs its slowest row (fan-out).
 - Caches are measured (`[cache-hit]` interval rates), never assumed.
 - One log line per minute per instrument — observability must not
   be the tax (audited: ~0.2 ms per log call).
+- Pressure is watched per-minute (host MB, GPU util/VRAM) — note:
+  per-PID VRAM attribution rarely populates on Windows (WDDM driver
+  model); system-wide GPU util/memory is the usable signal there.
 - Every batch ends with a revert phrase; `pre-perf-baseline` tag
   (+ full file backup) rewinds the whole performance arc.
