@@ -2644,7 +2644,16 @@ namespace WunderLanguage.Host.Capture
                         _prefetch[t] = "";
                         fresh.Add((t, () => _translationManager.TranslateAsync(t)));
                     }
-                    foreach (var l in slots.Monster) PrefetchNeed(l, () => TranslateMenuJaRowAsync(l), fresh);
+                    foreach (var l in slots.Monster)
+                    {
+                        // Name-part key when digits ride along (perf batch:
+                        // the publish path strips digits before lookup, so a
+                        // full-row key never hit). Mirrors TranslateRowSplit.
+                        SplitRowDigits(l, out string mn, out string md);
+                        string mkey = string.IsNullOrWhiteSpace(md) ? l : mn;
+                        string mval = mkey;
+                        PrefetchNeed(mkey, () => TranslateMenuJaRowAsync(mval), fresh);
+                    }
                     foreach (var l in slots.Action) PrefetchNeed(l, () => TranslateMenuJaRowAsync(l), fresh);
                     // Name-part key, glossary-aware translate: the prefetch must
                     // resolve names exactly like the publish path, or a raw
@@ -2655,6 +2664,11 @@ namespace WunderLanguage.Host.Capture
                     // up sides, never whole pairs — same glossary pins).
                     foreach (var w in slots.Weapon)
                     {
+                        // Whole-pair entry for the outer row lookup (perf
+                        // batch: TranslateRowSplitAsync looks up the pair
+                        // before fanning to sides — without this it always
+                        // missed and counted). Same function either way.
+                        PrefetchNeed(w, () => TranslateWeaponRowAsync(w), fresh);
                         SplitItemPair(w, out string wl, out string wr);
                         if (!string.IsNullOrWhiteSpace(wl)) PrefetchNeed(wl, () => TranslateMenuJaRowAsync(wl), fresh);
                         if (!string.IsNullOrWhiteSpace(wr)) PrefetchNeed(wr, () => TranslateMenuJaRowAsync(wr), fresh);
@@ -2836,6 +2850,16 @@ namespace WunderLanguage.Host.Capture
             return ti < 0 ? le : le + "\t" + re;
         }
         private async Task<string> TranslateItemRowAsync(string row)
+        {
+            // Prefetch alignment (perf batch: prefetch writes whole pairs
+            // but the final-row path never looked them up — orphaned
+            // entries that only warmed tcache by side effect). Same key,
+            // same function as the prefetch closure; a hit skips both
+            // sides, misses flow through unchanged.
+            string key = row ?? "";
+            return await PrefetchOrTranslateAsync(key, () => TranslateItemRowInnerAsync(key));
+        }
+        private async Task<string> TranslateItemRowInnerAsync(string row)
         {
             string src = row ?? "";
             int ti = src.IndexOf('\t');
