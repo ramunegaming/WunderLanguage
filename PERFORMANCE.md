@@ -68,3 +68,29 @@ fires dropped from ~8 s to ~1.2 s p99).
   model); system-wide GPU util/memory is the usable signal there.
 - Every batch ends with a revert phrase; `pre-perf-baseline` tag
   (+ full file backup) rewinds the whole performance arc.
+
+## Known upstream issues (release-relevant)
+
+These come from our dependencies, not our code. Recorded so
+release triage starts here instead of from zero:
+
+- **bitsandbytes 4-bit load fragility (Windows).** The CAT weight
+  quantize has segfaulted at shard 1 under load (exit
+  -1073741819). Two guards, in order: a VRAM pre-check skips the
+  load when free GPU memory is short (`disabled-low-vram`,
+  fail-open), and a one-shot host retry falls back to OCR-only
+  mode (`WUNDER_NO_CAT`) if the process still dies. OCR is
+  unaffected in all cases; translation degrades to the
+  glossary → DeepL chain.
+- **HuggingFace rate limits on first run.** Without `HF_TOKEN`,
+  hub requests are unauthenticated and can be rate-limited —
+  which matters exactly once per machine, during the ~7 GB
+  first-run model download (slow or failing download reads as
+  "translation engine won't start"). `HF_TOKEN`, when set on the
+  machine, passes through to the sidecar automatically (process
+  environment inheritance — nothing to configure in-app).
+  Release notes should say so.
+- **Transformers tokenizer warnings** (`generation_config` /
+  `max_new_tokens`, BPE cleanup notices) are upstream noise.
+  Harmless; filtered from the log, left alone in code — do not
+  "fix" them with settings changes that alter generation.
