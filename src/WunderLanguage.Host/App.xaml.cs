@@ -95,6 +95,7 @@ namespace WunderLanguage.Host
                 await _sidecar.StartAsync(progress);
                 FileLogger.Log("Sidecar reported healthy");
                 FileLogger.Log($"[startup] stage=sidecar-healthy ms={sw.ElapsedMilliseconds}");
+                StartPressureLog();
             }
             catch (Exception ex)
             {
@@ -222,14 +223,96 @@ namespace WunderLanguage.Host
             }
         }
 
-        protected override void OnExit(ExitEventArgs e)        {
+        protected override void OnExit(ExitEventArgs e)
+        {
             // The sidecar exits with the app: a lingering python.exe causes more
             // confusion than the cold-start seconds it saves (stale-pipeline
             // mismatch, orphaned GPU memory). Crash orphans are still replaced
             // by the version check on next launch.
             FileLogger.Log("App exiting - stopping sidecar");
+            StopPressureLog();
             try { _sidecar.Stop(); } catch { }
             base.OnExit(e);
+        }
+
+        // Perf batch (pressure logging): host + sidecar RSS and GPU
+        // utilization/memory on a 60s cadence, off the loop thread. First
+        // line lands 60s after healthy; numbers feed GPU-tier decisions
+        // for release (3060/6GB here — weaker machines unmeasured).
+        // Revert: delete field/methods + 2 call sites.
+        private System.Threading.Timer? _pressureTimer;
+        private void StartPressureLog()
+        {
+            try
+            {
+                StopPressureLog();
+                _pressureTimer = new System.Threading.Timer(_ =>
+                {
+                    try
+                    {
+                        int pid = _sidecar.SidecarPid();
+                        double hostMB = 0;
+                        try { using var me = Process.GetCurrentProcess(); hostMB = me.PagedMemorySize64 / 1048576.0; } catch { }
+                        // System-wide GPU state + our sidecar's share of it
+                        // (per-PID VRAM is the release-critical number; host
+                        // bytes and system totals alone can't attribute).
+                        string gpu = "n/a", cudamem = "n/a";
+                        try
+                        {
+                            string util = RunNvidiaSmi("--query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits");
+                            var parts = util.Trim().Split(',');
+                            if (parts.Length >= 3) gpu = $"u{parts[0].Trim()}% {parts[1].Trim()}/{parts[2].Trim()}MB";
+                            string apps = RunNvidiaSmi("--query-compute-apps=pid,used_memory --format=csv,noheader,nounits");
+                            foreach (var line in apps.Split('\n'))
+                            {
+                                var ap = line.Trim().Split(',');
+                                if (ap.Length >= 2 && ap[0].Trim() == pid.ToString() && pid != 0)
+                                {
+                                    string mem = ap[1].Trim().Split(' ')[0];
+                                    cudamem = $"{pid}:{mem}MB";
+                                    break;
+                                }
+                            }
+                            if (pid == 0) cudamem = "adopted";
+                            else if (cudamem == "n/a")
+                            {
+                                // PID present but no compute context (idle
+                                // sidecar holds mappings, no kernels live).
+                                cudamem = $"{pid}:idle";
+                            }
+                        }
+                        catch { }
+                        FileLogger.Log($"[pressure] host={hostMB:F0}MB gpu={gpu} sidecar={cudamem}");
+                    }
+                    catch { }
+                }, null, 60000, 60000);
+            }
+            catch { }
+        }
+        private void StopPressureLog()
+        {
+            try { _pressureTimer?.Dispose(); _pressureTimer = null; } catch { }
+        }
+        // One nvidia-smi query, best-effort ("" on any failure). Split out
+        // so the pressure tick reads top-down; 10s cap each.
+        private static string RunNvidiaSmi(string args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "nvidia-smi",
+                    Arguments = args,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                };
+                using var p = Process.Start(psi);
+                if (p is not null && p.WaitForExit(10000))
+                    return p.StandardOutput.ReadToEnd() ?? "";
+            }
+            catch { }
+            return "";
         }
     }
 }
