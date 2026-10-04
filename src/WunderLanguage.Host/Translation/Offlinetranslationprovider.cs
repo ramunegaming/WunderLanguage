@@ -14,6 +14,13 @@ namespace WunderLanguage.Host.Translation
         public string Name => "Offline (CAT-Translate 3.3b)";
 
         public string Endpoint => _endpoint;
+        // Perf batch (ramp-proven 2026-10-04: CAT generation serializes
+        // on-GPU — 1/2/4/8 concurrent identical rows cost ~0.6/1.0/1.8/3.7s
+        // EACH, so an 8-wide cold battle fan-out lands ~8s frames. Static so
+        // publish + prefetch share one GPU budget). Warm paths (tcache,
+        // prefetch, sticky, glossary) never reach here; single-row dialogue
+        // never contends. Revert: delete gate + using block.
+        private static readonly SemaphoreSlim _catGate = new(4, 4);
         // Set on every TranslateAsync. TranslationManager checks these to
         // decide DeepL fallback for just flagged lines.
         public bool LastUnreliable { get; private set; }
@@ -59,10 +66,17 @@ namespace WunderLanguage.Host.Translation
             });
 
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            var response = await _http.PostAsync($"{_endpoint}/translate", content);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync();
+            // Gate covers the GPU work only (POST + body read); parsing and
+            // bookkeeping below need no slot.
+            await _catGate.WaitAsync();
+            string json;
+            try
+            {
+                using var resp = await _http.PostAsync($"{_endpoint}/translate", content);
+                resp.EnsureSuccessStatusCode();
+                json = await resp.Content.ReadAsStringAsync();
+            }
+            finally { _catGate.Release(); }
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             string translated = root.TryGetProperty("translated_text", out var t)
