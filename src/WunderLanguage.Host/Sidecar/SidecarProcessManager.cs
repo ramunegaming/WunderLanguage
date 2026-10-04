@@ -32,6 +32,7 @@ namespace WunderLanguage.Host.Sidecar
                 // (returns instantly when already ready) so the capture loop
                 // never meets a 503 /ocr.
                 await WaitForHealthyAsync(statusProgress);
+                StartCatWatcher();
                 return;
             }
             if (runningVersion is not null)
@@ -106,6 +107,7 @@ namespace WunderLanguage.Host.Sidecar
                 {
                     await WaitForHealthyAsync(statusProgress);
                     FileLogger.Log($"[startup] stage=sidecar-spawn-healthy ms={spawnSw.ElapsedMilliseconds} fallback={cpuFallback}");
+                    StartCatWatcher();
                     return;
                 }
                 catch (InvalidOperationException ex) when (!cpuFallback && ex.Message.Contains("exited unexpectedly"))
@@ -250,6 +252,55 @@ namespace WunderLanguage.Host.Sidecar
             return null;
         }
 
+        // CAT-warmth visibility (perf batch: startup completes at OCR
+        // ready while CAT warms behind — nothing surfaced the transition).
+        // Fire-and-forget poller, log-only: ready/disabled/failed lands as
+        // [startup] stage=cat-<state>. No popup — the fallback chain covers
+        // function, and a dialog mid-gameplay is worse than the gap.
+        // Bounded (~3min cap), cancelled on Stop. Revert: delete + 2 calls.
+        private CancellationTokenSource? _catWatchCts;
+        private void StartCatWatcher()
+        {
+            try
+            {
+                try { _catWatchCts?.Cancel(); } catch { }
+                _catWatchCts = new CancellationTokenSource();
+                var token = _catWatchCts.Token;
+                long t0 = Environment.TickCount64;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                        for (int i = 0; i < 90 && !token.IsCancellationRequested; i++)
+                        {
+                            await Task.Delay(2000, token);
+                            string cat = "unknown";
+                            try
+                            {
+                                var resp = await http.GetAsync("http://127.0.0.1:8000/health", token);
+                                if (resp.IsSuccessStatusCode)
+                                {
+                                    string body = await resp.Content.ReadAsStringAsync(token);
+                                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                                    if (doc.RootElement.TryGetProperty("cat", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String)
+                                        cat = c.GetString() ?? "unknown";
+                                }
+                                else continue;
+                            }
+                            catch { continue; }
+                            if (cat == "warming" || cat == "unknown") continue;
+                            FileLogger.Log($"[startup] stage=cat-{cat} ms={Environment.TickCount64 - t0}");
+                            return;
+                        }
+                        FileLogger.Log("[startup] stage=cat-watch-timeout (still warming after ~3min)");
+                    }
+                    catch { }
+                }, token);
+            }
+            catch { }
+        }
+
         private static async Task<string?> GetRunningVersionAsync()
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
@@ -282,6 +333,7 @@ namespace WunderLanguage.Host.Sidecar
 
         public void Stop()
         {
+            try { _catWatchCts?.Cancel(); } catch { }
             try
             {
                 if (_process is { HasExited: false })
