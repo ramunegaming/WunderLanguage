@@ -7,7 +7,6 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("魔勢アーマー", "魔導アーマー"),
             ("ボイント", "ポイント"),
             ("まどう ?", "まほう?"),
-            ("ハイボーション", "ハイポーション"),
             ("セーブボイント", "セーブポイント"),
             ("セージすることができます", "セーブすることができます"),
             ("まみがえらせた", "よみがえらせた"),
@@ -38,7 +37,6 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("しと月を同時に押せば", "LとRを同時に押せば"),
             ("造具屋", "道具屋"),
             ("通異星", "道具屋"),
-            ("ガストラ帝国", "ガストラール帝国"),
             ("アッシュ", "マッシュ"),
             ("エドザー", "エドガー"),
             ("マッコ", "マッシュ"),
@@ -92,7 +90,6 @@ namespace WunderLanguage.Host.Packs.FFVI
             // Grey-item garbles (cited: dim battle-unusable rows — panel shot,
             // live log, crop replication each gave a different misread).
             ("スートボウク", "オートボウガン"),
-            ("スートボック", "オートボウガン"),
             ("スートボウル", "オートボウガン"),
             // Panel-cited 2026-09-26: dim オートボウガン read ブートだった
             // (EN went "I was a boot."). Same shape, literal row as always.
@@ -112,7 +109,6 @@ namespace WunderLanguage.Host.Packs.FFVI
             // イートボック. Same shape, literal rows as always.
             ("オートだった", "オートボウガン"),
             ("オートバック", "オートボウガン"),
-            ("ハイホーション", "ハイポーション"),
             ("イートボック", "オートボウガン"),
             // Scroll-cited 2026-09-29 (log, stable across loops): more
             // オートボウガン misreads (ボッカ―/ボウン/ネット variants).
@@ -333,6 +329,13 @@ namespace WunderLanguage.Host.Packs.FFVI
         public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => FfviPack.ItemVocabulary;
         public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => FfviPack.WeaponLabels;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => FfviPack.BattleGlossary;
+        // Vision item 3 calibration: neutral (today's globals exactly —
+        // no threshold, no inset, no suppression, unscaled). Tuned only
+        // per citation, never preemptively.
+        public double BoxScoreThreshold => 0.0;
+        public double BoxInsetPx => 0.0;
+        public double NmsIou => 1.0;
+        public double FontScale => 1.0;
         public bool IsMenuHeaderRow(string ascii) => FfviPack.IsMenuHeaderRow(ascii);
     }
 }
