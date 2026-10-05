@@ -78,6 +78,13 @@ fires dropped from ~8 s to ~1.2 s p99).
 - Caches are measured (`[cache-hit]` interval rates), never assumed.
 - One log line per minute per instrument — observability must not
   be the tax (audited: ~0.2 ms per log call).
+- Recognition batching via crop collage: rejected with data.
+  Collaging N crops into one call is ~2–7× faster (launch/transfer
+  overhead dominates small calls) but destroys accuracy — stacked
+  layout + gutter breaks the manga-page-trained model (merged,
+  confused, or dropped lines vs clean separate reads). Speed at
+  the cost of readings violates the project rules; do not revisit
+  without a layout-preserving batching design.
 - Pressure is watched per-minute (host MB, GPU util/VRAM) — note:
   per-PID VRAM attribution rarely populates on Windows (WDDM driver
   model); system-wide GPU util/memory is the usable signal there.
