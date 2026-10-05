@@ -51,6 +51,7 @@ namespace WunderLanguage.Host
             FileLogger.Log("App starting up");
             LogEnvLine();
             ProbeLogCost();
+            Sidecar.CrashDumps.EnsureLocalDumps();
             FileLogger.Log($"[startup] stage=app-start ms=0");
             // M7b offline replay: --replay <corpus.jsonl> refeeds recorded OCR through the real
             // fixup/normalize/hold path. No emulator, no sidecar, no GPU. Revert: delete this block.

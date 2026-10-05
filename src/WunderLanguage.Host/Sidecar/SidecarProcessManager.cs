@@ -11,6 +11,9 @@ namespace WunderLanguage.Host.Sidecar
         private Process? _process;
         private string? _pythonExe;
         private readonly List<string> _recentOutput = new();
+        // OS-owned group (WI1 Ch3): kill-on-close job. Lives as long as the
+        // sidecar; closing it reaps the whole python tree on dirty host death.
+        private readonly SidecarJob _job = new();
 
         public async Task StartAsync(IProgress<string>? statusProgress = null)
         {
@@ -121,6 +124,16 @@ namespace WunderLanguage.Host.Sidecar
                 // Host loop stays Normal (UI responsiveness). Revert:
                 // delete this block.
                 try { _process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+
+                // Group the child in the kill-on-close job (no-op if the job
+                // failed to create; nested-job hosts may refuse — harmless).
+                try
+                {
+                    _job.Ensure();
+                    bool ok = _job.Assign(_process);
+                    FileLogger.Log($"[job] assign pid={_process.Id} ok={ok}");
+                }
+                catch { }
 
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
@@ -390,6 +403,10 @@ namespace WunderLanguage.Host.Sidecar
             {
                 // Best effort on shutdown.
             }
+            // Closing the job handle reaps any stragglers the explicit kill
+            // missed (grandchildren uvicorn spawns). Dispose AFTER the kill
+            // attempt so the log line above keeps its PID meaning.
+            try { _job.Dispose(); } catch { }
             // Reuse-path sidecars are adopted, not owned (_process is null).
             // Reap OUR venv's python so a dirty-killed previous host can't
             // leave an immortal orphan. Path-matched (never touches a user's
