@@ -517,6 +517,9 @@ namespace WunderLanguage.Host.Capture
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
             _ = RunLoopAsync(_cts.Token);
+            // Survival batch 4: block idle-sleep for the live session only
+            // (pause/Stop releases). Revert: delete this line.
+            try { Windows.PowerAvailability.Hold(); } catch { }
         }
 
         public void Stop()
@@ -536,6 +539,9 @@ namespace WunderLanguage.Host.Capture
             catch { }
             try { CorpusRotate(); } catch { }
             _cts?.Cancel();
+            // Survival batch 4: session over, yield sleep back. Revert:
+            // delete this line.
+            try { Windows.PowerAvailability.Release(); } catch { }
         }
 
         private async Task RunLoopAsync(CancellationToken token)
