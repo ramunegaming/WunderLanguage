@@ -296,7 +296,22 @@ namespace WunderLanguage.Host
                             }
                         }
                         catch { }
-                        FileLogger.Log($"[pressure] host={hostMB:F0}MB gpu={gpu} sidecar={cudamem}");
+                        // Survival batch 3 (WI1 Ch5): piggyback the 60s
+                        // cadence — no new timer. mem rides the pressure
+                        // line (no extra log volume); shed fires only on a
+                        // real OS Low signal (healthy boxes sit at high).
+                        // Revert: delete to the [memory] log line.
+                        string memState = "unknown";
+                        string shed = "-";
+                        try
+                        {
+                            memState = Sidecar.MemoryPressure.Sample();
+                            shed = memState == "low" ? Sidecar.MemoryPressure.Shed(pid) : "-";
+                        }
+                        catch { }
+                        FileLogger.Log($"[pressure] host={hostMB:F0}MB gpu={gpu} sidecar={cudamem} mem={memState}");
+                        if (memState == "low")
+                            FileLogger.Log($"[memory] state=low shed={shed} pid={pid}");
                     }
                     catch { }
                 }, null, 60000, 60000);
