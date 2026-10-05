@@ -169,6 +169,18 @@ def propose_classical_boxes(img_np):
     except Exception:
         out = []
     return out
+def _det_conf(orig_w, orig_h, dom_area):
+    # Geometric prior as a function (vision batch: single source for
+    # the conf formula — the merge NMS below and the main loop share
+    # it, so scores compare apples to apples).
+    try:
+        _s = ((orig_w - MIN_BOX_WIDTH) / 60.0 + (orig_h - MIN_BOX_HEIGHT) / 48.0) / 2.0
+        _s = max(0.0, min(1.0, _s))
+        _d = (orig_w * orig_h) / max(1.0, 0.05 * dom_area)
+        _d = max(0.0, min(1.0, _d))
+        return round(max(0.0, min(1.0, 0.5 * _s + 0.5 * _d)), 3)
+    except Exception:
+        return 0.0
 def detect_and_ocr(pil_image: Image.Image):
     det_scale = DETECTION_UPSCALE_FACTOR
     if pil_image.width * det_scale > 900:
@@ -189,36 +201,61 @@ def detect_and_ocr(pil_image: Image.Image):
         ys = [pt[1] for pt in quad]
         raw_boxes.append((int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))))
     merged_boxes = merge_nearby_boxes(raw_boxes)
-    # M6 (steadiness): frame-dominant area. Dialogue scenes have one
-    # dominant block; HUD riders are short and tiny beside it. Menu
-    # scenes have no dominant block, so every row survives this.
+    # Preliminary dominance for NMS-time score comparisons (final
+    # dominance recomputed over survivors below; ranking input only).
     _dom_area = 0.0
     for (_qx0, _qy0, _qx1, _qy1), _qn in merged_boxes:
         _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
         if _qa > _dom_area:
             _dom_area = _qa
-    _raw_n = len(raw_boxes)
-    _skipped = 0
-    # Classical fallback runs every frame (cheap contours) but is TAGGED;
-    # the host unions it only in learning mode. Deduped here so the
-    # detector always wins overlaps (tuned path byte-identical).
-    _work = [(_b, _n, None) for (_b, _n) in merged_boxes]
+    # Score-weighted NMS (vision batch, Ch7: keep highest-confidence on
+    # overlap — first-found is luck). Classical wins drop detector boxes;
+    # detector wins skip classical. FFVI safety is structural: the host
+    # drops classical pre-assembly in vocab mode, so the tuned path never
+    # sees a replaced box. Learning mode gets principled NMS.
+    _drop = set()
+    _cls_kept = []
+    _survivors = list(merged_boxes)
     try:
         for (_px0, _py0, _px1, _py1, _ps) in propose_classical_boxes(img_np):
-            _dup = False
-            for (_qb, _qn) in merged_boxes:
-                _qx0, _qy0, _qx1, _qy1 = _qb
+            _beaten = []
+            _skipped_cls = False
+            for _mi, ((_qx0, _qy0, _qx1, _qy1), _qn) in enumerate(merged_boxes):
+                if _mi in _drop:
+                    continue
                 _ix0, _iy0 = max(_px0, _qx0), max(_py0, _qy0)
                 _ix1, _iy1 = min(_px1, _qx1), min(_py1, _qy1)
                 _iw, _ih = max(0, _ix1 - _ix0), max(0, _iy1 - _iy0)
                 _un = (_px1 - _px0) * (_py1 - _py0) + (_qx1 - _qx0) * (_qy1 - _qy0) - _iw * _ih
-                if _un > 0 and (_iw * _ih) / _un > 0.5:
-                    _dup = True
+                if _un <= 0 or (_iw * _ih) / _un <= 0.5:
+                    continue
+                _dc = _det_conf((_qx1 - _qx0) / det_scale, (_qy1 - _qy0) / det_scale, _dom_area)
+                if _ps > _dc:
+                    _beaten.append(_mi)
+                else:
+                    _skipped_cls = True
                     break
-            if not _dup:
-                _work.append((((_px0, _py0, _px1, _py1), 0, _ps)))
+            if _skipped_cls:
+                continue
+            for _mi in _beaten:
+                _drop.add(_mi)
+            _cls_kept.append(((_px0, _py0, _px1, _py1), 0, _ps))
     except Exception:
         pass
+    _survivors = [b for _i, b in enumerate(merged_boxes) if _i not in _drop]
+    # M6 (steadiness): frame-dominant area. Dialogue scenes have one
+    # dominant block; HUD riders are short and tiny beside it. Menu
+    # scenes have no dominant block, so every row survives this.
+    # Computed over detector survivors (classical carries its own
+    # rectangularity score, never the dom share).
+    _dom_area = 0.0
+    for (_qx0, _qy0, _qx1, _qy1), _qn in _survivors:
+        _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
+        if _qa > _dom_area:
+            _dom_area = _qa
+    _raw_n = len(raw_boxes)
+    _skipped = 0
+    _work = [(_b, _n, None) for (_b, _n) in _survivors] + _cls_kept
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
@@ -258,11 +295,7 @@ def detect_and_ocr(pil_image: Image.Image):
             try:
                 # size_m: margin above the MIN noise floors, saturating.
                 # dom: share of the frame-dominant area (dialogue ~1, riders ~0).
-                _size_m = ((orig_width - MIN_BOX_WIDTH) / 60.0 + (orig_height - MIN_BOX_HEIGHT) / 48.0) / 2.0
-                _size_m = max(0.0, min(1.0, _size_m))
-                _dom = (orig_width * orig_height) / max(1.0, 0.05 * _dom_area)
-                _dom = max(0.0, min(1.0, _dom))
-                _conf = round(0.5 * _size_m + 0.5 * _dom, 3)
+                _conf = _det_conf(orig_width, orig_height, _dom_area)
             except Exception:
                 _conf = 0.0
         blocks.append({
