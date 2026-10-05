@@ -3,6 +3,21 @@
 Measured numbers from real sessions, not estimates. Every figure below
 is reproducible from `app.log` markers — no profiler required.
 
+## Service-level objectives
+
+"Reliable" made measurable. Checked per session from existing
+instruments; a breach is a bug report with a number attached.
+
+| Objective | Target | Source line |
+|---|---|---|
+| Capture p99 | < 50 ms | `[loop-cost] cap` |
+| OCR round-trip p99 | < 2 s | `[loop-cost] ocr-rt` |
+| Cold-row publish p99 | < 5 s | `[loop-cost] pub` (CAT gate bounds worst case ≈ 4 s) |
+| Startup to usable | < 90 s | `[startup] stage=connect-shown` |
+| Crash-free launches | 100% | any `Sidecar startup failed` / unhandled exception with a working sidecar |
+
+Current standing: capture ~17–38 ms, OCR tails to ~4 s on GPU-contention outliers (above target — the open tail), publish 1.2 s, startup 14–46 s. Objectives are targets, not boasts; misses drive the work list.
+
 Measured on: 12 CPU, 32 GB RAM, RTX 3060 Laptop GPU, Windows 11,
 Debug build. Lighter machines will see longer OCR/startup; the
 `[min-spec]` line auto-selects the reduced matching profile when
