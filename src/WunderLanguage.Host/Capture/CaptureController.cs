@@ -103,7 +103,7 @@ namespace WunderLanguage.Host.Capture
                 _costFlushAt = DateTime.UtcNow;
                 double[] pub; int pn;
                 lock (_costLock) { pub = (double[])_costPub.Clone(); pn = _costPubN; }
-                FileLogger.Log($"[loop-cost] loops={_costLoops} ocr={_costOcrLoops} skipped={_costSkipped} holds={_costHolds} " +
+                FileLogger.Log($"[loop-cost] game={_gameId} loops={_costLoops} ocr={_costOcrLoops} skipped={_costSkipped} holds={_costHolds} " +
                     $"capN={_costCapN} p50/p99={CostPct(_costCap, _costCapN, 0.5):F0}/{CostPct(_costCap, _costCapN, 0.99):F0}ms " +
                     $"ocrN={_costOcrN} p50/p99={CostPct(_costOcr, _costOcrN, 0.5):F0}/{CostPct(_costOcr, _costOcrN, 0.99):F0}ms " +
                     $"det p50/p99={CostPct(_costDet, _costDetN, 0.5):F0}/{CostPct(_costDet, _costDetN, 0.99):F0}ms " +
@@ -124,7 +124,7 @@ namespace WunderLanguage.Host.Capture
                 long ih = Interlocked.Exchange(ref _costSimHit, 0);
                 long im = Interlocked.Exchange(ref _costSimMiss, 0);
                 static string Rate(long h, long m) => (h + m) == 0 ? "-/-" : $"{h}/{h + m} ({100.0 * h / (h + m):F0}%)";
-                FileLogger.Log($"[cache-hit] tcache={Rate(tcHit, tcReq - tcHit)} sticky={Rate(sh, sm)} prefetch={Rate(ph, pm)} sim={Rate(ih, im)}");
+                FileLogger.Log($"[cache-hit] game={_gameId} tcache={Rate(tcHit, tcReq - tcHit)} sticky={Rate(sh, sm)} prefetch={Rate(ph, pm)} sim={Rate(ih, im)}");
             }
             catch { }
         }
