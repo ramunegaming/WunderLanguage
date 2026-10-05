@@ -131,7 +131,11 @@ namespace WunderLanguage.Host.Sidecar
                 {
                     _job.Ensure();
                     bool ok = _job.Assign(_process);
-                    FileLogger.Log($"[job] assign pid={_process.Id} ok={ok}");
+                    // Enforceable backstop behind the BelowNormal hint (WI1
+                    // Ch3/Ch4): burst spikes can never take more than half
+                    // the machine. Revert: delete these two lines.
+                    int cap = _job.SetRateCap(50);
+                    FileLogger.Log($"[job] assign pid={_process.Id} ok={ok} cpucap={cap}%");
                 }
                 catch { }
 
