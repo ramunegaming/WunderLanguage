@@ -1,5 +1,8 @@
 # WunderLanguage — What The Books Taught Us
 
+> DEV-ONLY: exclude from the release/packaging manifest. Internal notes,
+> not user documentation.
+
 Reading log + applied lessons from every volume studied in this project,
 kept so future sessions (or future contributors) don't re-derive them.
 Rule governing all of it: books are read for applicable concepts only;
