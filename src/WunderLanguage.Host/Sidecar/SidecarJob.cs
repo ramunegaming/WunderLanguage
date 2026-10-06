@@ -229,6 +229,13 @@ namespace WunderLanguage.Host.Sidecar
 
         private IntPtr _port = IntPtr.Zero;
 
+        // Fired on active-process-zero only (msg 4): the tree is fully
+        // dead. Single exit/abnormal lines are NOT triggers — short-lived
+        // import probes die that way on healthy startups (cited 2026-10-06).
+        // The subscriber (SidecarProcessManager) decides: restart, unless
+        // the death was requested via Stop().
+        public event Action? TreeDied;
+
         // Background drain: 2s poll so Dispose converges without a wake
         // packet. Logs transitions only — new/exit/zero on clean shutdown,
         // ABNORMAL or limit lines are the ones that matter.
@@ -254,6 +261,10 @@ namespace WunderLanguage.Host.Sidecar
                             catch { return; }
                             if (!ok) continue;
                             try { FileLogger.Log($"[job] event={JobEventName(msg)} pid={pidPtr.ToInt64()}"); } catch { }
+                            if (msg == 4)
+                            {
+                                try { TreeDied?.Invoke(); } catch { }
+                            }
                         }
                     }
                     catch { }

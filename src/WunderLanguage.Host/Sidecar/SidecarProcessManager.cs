@@ -15,6 +15,58 @@ namespace WunderLanguage.Host.Sidecar
         // sidecar; closing it reaps the whole python tree on dirty host death.
         private readonly SidecarJob _job = new();
 
+        // Auto-restart (item 1 close-out): the job's active-process-zero is
+        // the restart signal. Requested deaths suppress it; unrequested
+        // ones get 3 quiet respawns (5s apart, log-only — never a popup
+        // mid-game), then the engine stays down until relaunch.
+        private bool _stopRequested;
+        private int _restarts;
+        private bool _restarting;
+        private CancellationTokenSource? _restartCts;
+
+        public SidecarProcessManager()
+        {
+            _job.TreeDied += OnTreeDied;
+        }
+
+        private void OnTreeDied()
+        {
+            try
+            {
+                if (_stopRequested || _restarting) return;
+                if (_restarts >= 3)
+                {
+                    FileLogger.Log("[job] restart budget exhausted — engine stays down until relaunch");
+                    // One-shot: don't spam every future death (there are no
+                    // future trees, but a second zero can't be ruled out).
+                    _restarts++;
+                    return;
+                }
+                _restarting = true;
+                _restartCts = new CancellationTokenSource();
+                var token = _restartCts.Token;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        _restarts++;
+                        FileLogger.Log($"[job] restart attempt={_restarts}");
+                        await Task.Delay(5000, token);
+                        lock (_recentOutput) _recentOutput.Clear();
+                        await StartAsync(null);
+                        FileLogger.Log("[job] restart healthy");
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex)
+                    {
+                        FileLogger.Log($"[job] restart failed: {ex.Message.Split('\n')[0]}");
+                    }
+                    finally { _restarting = false; }
+                }, token);
+            }
+            catch { }
+        }
+
         public async Task StartAsync(IProgress<string>? statusProgress = null)
         {
             FileLogger.Log("SidecarProcessManager.StartAsync called");
@@ -404,6 +456,10 @@ namespace WunderLanguage.Host.Sidecar
 
         public void Stop()
         {
+            // Requested death: the job watcher must NOT restart the tree
+            // it sees dying below (kill races the completion packets).
+            _stopRequested = true;
+            try { _restartCts?.Cancel(); } catch { }
             try { _catWatchCts?.Cancel(); } catch { }
             try
             {
