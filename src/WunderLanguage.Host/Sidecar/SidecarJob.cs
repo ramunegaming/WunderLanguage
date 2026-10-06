@@ -2,11 +2,13 @@ using System.Runtime.InteropServices;
 
 namespace WunderLanguage.Host.Sidecar
 {
-    // Survival batches 1+2 (WI1 Ch3 Jobs, Ch3/Ch4 CPU rate control): the
-    // sidecar python.exe belongs to an OS job object with KILL_ON_JOB_CLOSE
-    // plus a hard CPU-rate cap. The cap is an enforceable backstop behind
-    // the BelowNormal hint: burst spikes can never starve the game, while
-    // orchestration (GPU-bound OCR/CAT) never needs more than the cap.
+    // Survival batches 1+2+5 (WI1 Ch3 Jobs; WI2 Ch10 WER-adjacent
+    // detect): the sidecar python.exe belongs to an OS job object with
+    // KILL_ON_JOB_CLOSE plus a hard CPU-rate cap, AND the job reports to
+    // an I/O completion port — a dirty sidecar death lands as an exact
+    // [job] event line (abnormal-exit vs clean vs limit) instead of
+    // opaque 503s. Watcher is a background thread on a 2s poll; no new
+    // per-minute log volume (lines only on transitions).
     // Revert: delete this file + the call sites in SidecarProcessManager
     // (field, Assign/SetRateCap, Dispose).
     public sealed class SidecarJob : IDisposable
@@ -24,6 +26,19 @@ namespace WunderLanguage.Host.Sidecar
         [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "SetInformationJobObject")]
         private static extern bool SetJobCpuRate(IntPtr job, int infoClass,
             ref JOBOBJECT_CPU_RATE_CONTROL_INFORMATION info, int size);
+
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "SetInformationJobObject")]
+        private static extern bool SetJobCompletionPort(IntPtr job, int infoClass,
+            ref JOBOBJECT_ASSOCIATE_COMPLETION_PORT info, int size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateIoCompletionPort(IntPtr fileHandle, IntPtr existing,
+            UIntPtr completionKey, uint threads);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetQueuedCompletionStatus(IntPtr port, out uint bytes,
+            out UIntPtr key, out IntPtr overlapped, uint timeoutMs);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -70,6 +85,33 @@ namespace WunderLanguage.Host.Sidecar
         private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
         private const int JobObjectExtendedLimitInformation = 9;
         private const int JobObjectCpuRateControlInformation = 15;
+        private const int JobObjectAssociateCompletionPortInformation = 7;
+
+        // winnt.h JOB_OBJECT_MSG_*: arrives in dwNumberOfBytesTransferred,
+        // lpOverlapped carries the PID for process messages (cited MSDN
+        // JOBOBJECT_ASSOCIATE_COMPLETION_PORT docs).
+        private static string JobEventName(uint msg) => msg switch
+        {
+            1 => "end-of-job-time",
+            2 => "end-of-process-time",
+            3 => "active-process-limit",
+            4 => "active-process-zero",
+            5 => "new-process",
+            6 => "exit-process",
+            7 => "ABNORMAL-exit-process",
+            8 => "process-memory-limit",
+            9 => "job-memory-limit",
+            10 => "notification-limit",
+            11 => "job-cycle-time-limit",
+            _ => $"unknown-{msg}",
+        };
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_ASSOCIATE_COMPLETION_PORT
+        {
+            public UIntPtr CompletionKey;
+            public IntPtr CompletionPort;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct JOBOBJECT_CPU_RATE_CONTROL_INFORMATION
@@ -121,6 +163,32 @@ namespace WunderLanguage.Host.Sidecar
                 info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
                 SetInformationJobObject(_handle, JobObjectExtendedLimitInformation,
                     ref info, Marshal.SizeOf(info));
+                // Completion-port reporting (WI1 Ch3 "Jobs can also be
+                // associated with an I/O completion port"). Best-effort:
+                // a watcher thread logs transitions; failure just means
+                // death stays opaque (status quo ante).
+                try
+                {
+                    _port = CreateIoCompletionPort(new IntPtr(-1), IntPtr.Zero, UIntPtr.Zero, 0);
+                    if (_port != IntPtr.Zero && _port != new IntPtr(-1))
+                    {
+                        var assoc = new JOBOBJECT_ASSOCIATE_COMPLETION_PORT
+                        {
+                            CompletionKey = UIntPtr.Zero,
+                            CompletionPort = _port,
+                        };
+                        if (SetJobCompletionPort(_handle, JobObjectAssociateCompletionPortInformation,
+                            ref assoc, Marshal.SizeOf(assoc)))
+                            StartWatcher();
+                        else
+                        {
+                            try { CloseHandle(_port); } catch { }
+                            _port = IntPtr.Zero;
+                        }
+                    }
+                    else _port = IntPtr.Zero;
+                }
+                catch { _port = IntPtr.Zero; }
             }
             catch { _handle = IntPtr.Zero; }
         }
@@ -141,11 +209,55 @@ namespace WunderLanguage.Host.Sidecar
             _disposed = true;
             try
             {
+                if (_port != IntPtr.Zero)
+                {
+                    CloseHandle(_port);
+                    _port = IntPtr.Zero;
+                }
+            }
+            catch { }
+            try
+            {
                 if (_handle != IntPtr.Zero)
                 {
                     CloseHandle(_handle);
                     _handle = IntPtr.Zero;
                 }
+            }
+            catch { }
+        }
+
+        private IntPtr _port = IntPtr.Zero;
+
+        // Background drain: 2s poll so Dispose converges without a wake
+        // packet. Logs transitions only — new/exit/zero on clean shutdown,
+        // ABNORMAL or limit lines are the ones that matter.
+        private void StartWatcher()
+        {
+            try
+            {
+                var port = _port;
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        while (!_disposed)
+                        {
+                            bool ok;
+                            uint msg = 0;
+                            IntPtr pidPtr = IntPtr.Zero;
+                            try
+                            {
+                                ok = GetQueuedCompletionStatus(port, out msg,
+                                    out UIntPtr _, out pidPtr, 2000);
+                            }
+                            catch { return; }
+                            if (!ok) continue;
+                            try { FileLogger.Log($"[job] event={JobEventName(msg)} pid={pidPtr.ToInt64()}"); } catch { }
+                        }
+                    }
+                    catch { }
+                });
             }
             catch { }
         }

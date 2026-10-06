@@ -127,6 +127,13 @@ namespace WunderLanguage.Host.Sidecar
 
                 // Group the child in the kill-on-close job (no-op if the job
                 // failed to create; nested-job hosts may refuse — harmless).
+                // Tree shape (cited 2026-10-06 snapshot): venv python.exe is a
+                // launcher stub — it re-execs the base interpreter as a
+                // CHILD (uvicorn "server process" PID != spawned PID), so
+                // _process.HasExited watches the stub, not the server. The
+                // job covers the whole tree anyway (cap, kill-on-close and
+                // these notifications all apply to stub+server+probes);
+                // server liveness is decided by /health, never by HasExited.
                 try
                 {
                     _job.Ensure();
