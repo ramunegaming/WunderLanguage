@@ -83,6 +83,8 @@ namespace WunderLanguage.Host.Sidecar
         }
 
         private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+        private const uint JOB_OBJECT_LIMIT_PRIORITY_CLASS = 0x20;
+        private const uint PRIORITY_CLASS_BELOW_NORMAL = 0x4000;
         private const int JobObjectExtendedLimitInformation = 9;
         private const int JobObjectCpuRateControlInformation = 15;
         private const int JobObjectAssociateCompletionPortInformation = 7;
@@ -160,9 +162,19 @@ namespace WunderLanguage.Host.Sidecar
                     return;
                 }
                 var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
-                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-                SetInformationJobObject(_handle, JobObjectExtendedLimitInformation,
+                // Merged limits (WI1 Ch3 "Job limits"): kill-on-close owns
+                // the lifetime, priority-class clamp owns the ceiling —
+                // thread-level SetThreadPriority escapes above BelowNormal
+                // are silently ignored inside the job, so CAT spikes can't
+                // outrank the game even briefly. Set before any Assign.
+                // The per-process BelowNormal in StartAsync stays (adopted
+                // sidecars never join this job). Revert: drop the two lines.
+                info.BasicLimitInformation.LimitFlags =
+                    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+                info.BasicLimitInformation.PriorityClass = PRIORITY_CLASS_BELOW_NORMAL;
+                bool limitsOk = SetInformationJobObject(_handle, JobObjectExtendedLimitInformation,
                     ref info, Marshal.SizeOf(info));
+                try { FileLogger.Log($"[job] limits kill-on-close+clamp(BelowNormal) ok={limitsOk}"); } catch { }
                 // Completion-port reporting (WI1 Ch3 "Jobs can also be
                 // associated with an I/O completion port"). Best-effort:
                 // a watcher thread logs transitions; failure just means
