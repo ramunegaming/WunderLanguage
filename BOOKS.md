@@ -251,6 +251,22 @@ rule). Revisit only on evidence:**
   0: B3 CLOSED negative on box-conf; rescorer/combiner weights needing conf
   stay blocked. Recognition-level confidence (CTC probs via sidecar) is a
   new measurement, not assumed — queued.
+- Mistitle repair (offline batch, 2026-10-08): loop-25 TITLE published
+  mid-intro-scroll (copyright-year hint + 10 quiet loops; blocks were tall
+  inset scroll text). Hinted non-FFVI publish now requires logo geometry
+  (all JA blocks full-bleed short bands, same test as logo hold); FFVI
+  byte-identical, bare-quiet/static paths unchanged. Replay 0 /
+  263-identical. Live proof pending (TITLE timing on next boot).
+- Veto first light (offline, 122 crops): mystery bright-box fires read
+  bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
+  copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances,
+  map still missing) — no thresholds, vetoes stay queued.
+- Fuzzy-halves PARKED with data: 14 near-doubles / 18,607 corpus texts,
+  ~1 panel escape (loop-731 old woman). Prize too thin for new machinery;
+  revisit on recurrences. Exact doubles stay owned by sentdedup (5/5 live).
+- Corpus stub noted: ...20261007_112103.jsonl.gz (295 bytes, truncated
+  gzip from a killed session) breaks naive full-corpus scans; left in
+  place (corpora never rewritten), readers must skip-unreadable.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
