@@ -1514,6 +1514,32 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[translate] suppressed anchorless for \"{Truncate(text)}\" (no kanji/katakana)");
                     return;
                 }
+                // Fragment hold (cited 2026-10-07, measured on 487 Zelda
+                // fire-frames: junk median len 7, true-junk max 9; gate
+                // len<=9 + unterminated catches 46/53 junk-frames at 9/434
+                // real cost, all cost being typewriter prefixes the full line
+                // later subsumes). Zelda-gated: FFVI item/menu rows are short
+                // + unterminated by nature. Pack-vocab rows exempt (future
+                // item names). Omission-only if ever wrong.
+                // Revert: delete this block.
+                if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.ZeldaGameId
+                    && (text ?? "").Length <= 9 && !EndsTerminated(text))
+                {
+                    bool known = false;
+                    try
+                    {
+                        var p = Packs.PackRegistry.Current;
+                        known = (p.ItemVocabulary ?? new System.Collections.Generic.List<string>()).Contains(text)
+                            || (p.MonsterVocabulary ?? new System.Collections.Generic.List<string>()).Contains(text)
+                            || (p.BattleCommands ?? new System.Collections.Generic.List<string>()).Contains(text);
+                    }
+                    catch { }
+                    if (!known)
+                    {
+                        FileLogger.Log($"[translate] suppressed fragment-hold for \"{Truncate(text)}\" (short unterminated off-vocab)");
+                        return;
+                    }
+                }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
                 string translated = await _translationManager.TranslateAsync(text);
                 FileLogger.Log($"[translate-provider] {_translationManager.ActiveProviderName} for \"{Truncate(text)}\"");
@@ -1595,6 +1621,16 @@ namespace WunderLanguage.Host.Capture
 
         private static string Truncate(string s, int max = 80)
             => s.Length <= max ? s : s.Substring(0, max) + "...";
+
+        // Fragment-hold terminator set (mirrors IsUnterminatedComposite's
+        // complete-endings; hiragana-cut carve-out NOT applied here — a bare
+        // verb tail is still a fragment until it terminates or grows).
+        private static bool EndsTerminated(string? s)
+        {
+            if (string.IsNullOrEmpty(s)) return false;
+            char last = s.TrimEnd()[^1];
+            return last == '。' || last == '！' || last == '？' || last == '…' || last == '!' || last == '?';
+        }
 
         // M7a corpus recorder (automatic, text-only, ~2KB/loop). One JSONL per session under
         // %AppData%/WunderLanguage/corpus/. M7b replays raw+blocks through the real fixup/
