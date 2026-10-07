@@ -199,6 +199,11 @@ rule). Revisit only on evidence:**
 - CAT 4-bit on weak VRAM: pre-check + skip, never crash.
 - ETW/WMI/tier-2/coalescing/sequential-scan: parked, not rejected -
   each names its unlocking evidence above.
+- A1 settled-frame averaging PILOT (HDIP Ch 25): 6 same-text pairs from
+  the live ring, 4 averaged (2 skipped on 1px box drift — production must
+  align before mean). 1 real fix (single-read tail error corrected by the
+  mean), 0 regressions on clean reads, identical ms. Positive-but-thin:
+  justifies a production trial reusing dwell crops (no extra waits/calls).
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
