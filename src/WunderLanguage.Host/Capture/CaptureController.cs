@@ -1736,7 +1736,11 @@ namespace WunderLanguage.Host.Capture
             {
                 if (!RecordCorpus) return;
                 var bs = new List<object>(blocks.Count);
-                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height });
+                // HDIP B3 calibration feed (forward-only additive fields;
+                // replay reads lenient properties and ignores them — parity
+                // proven per batch. Old files simply lack c/n/s.).
+                // Revert: drop c/n/s from the anonymous type.
+                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src });
                 CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
             }
             catch { }
