@@ -188,6 +188,10 @@ rule). Revisit only on evidence:**
 - Upscale for OCR speed: refuted by measurement.
 - Debug→Release switch for speed: parity proven, parked to ship day.
 - Crop-collage batching: 2–7× faster, readings destroyed. Rejected.
+- Pad-to-square vs stretch (paper #5 MSR audit): manga-ocr's preprocessor
+  stretches every crop to 224×224, but the model is stretch-trained —
+  bake-off on 19 hand-transcribed lines: stretch exact 9/19 CER 0.357,
+  black-pad exact 5/19 CER 0.497, same speed. Hands off the preprocessor.
 - `ホーション`→H-row mapping: reverted (inventory-ambiguous, proven).
 - Single-sighting vocab rows (よJ, メダル…, glove variants, みざて,
   ひだソて): held, never shipped.
