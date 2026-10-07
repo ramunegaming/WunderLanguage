@@ -151,6 +151,8 @@ namespace WunderLanguage.Host.Capture
         private string _settleLastText = "";
         private int _settleLastSavedLoop;
         private int _settleSaved;
+        private string _settleSavedText = "";
+        private int _settleTextCount;
         // Zelda logo hold release: set once TITLE publishes this session.
         private bool _titlePosted;
         // Last seen monster rows within the current fight. The action menu covers
@@ -840,7 +842,7 @@ namespace WunderLanguage.Host.Capture
                     // Revert: delete this block + the 3 fields.
                     try
                     {
-                        if (Settings.Diag.Enabled && !string.IsNullOrEmpty(extractedText) && extractedText == _settleLastText && iteration - _settleLastSavedLoop >= 5 && _settleSaved < 30)
+                        if (Settings.Diag.Enabled && !string.IsNullOrEmpty(extractedText) && extractedText == _settleLastText && iteration - _settleLastSavedLoop >= 5 && _settleSaved < 60 && _settleTextCount < 6)
                         {
                             OcrBlock? biggest = null;
                             foreach (var b in ocrBlocks)
@@ -858,6 +860,7 @@ namespace WunderLanguage.Host.Capture
                                         crop.Save(System.IO.Path.Combine(sdir, fn), System.Drawing.Imaging.ImageFormat.Png);
                                     try { System.IO.File.AppendAllText(System.IO.Path.Combine(sdir, "index.txt"), $"{fn}|{extractedText.Replace("\n", " ")}{System.Environment.NewLine}"); } catch { }
                                     _settleLastSavedLoop = iteration; _settleSaved++;
+                                    if (extractedText == _settleSavedText) _settleTextCount++; else { _settleSavedText = extractedText; _settleTextCount = 1; }
                                 }
                             }
                         }
