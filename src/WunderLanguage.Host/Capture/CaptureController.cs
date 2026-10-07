@@ -147,6 +147,10 @@ namespace WunderLanguage.Host.Capture
         // consistent change updates in place (never appends, so no feed spam).
         private string _battlePrevSig = "";
         private string _battleFiredSig = "";
+        // HDIP eval rig: last loop text + settle-crop bookkeeping.
+        private string _settleLastText = "";
+        private int _settleLastSavedLoop;
+        private int _settleSaved;
         // Zelda logo hold release: set once TITLE publishes this session.
         private bool _titlePosted;
         // Last seen monster rows within the current fight. The action menu covers
@@ -826,6 +830,38 @@ namespace WunderLanguage.Host.Capture
                                 extractedText = string.Empty;
                             }
                         }
+                    }
+                    catch { }
+                    // HDIP batch 1 eval rig (Ch 25 settled-frame averaging):
+                    // dev-only image evidence. Saves crops of the largest JA
+                    // block on consecutive same-text loops (settled sequences
+                    // for the offline averaging experiment). Diagnostics-gated,
+                    // capped, observe-only — never on the fire path.
+                    // Revert: delete this block + the 3 fields.
+                    try
+                    {
+                        if (Settings.Diag.Enabled && !string.IsNullOrEmpty(extractedText) && extractedText == _settleLastText && iteration - _settleLastSavedLoop >= 5 && _settleSaved < 30)
+                        {
+                            OcrBlock? biggest = null;
+                            foreach (var b in ocrBlocks)
+                                if (HasJapanese(b.Text) && (biggest == null || b.Width * b.Height > biggest.Width * biggest.Height)) biggest = b;
+                            if (biggest != null)
+                            {
+                                int cx = System.Math.Max(0, biggest.X), cy = System.Math.Max(0, biggest.Y);
+                                int cw = System.Math.Min(biggest.Width, bitmap.Width - cx), ch = System.Math.Min(biggest.Height, bitmap.Height - cy);
+                                if (cw > 8 && ch > 8)
+                                {
+                                    string sdir = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot", "settle");
+                                    System.IO.Directory.CreateDirectory(sdir);
+                                    string fn = $"settle_{_settleSaved:00}_{iteration}.png";
+                                    using (var crop = bitmap.Clone(new System.Drawing.Rectangle(cx, cy, cw, ch), bitmap.PixelFormat))
+                                        crop.Save(System.IO.Path.Combine(sdir, fn), System.Drawing.Imaging.ImageFormat.Png);
+                                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(sdir, "index.txt"), $"{fn}|{extractedText.Replace("\n", " ")}{System.Environment.NewLine}"); } catch { }
+                                    _settleLastSavedLoop = iteration; _settleSaved++;
+                                }
+                            }
+                        }
+                        if (extractedText != _settleLastText) _settleLastText = extractedText ?? "";
                     }
                     catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
