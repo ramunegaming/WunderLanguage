@@ -241,6 +241,16 @@ rule). Revisit only on evidence:**
   Needs code-path read before scoping.
 - A1 trial: 10 activations, all on boot/menu screens (copyright, PLAYER
   SELECT, scroll-mid); dialogue attribution still open. Trial stays in.
+- B3 calibration CURVE (offline, 2026-10-08): feed confirmed live (1259/1259
+  blocks carry numeric conf, src=detector/classical). 63 fires labeled vs
+  the script oracle (fuzzy halves-aware match; unverifiable NOA-only lines
+  excluded): 48 correct, 15 incorrect. 34 conf-joined pairs show NO
+  separation — incorrects at 0.946/0.959/1.0, corrects spanning 0.692–1.0.
+  Box-conf is a presence signal, not a correctness signal (detector is
+  confidently wrong on transition misreads). Per the rule thresholds stay
+  0: B3 CLOSED negative on box-conf; rescorer/combiner weights needing conf
+  stay blocked. Recognition-level confidence (CTC probs via sidecar) is a
+  new measurement, not assumed — queued.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
