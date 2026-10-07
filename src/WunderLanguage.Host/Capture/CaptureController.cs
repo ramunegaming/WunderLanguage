@@ -147,6 +147,8 @@ namespace WunderLanguage.Host.Capture
         // consistent change updates in place (never appends, so no feed spam).
         private string _battlePrevSig = "";
         private string _battleFiredSig = "";
+        // Zelda logo hold release: set once TITLE publishes this session.
+        private bool _titlePosted;
         // Last seen monster rows within the current fight. The action menu covers
         // the monster box when open; stickiness keeps the frame steady instead of
         // blanking every time the player picks a command.
@@ -613,7 +615,7 @@ namespace WunderLanguage.Host.Capture
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
                         // Same battle guard as the settled path: static cooldown screens
                         // must never mint a TITLE mid-fight (forces a dupe frame).
-                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
                         // Static dwell confirms a clean held candidate. Menu screens
                         // (sig set) and titles stay out; dupes stay out via guards.
                         if (!string.IsNullOrEmpty(_candidateText)
@@ -733,7 +735,7 @@ namespace WunderLanguage.Host.Capture
                         // A live battle owns the screen: the logo/title detector must
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
                         // frame). Battle-grace covers transitions too.
-                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
                     }
                     catch { }
                     // Battle-frame dialogue guard: bottom-band battle blocks never become
@@ -792,6 +794,34 @@ namespace WunderLanguage.Host.Capture
                             // dialogue-fire (2026-09-30 scroll hallucinations).
                             FileLogger.Log($"[battle] remnant holds bottom (dialogue suppressed)");
                             extractedText = string.Empty;
+                        }
+                    }
+                    catch { }
+                    // Zelda logo hold (cited 2026-10-07: the ゼルダの伝説 logo
+                    // OCRs as fluent garbage — "ここでは１０００円…" fired as
+                    // dialogue, and the fire itself reset the quiet-title
+                    // streak so TITLE never published). Logo art reads as
+                    // full-bleed short bands; real scroll/dialogue text is
+                    // inset and tall (scroll x=116 w=388 h=134, dialogue
+                    // x=117 w=331 h=126 vs logo x=-2 w=668 h=76 on 668-wide
+                    // frames). Zelda-pack only, pre-title only; releases the
+                    // moment frames stop matching, so nothing can deadlock.
+                    // FFVI path untouched. Revert: delete this block.
+                    try
+                    {
+                        if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.ZeldaGameId && !_titlePosted && ocrBlocks.Count > 0)
+                        {
+                            bool allLogoBands = true;
+                            foreach (var b in ocrBlocks)
+                            {
+                                if (!HasJapanese(b.Text)) continue;
+                                if (!(b.X <= 6 && b.X + b.Width >= _battleFrameW - 6 && b.Height < 100)) { allLogoBands = false; break; }
+                            }
+                            if (allLogoBands && ocrBlocks.Exists(b => HasJapanese(b.Text)))
+                            {
+                                FileLogger.Log($"[zelda] logo-frame holds dialogue ({ocrBlocks.Count} blocks)");
+                                extractedText = string.Empty;
+                            }
                         }
                     }
                     catch { }
