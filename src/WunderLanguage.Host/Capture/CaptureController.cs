@@ -804,12 +804,15 @@ namespace WunderLanguage.Host.Capture
                     // full-bleed short bands; real scroll/dialogue text is
                     // inset and tall (scroll x=116 w=388 h=134, dialogue
                     // x=117 w=331 h=126 vs logo x=-2 w=668 h=76 on 668-wide
-                    // frames). Zelda-pack only, pre-title only; releases the
-                    // moment frames stop matching, so nothing can deadlock.
-                    // FFVI path untouched. Revert: delete this block.
+                    // frames). Runs on Zelda AND universal: at boot the pack
+                    // is still universal (pre-ROM-load title), which is
+                    // exactly the logo window (cited 2026-10-07: Zelda-gated
+                    // hold never engaged). Never on FFVI. Pre-title only;
+                    // releases the moment frames stop matching, so nothing
+                    // can deadlock. Revert: delete this block.
                     try
                     {
-                        if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.ZeldaGameId && !_titlePosted && ocrBlocks.Count > 0)
+                        if (Packs.PackRegistry.Current.GameId != Packs.PackRegistry.FfviGameId && !_titlePosted && ocrBlocks.Count > 0)
                         {
                             bool allLogoBands = true;
                             foreach (var b in ocrBlocks)
@@ -1940,7 +1943,13 @@ namespace WunderLanguage.Host.Capture
                 // Hint-gated bars: logo evidence (caps/years/copyright in frame)
                 // fires at 30; bare quiet needs 120. Pre-logo black and idle fields
                 // accumulate quiet without hints and must never mint a TITLE.
-                int titleBar = _quietHint ? QuietTitleLoops : QuietTitleLoops * 4;
+                // Logo-window repair (cited 2026-10-07: the Zelda logo dwell is
+                // shorter than 30 loops, so the title starved even with the
+                // dialogue hold working). Non-FFVI hinted bar is 10; FFVI keeps
+                // 30/120 byte-identical, and universal still can't publish
+                // (empty FullTitle blocks it below). Revert: delete ffvi line.
+                bool ffviTitle = Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId;
+                int titleBar = _quietHint ? (ffviTitle ? QuietTitleLoops : 10) : QuietTitleLoops * 4;
                 if (_quietCount == titleBar && !string.IsNullOrEmpty(packTitle)
                     && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText))
                 {
