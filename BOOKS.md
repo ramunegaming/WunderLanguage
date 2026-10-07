@@ -210,6 +210,20 @@ rule). Revisit only on evidence:**
   drifted pairs out; every activation logs [avg]. Replay parity
   structural (replay refeeds text, never bitmaps) + verified: 0 drift /
   263-identical-to-baseline. Live proof = [avg] lines + panel truth.
+- A1 trial LIVE (Zelda 30-min session, 2026-10-07): 23 [avg] activations,
+  0 errors. Attribution join lost (replay wiped app.log before backup —
+  procedure fix: backup-before-replay unconditional). Fires: 54, of which
+  ~40 score exact-or-trivially-off vs the script; systematic リンク→
+  あいうく-class misreads noted, NO script-sourced string fixes per user
+  directive (script is verification oracle only).
+- Turned-page rescue PROVEN live: 23 flush-on-pageturn publishes, incl.
+  Zelda's dungeon page and uncle page 1. Fragment-hold: 4 kills, no
+  escapes. Title: 58 quiet watches, 0 publishes — still starving.
+- Sentence-double collapse (live 4/54 doubled fires: uncle XYXY, Zelda
+  demon XX, soldiers XX, sage XYXY + seen-never-fired candidates of the
+  same shape): adjacent-identical + exact-half collapse at normalize,
+  keeps last terminator, len>=2 guard. FFVI predicted drift 0, verified
+  0 / 263-identical. Unblocks the noisy seen-never-fired pages.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
