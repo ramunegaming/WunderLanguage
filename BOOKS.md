@@ -204,6 +204,12 @@ rule). Revisit only on evidence:**
   align before mean). 1 real fix (single-read tail error corrected by the
   mean), 0 regressions on clean reads, identical ms. Positive-but-thin:
   justifies a production trial reusing dwell crops (no extra waits/calls).
+- A1 production TRIAL (live, 2026-10-07): host means previous + current
+  full capture and OCRs the mean in a single pass — no extra waits, no
+  extra OCR calls (the pass it replaces). Gate frac<0.002 (static) keeps
+  drifted pairs out; every activation logs [avg]. Replay parity
+  structural (replay refeeds text, never bitmaps) + verified: 0 drift /
+  263-identical-to-baseline. Live proof = [avg] lines + panel truth.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
