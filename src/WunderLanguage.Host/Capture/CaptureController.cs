@@ -587,7 +587,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -2161,8 +2161,30 @@ namespace WunderLanguage.Host.Capture
                 // (empty FullTitle blocks it below). Revert: delete ffvi line.
                 bool ffviTitle = Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId;
                 int titleBar = _quietHint ? (ffviTitle ? QuietTitleLoops : 10) : QuietTitleLoops * 4;
+                // Mistitle repair (cited 2026-10-08: TITLE published at loop 25
+                // mid-intro-scroll — copyright-year hint + 10 quiet loops while
+                // the blocks were tall inset scroll text, not logo bands).
+                // Hinted non-FFVI path additionally requires logo geometry
+                // (all JA blocks full-bleed short bands — the same test as the
+                // logo hold). FFVI byte-identical; bare-quiet (bar 120) and
+                // static (blocks==null) paths unchanged. Revert: delete the
+                // logoGeometry conjunct.
+                bool logoGeometry = true;
+                if (blocks != null && _quietHint && !ffviTitle)
+                {
+                    // All JA blocks must be logo bands; non-JA blocks
+                    // (sprites, HUD) are invisible to this test. No JA at
+                    // all passes through (bare-quiet path decides those).
+                    logoGeometry = true;
+                    foreach (var b in blocks)
+                    {
+                        if (!HasJapanese(b.Text)) continue;
+                        if (!(b.X <= 6 && b.X + b.Width >= _battleFrameW - 6 && b.Height < 100)) { logoGeometry = false; break; }
+                    }
+                }
                 if (_quietCount == titleBar && !string.IsNullOrEmpty(packTitle)
-                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText))
+                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
+                    && logoGeometry)
                 {
                     FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint})");
                     return packTitle;
