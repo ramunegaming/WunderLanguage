@@ -2438,6 +2438,17 @@ namespace WunderLanguage.Host.Capture
             if (isDecision) _lastDecisionSig = sig;
                         bool isTitle = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
             string kind = isTitle ? "TITLE" : (isDecision ? "DECISION" : "MENU");
+            // Title purity (cited 2026-10-07: Zelda scroll fragment
+            // "これからの" rode a marker row into a minted TITLE).
+            // Zelda-gated: TITLE bubbles carry only the TitleMarker row;
+            // frame junk is omission-only. FFVI untouched (neither FFVI
+            // corpus contains a TITLE, so harmlessness is unprovable via
+            // replay — pack-scope instead). Revert: delete this block.
+            if (kind == "TITLE" && Packs.PackRegistry.Current.GameId == Packs.PackRegistry.ZeldaGameId)
+            {
+                var markerRows = jaRows.Where(a => (a.t ?? "").Contains(Packs.PackRegistry.Current.TitleMarker)).ToList();
+                if (markerRows.Count > 0) jaRows = markerRows;
+            }
             FileLogger.Log($"[menu] publish {kind} lines={jaRows.Count}");
             _ = TranslateAndPublishMenuAsync(kind, jaRows);
         }
@@ -4188,6 +4199,19 @@ namespace WunderLanguage.Host.Capture
                 if (_stopped) return;
                 // Kind derived from rows: TITLE only for Triforce single, else MENU.
                 string kind2 = oldSig == _lastDecisionSig ? "DECISION" : (newJa.Contains(Packs.PackRegistry.Current.TitleMarker) && newJa.Split('\n').Length <= 2 ? "TITLE" : "MENU");
+                // Title purity, update path (same cited flaw as the publish
+                // path above): keep only the marker row in Zelda TITLEs.
+                if (kind2 == "TITLE" && Packs.PackRegistry.Current.GameId == Packs.PackRegistry.ZeldaGameId)
+                {
+                    var keep = clean.Select((r, i) => (r, i)).Where(x => (x.r.t ?? "").Contains(Packs.PackRegistry.Current.TitleMarker)).Select(x => x.i).ToList();
+                    if (keep.Count > 0)
+                    {
+                        clean = keep.Select(i => clean[i]).ToList();
+                        en = keep.Select(i => en[i]).ToList();
+                        newJa = string.Join("\n", clean.ConvertAll(r => r.t));
+                        newEn = string.Join("\n", en);
+                    }
+                }
                 try { CorpusRecordBubble("menu-update:" + kind2, newJa, newEn, oldSig); } catch { }
                 MenuUpdated?.Invoke(oldSig, kind2, newJa, newEn);
             }
