@@ -236,6 +236,15 @@ namespace WunderLanguage.Host.Capture
         private bool _lastFrameNovel = true;
         private int _pendingFrameStableCount;
         private const int RequiredPreOcrStablePolls = 1;
+        // A1 averaging trial (HDIP Ch 25, pilot 2026-10-07: 1 real fix, 0
+        // regressions on 4 pairs): mean of the current + previous captured
+        // frame, single OCR pass on the mean. No extra waits, no extra OCR
+        // calls — the pass it replaces. Gate: diff frac < 0.002 (static),
+        // so drifted frames never average (pilot: 1px drift breaks the
+        // mean). Logged as [avg]. Revert: delete these two fields + the
+        // update block + the OCR-site block + AverageBitmaps.
+        private Bitmap? _prevFullFrame;
+        private double _lastDiffFrac = 1.0;
         // S1.1 startup warmup: settled-OCR count since Start (not wall time, so tired
         // laptops get the same loop-count warmup — slower in seconds, never wrong).
         private int _settledOcrLoops;
@@ -648,6 +657,7 @@ namespace WunderLanguage.Host.Capture
                             }
                         }
                         await Task.Delay(IdleDelayMs, token);
+                        try { _prevFullFrame?.Dispose(); _prevFullFrame = null; _prevFullFrame = (Bitmap)bitmap.Clone(); } catch { _prevFullFrame = null; }
                         continue;
                     }
 
@@ -684,7 +694,35 @@ namespace WunderLanguage.Host.Capture
                     // box proposer; vocab games keep the tuned detector-only
                     // path (vision item 2 — byte-identical for FFVI).
                     bool learningMode = (Packs.PackRegistry.Current.ItemVocabulary?.Count ?? 0) == 0;
-                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(bitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
+                    // A1 trial: mean of previous + current capture, single OCR
+                    // pass on the mean. Previous frame is last loop's capture;
+                    // the static gate (frac<0.002) rejects drifted pairs, so
+                    // the mean is aligned by construction. Miss = plain frame.
+                    Bitmap ocrBitmap = bitmap;
+                    Bitmap? avgBitmap = null;
+                    try
+                    {
+                        if (_prevFullFrame is not null && _prevFullFrame.Size == bitmap.Size && _lastDiffFrac < 0.002)
+                        {
+                            avgBitmap = AverageBitmaps(_prevFullFrame, bitmap);
+                            if (avgBitmap is not null)
+                            {
+                                ocrBitmap = avgBitmap;
+                                FileLogger.Log($"[loop {iteration}] [avg] mean-of-2 ({frameDiff})");
+                            }
+                        }
+                    }
+                    catch { avgBitmap = null; ocrBitmap = bitmap; }
+                    var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(ocrBitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
+                    try { avgBitmap?.Dispose(); } catch { }
+                    // Stash this capture for next loop's mean (all paths).
+                    try
+                    {
+                        _prevFullFrame?.Dispose();
+                        _prevFullFrame = null;
+                        _prevFullFrame = (Bitmap)bitmap.Clone();
+                    }
+                    catch { _prevFullFrame = null; }
                     ocrSw.Stop();
                     CostPush(_costOcr, ref _costOcrIx, ref _costOcrN, ocrSw.Elapsed.TotalMilliseconds);
                     CostPush(_costDet, ref _costDetIx, ref _costDetN, _ocrClient.LastDetMs);
@@ -4611,6 +4649,7 @@ namespace WunderLanguage.Host.Capture
                         if (rowHit) { if (y < top) top = y; bot = y; }
                     }
                     double frac = (double)changed / cur.Length;
+                    _lastDiffFrac = frac;
                     string kind = frac < 0.002 ? "static" : ((double)low / Math.Max(1, changed) > 0.7 ? "lowband" : "spread");
                     res = bot < 0 ? "diff=0.000 band=-- low=0.00 kind=static"
                         : $"diff={frac:0.000} band={(double)top / th:0.00}-{(double)bot / th:0.00} low={(double)low / Math.Max(1, changed):0.00} kind={kind}";
@@ -4618,7 +4657,45 @@ namespace WunderLanguage.Host.Capture
                 _prevSmall = cur; _prevSmallW = tw; _prevSmallH = th;
                 return res;
             }
-            catch { _prevSmall = null; return "diff=err"; }
+            catch { _prevSmall = null; _lastDiffFrac = 1.0; return "diff=err"; }
+        }
+        // Pixel mean of two same-size captures (A1 trial). 32bpp scratch,
+        // alpha forced opaque — game captures carry no alpha. Null on any
+        // mismatch/failure: caller falls back to the plain frame.
+        private static Bitmap? AverageBitmaps(Bitmap a, Bitmap b)
+        {
+            if (a.Size != b.Size || a.Width <= 0 || a.Height <= 0) return null;
+            var out_ = new Bitmap(a.Width, a.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            {
+                var rect = new Rectangle(0, 0, a.Width, a.Height);
+                // ReadOnly locks with an explicit format convert on lock —
+                // no scratch copies needed.
+                var da = a.LockBits(rect, ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                var db = b.LockBits(rect, ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                var dd = out_.LockBits(rect, ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                try
+                {
+                    int stride = Math.Abs(da.Stride);
+                    var ra = new byte[stride];
+                    var rb = new byte[stride];
+                    var rd = new byte[stride];
+                    for (int y = 0; y < a.Height; y++)
+                    {
+                        System.Runtime.InteropServices.Marshal.Copy(da.Scan0 + y * da.Stride, ra, 0, stride);
+                        System.Runtime.InteropServices.Marshal.Copy(db.Scan0 + y * db.Stride, rb, 0, stride);
+                        for (int i = 0; i < stride; i += 4)
+                        {
+                            rd[i] = (byte)((ra[i] + rb[i]) >> 1);
+                            rd[i + 1] = (byte)((ra[i + 1] + rb[i + 1]) >> 1);
+                            rd[i + 2] = (byte)((ra[i + 2] + rb[i + 2]) >> 1);
+                            rd[i + 3] = 255;
+                        }
+                        System.Runtime.InteropServices.Marshal.Copy(rd, 0, dd.Scan0 + y * dd.Stride, stride);
+                    }
+                }
+                finally { a.UnlockBits(da); b.UnlockBits(db); out_.UnlockBits(dd); }
+            }
+            return out_;
         }
     }
 }
