@@ -203,3 +203,8 @@ rule). Revisit only on evidence:**
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
   needed. D1 consensus labels implied trivial by the same result.
+- B4 combiner rank-fusion (HDIP Ch 11): closed UNIMPLEMENTED with data —
+  3 real battle frames, 13 classical boxes, zero IoU>0.5 contests with
+  detector boxes. The proposers cover different regions by design; there is
+  no cross-proposer contest to fuse. Revisit only if the classical-vs-detector
+  contest ever fires live (observable in [blocks] cls markers).
