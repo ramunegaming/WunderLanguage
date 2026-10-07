@@ -853,7 +853,10 @@ namespace WunderLanguage.Host.Capture
                                 int cw = System.Math.Min(biggest.Width, bitmap.Width - cx), ch = System.Math.Min(biggest.Height, bitmap.Height - cy);
                                 if (cw > 8 && ch > 8)
                                 {
-                                    string sdir = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot", "settle");
+                                    // Persist OUTSIDE troubleshoot/ (fresh bundle per
+                                    // launch wipes it — cited 2026-10-07: a full
+                                    // ring died that way before harvest).
+                                    string sdir = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "WunderLanguage", "settle-eval");
                                     System.IO.Directory.CreateDirectory(sdir);
                                     string fn = $"settle_{_settleSaved:00}_{iteration}.png";
                                     using (var crop = bitmap.Clone(new System.Drawing.Rectangle(cx, cy, cw, ch), bitmap.PixelFormat))
