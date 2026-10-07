@@ -1122,6 +1122,39 @@ namespace WunderLanguage.Host.Capture
                             _candidateGrewThisRead = false;
                             _flashFired = false;
                         }
+                        // Turned-page rescue (cited 2026-10-07, measured: 109 long
+                        // unterminated Zelda texts never fired — both flush paths
+                        // demand completeness, so a scroll page that turns
+                        // mid-sentence dies silently). Same turn evidence as
+                        // flush-on-scroll, but for long substantial pages that
+                        // never terminated: publish or lose forever. Headless
+                        // fragments excluded (M5 recall shape), shorts excluded
+                        // (fragment-hold owns them), junk/blend/sacrifice as
+                        // usual. Shared: FFVI item rows are short (<15 strip)
+                        // and can't reach this branch; replay parity decides.
+                        // Revert: delete this branch.
+                        else if (_candidateStableCount >= 2
+                            && !string.IsNullOrEmpty(_candidateText)
+                            && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText)
+                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                            && !IsIncompleteSacrifice(_candidateText) && !StartsHeadlessFragment(_candidateText)
+                            && HasJapanese(_candidateText) && HasAnchorSubstance(_candidateText)
+                            && StripForOverlap(_candidateText).Length >= 15)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-turned-page (publishing unterminated scrolled page)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-turned-page", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
+                            _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
+                            string turnedText = _candidateText;
+                            _ = TranslateAndPublishAsync(turnedText);
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
                         // Single garbled scroll-out must not wipe a held line.
                         else if (_candidateStableCount >= RequiredStableReadings
                             && !IsJunkOcr(_candidateText) && !IsEllipsisOnly(_candidateText)
