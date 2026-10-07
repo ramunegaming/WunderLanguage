@@ -224,6 +224,23 @@ rule). Revisit only on evidence:**
   same shape): adjacent-identical + exact-half collapse at normalize,
   keeps last terminator, len>=2 guard. FFVI predicted drift 0, verified
   0 / 263-identical. Unblocks the noisy seen-never-fired pages.
+- Sentence-double LIVE PROOF (Zelda session 2026-10-08, keeper-preserved):
+  5/5 [sentdedup] collapses correct (demon XX→X keeping ！, uncle XYXY,
+  old-woman XX), zero exact-double fires in 37. Residual: variance-doubles
+  escape (loop-731 old-woman fire: halves differ by OCR variance) — queued
+  as fuzzy-halves, needs more instances before scoping.
+- Keeper system PROVEN: play survived a mid-session restart (2 banners,
+  one continuous record), 5504 play lines, 37 fires, 0 errors.
+- REJECTED guard (measured): pageturn-flush stableCount>=2 would kill 5/7
+  legit count-1 flushes to stop 1 junk fire (「今日は日本人です。」,
+  loop-458: 1-sample transition read evicted a count-6 held sign, then got
+  flushed by the next change). Flush-hardening needs a tighter distinguisher
+  (length/provenance, not age) + more instances. Queued, not scoped.
+- Mistitle instance (queued): [menu] publish TITLE fired on scroll-mid
+  fragment 「というのは、」 (loop 25, avg'd read — attribution unclear).
+  Needs code-path read before scoping.
+- A1 trial: 10 activations, all on boot/menu screens (copyright, PLAYER
+  SELECT, scroll-mid); dialogue attribution still open. Trial stays in.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
