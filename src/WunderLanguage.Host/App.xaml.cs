@@ -67,6 +67,7 @@ namespace WunderLanguage.Host
                 {
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
+                        FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log
                         int mism = Capture.ReplayChecker.Run(args[i + 1]);
                         FileLogger.Log($"[replay] exit mismatches={mism}");
                         Shutdown(mism == 0 ? 0 : 1);
