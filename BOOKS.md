@@ -197,5 +197,9 @@ rule). Revisit only on evidence:**
   ひだソて): held, never shipped.
 - Finetuning on live outputs: banned (circularity + feedback).
 - CAT 4-bit on weak VRAM: pre-check + skip, never crash.
-- ETW/WMI/tier-2/coalescing/sequential-scan: parked, not rejected —
+- ETW/WMI/tier-2/coalescing/sequential-scan: parked, not rejected -
   each names its unlocking evidence above.
+- B5 positional-instability (HDIP): growth excluded, equal-length settled
+  runs read near-perfect (max 2 disagreements at any position over 52
+  runs) — no drift-shaped positional effect, no position-weighted trust
+  needed. D1 consensus labels implied trivial by the same result.
