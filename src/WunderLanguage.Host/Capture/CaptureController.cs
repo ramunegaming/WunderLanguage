@@ -504,7 +504,65 @@ namespace WunderLanguage.Host.Capture
             s = Regex.Replace(s, @"…{2,}$", "…");
             // … eats a following ！ (なかった……！ → なかった…); true ！ untouched.
             s = Regex.Replace(s, @"…+！", "…");
+            // Sentence-double collapse (cited 2026-10-07 Zelda live: 4/54
+            // fires carried an internal double from overlapping box reads —
+            // "X。 X。" posted twice; seen-but-never-fired candidates show
+            // the same shape blocking stability). Pack-blind, replay-covered
+            // (this function). Revert: delete the call + the helper.
+            s = CollapseRepeatedSentences(s);
             return s;
+        }
+        private static string CollapseRepeatedSentences(string s)
+        {
+            // Split into (body, terminator); compare bodies punctuation-
+            // blind (… vs ！ variants are the same sentence re-read).
+            // Collapse adjacent identicals, then an exact repeated half
+            // (XYXY → XY). Bodies < 2 chars never collapse (choice menus).
+            // Keeps the LAST occurrence (later reads are the more complete
+            // ones: … → ！ as the line finishes typing).
+            var parts = Regex.Split(s, @"([。！？…]+)");
+            var bodies = new System.Collections.Generic.List<string>();
+            var terms = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < parts.Length; i += 2)
+            {
+                string body = parts[i].Trim(' ', '　', '、', '，', ',', '・', '\t', '\n', '\r');
+                string term = (i + 1 < parts.Length) ? parts[i + 1] : "";
+                if (body.Length > 0) { bodies.Add(body); terms.Add(term); }
+            }
+            if (bodies.Count < 2) return s;
+            var keptB = new System.Collections.Generic.List<string>();
+            var keptT = new System.Collections.Generic.List<string>();
+            bool cut = false;
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                if (keptB.Count > 0 && bodies[i].Length >= 2 && bodies[i] == keptB[keptB.Count - 1])
+                {
+                    keptT[keptT.Count - 1] = terms[i];
+                    cut = true;
+                    continue;
+                }
+                keptB.Add(bodies[i]);
+                keptT.Add(terms[i]);
+            }
+            if (keptB.Count >= 2 && keptB.Count % 2 == 0)
+            {
+                int h = keptB.Count / 2;
+                bool halves = true;
+                for (int i = 0; i < h; i++)
+                    if (keptB[i].Length < 2 || keptB[i] != keptB[h + i]) { halves = false; break; }
+                if (halves)
+                {
+                    for (int i = 0; i < h; i++) keptT[i] = terms[h + i];
+                    keptB.RemoveRange(h, h);
+                    keptT.RemoveRange(h, h);
+                    cut = true;
+                }
+            }
+            if (!cut) return s;
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < keptB.Count; i++) { sb.Append(keptB[i]); sb.Append(keptT[i]); }
+            try { FileLogger.Log($"[sentdedup] \"{s}\" -> \"{sb}\""); } catch { }
+            return sb.ToString();
         }
 
         public CaptureController(IntPtr hWnd, GameRegion gameRegion, OcrClient ocrClient, TranslationManager translationManager, Func<IntPtr, bool>? isCompanionWindow = null)
@@ -529,7 +587,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
