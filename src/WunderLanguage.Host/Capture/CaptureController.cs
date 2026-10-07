@@ -3724,7 +3724,42 @@ namespace WunderLanguage.Host.Capture
             if (ci >= 0) t = t.Substring(0, ci);
             ci = t.IndexOf(':');
             if (ci >= 0) t = t.Substring(0, ci);
-            return ApplyZeldaOcrFixups(t.Trim()).Trim();
+            string normed = ApplyZeldaOcrFixups(t.Trim()).Trim();
+            // Fuzzy canonical (cited paper #7 JaPOC rule: edit<2, ratio<0.30,
+            // else pass through; measured on 1031 FFVI fired lines: 30 distinct
+            // near-miss pairs, all correct mappings, zero wrong). Closed-domain
+            // only: this helper serves item/monster assembly, never dialogue.
+            // Unique-best required; empty-vocab packs no-op. Revert: delete
+            // from the fuzzy line to the return.
+            try
+            {
+                var p = Packs.PackRegistry.Current;
+                var vocab = new System.Collections.Generic.HashSet<string>();
+                foreach (var v in p.ItemVocabulary ?? new System.Collections.Generic.List<string>()) vocab.Add(v);
+                foreach (var v in p.MonsterVocabulary ?? new System.Collections.Generic.List<string>()) vocab.Add(v);
+                foreach (var v in p.BattleCommands ?? new System.Collections.Generic.List<string>()) vocab.Add(v);
+                if (vocab.Count > 0 && !vocab.Contains(normed) && normed.Length >= 2)
+                {
+                    string? best = null;
+                    int bestD = 99;
+                    bool tied = false;
+                    foreach (var v in vocab)
+                    {
+                        if (System.Math.Abs(v.Length - normed.Length) > 2) continue;
+                        int d = LevenshteinDistance(normed, v);
+                        if (d < bestD) { bestD = d; best = v; tied = false; }
+                        else if (d == bestD) tied = true;
+                    }
+                    if (!tied && best != null && bestD >= 1 && bestD <= 2
+                        && (double)bestD / System.Math.Max(1, normed.Length) < 0.30)
+                    {
+                        FileLogger.Log($"[fuzzy] \"{normed}\" -> \"{best}\" (d={bestD})");
+                        return best;
+                    }
+                }
+            }
+            catch { }
+            return normed;
         }
         // Returns the estimated window shift (0 when skipped): the fire gate
         // bypasses settle on confident shifts (real scrolls post instantly;
