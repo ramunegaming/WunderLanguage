@@ -741,36 +741,50 @@ namespace WunderLanguage.Host.Capture
                     // geometry lives in BattleFrame.cs. Non-battle frames fall through.
                     try
                     {
+                        // Zelda repair (cited 2026-10-07: Zelda dialogue boxes
+                        // classify as battle cls=2, latch battle context, and
+                        // suppress all dialogue; FFVI continuity machinery is
+                        // pack-scoped — off-pack it only ever made garbage
+                        // because Zelda/universal battle vocabs are empty).
+                        // Non-FFVI packs clear latched battle state once and
+                        // never suppress dialogue. FFVI path byte-identical.
+                        // Revert: delete ffviBattle + the wipe below.
+                        bool ffviBattle = Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId;
+                        if (!ffviBattle && (_battleFiredSig != "" || _battleCooldown > 0 || _itemBoxOpen || _battleMonsterSticky.Count > 0 || _battleItemSticky.Count > 0))
+                        {
+                            _battlePrevSig = ""; _battleFiredSig = ""; _battleMonsterSticky = new List<string>(); _battleItemSticky = new List<string>(); _itemBoxOpen = false; _battleItemFirePrev = ""; _battleBlankFirePrev = ""; _battleItemFireRuns = 0; _battleItemFiredContent = 0; _battleWeaponFirePrev = ""; _battleWeaponFireRuns = 0; _battleWeaponFired = "";
+                            FileLogger.Log("[battle] non-FFVI pack: latched battle state cleared");
+                        }
                         string battleTop = "";
                         int battleClass = BattleFrame.Classify(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, out battleTop, _itemBoxOpen);
-                        if (battleClass == 2)
+                        if (ffviBattle && battleClass == 2)
                         {
                             // Rewards live in the battle frame now (UpdateBattleFrame
                             // carries the top bar); they no longer dialogue-fire.
                             FileLogger.Log($"[battle] rewards frame owns top-bar (dialogue suppressed)");
                             extractedText = string.Empty;
                         }
-                        else if (battleClass == 1)
+                        else if (ffviBattle && battleClass == 1)
                         {
                             if (!string.IsNullOrEmpty(extractedText))
                                 FileLogger.Log($"[battle] bottom-frame suppressed from dialogue ({ocrBlocks.Count} blocks)");
                             extractedText = string.Empty;
                         }
-                        else if (battleClass == 3 && InBattleContext())
+                        else if (ffviBattle && battleClass == 3 && InBattleContext())
                         {
                             // Item box owns the bottom grid now; like rewards,
                             // it never dialogue-fires.
                             FileLogger.Log($"[battle] item box owns bottom (dialogue suppressed)");
                             extractedText = string.Empty;
                         }
-                        else if (battleClass == 4 && InBattleContext())
+                        else if (ffviBattle && battleClass == 4 && InBattleContext())
                         {
                             // Weapon box owns the bottom grid now; like the
                             // item box, it never dialogue-fires.
                             FileLogger.Log($"[battle] weapon box owns bottom (dialogue suppressed)");
                             extractedText = string.Empty;
                         }
-                        else if (battleClass == 0 && InBattleContext() && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese))
+                        else if (ffviBattle && battleClass == 0 && InBattleContext() && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese))
                         {
                             // Scroll-remnant hold: fragmented item frames
                             // (1-col, short rows) are battle-owned but
@@ -805,7 +819,10 @@ namespace WunderLanguage.Host.Capture
                     }
                     // Phase 1b: menu/title tracker. Dialogue path below frozen.
                     try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
-                    try { UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
+                    // Zelda repair: the battle tracker (publishes BATTLE frames,
+                    // owns _battleFiredSig/cooldown/stickies) runs on FFVI packs
+                    // only — same gate as the suppression above. Revert: drop the if.
+                    try { if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId) UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
                     token.ThrowIfCancellationRequested();
                     FileLogger.Log($"[loop {iteration}] OCR result: \"{extractedText}\"");
 
