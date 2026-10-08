@@ -271,8 +271,12 @@ rule). Revisit only on evidence:**
   boot, bar never reached).
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
-  copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances,
-  map still missing) — no thresholds, vetoes stay queued.
+  copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).
+  CORRECTION 2026-10-08: the overworld map carries NO text (user) — map
+  negatives can only ever be image-level (frames of the map screen for a
+  no-text-screen veto), never text. Veto text negatives re-targeted to
+  text-bearing non-dialogue: item menu, PLAYER SELECT, logo/copyright.
+  Vetoes stay queued.
 - Fuzzy-halves PARKED with data: 14 near-doubles / 18,607 corpus texts,
   ~1 panel escape (loop-731 old woman). Prize too thin for new machinery;
   revisit on recurrences. Exact doubles stay owned by sentdedup (5/5 live).
