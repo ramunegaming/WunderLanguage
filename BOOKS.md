@@ -279,6 +279,14 @@ rule). Revisit only on evidence:**
 - Corpus stub noted: ...20261007_112103.jsonl.gz (295 bytes, truncated
   gzip from a killed session) breaks naive full-corpus scans; left in
   place (corpora never rewritten), readers must skip-unreadable.
+- Zelda inventory geometry (user SVG 2026-10-08, zelda-inventory.svg;
+  normalized to game frame): ITEM (0.037,0.070,0.573,0.485), item-name
+  (0.666,0.070,0.295,0.187) — the ONLY changing text (カンテラ/
+  ブーメラン/… by selected item), pendant (0.666,0.274,0.295,0.284),
+  DO commands (0.037,0.612,0.576,0.284), EQUIPMENT
+  (0.666,0.612,0.295,0.284). Everything else sprites. Unlocks (when
+  cited, not before): item-name closed vocab, menu geometry gating.
+  No inventory-screen failure cited to date — recorded, unimplemented.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
