@@ -278,15 +278,23 @@ rule). Revisit only on evidence:**
   revisit on recurrences. Exact doubles stay owned by sentdedup (5/5 live).
 - Manga-ocr doc batch verdicts (offline, 2026-10-08, all pages + installed
   source + local HF cache; zero implementation):
-  - Generation config CONVICTED greedy: deployed config.json carries
-    beams=4/lenpen=2.0/norepeat=3, but VisionEncoderDecoderConfig hides
-    non-field keys, so from_model_config transfers nothing (effective all
-    None → defaults: greedy, lenpen 1.0, norepeat 0, maxlen 300 explicit).
-    Verified end-to-end offline. Glossary right, training page not
-    applicable at inference. CORRECTION: the length-bonus hallucination
-    mechanism and the no-repeat box-gluing certainty are both RETRACTED —
-    hallucination pressure is decoder-prior only; doubles stay
-    box-gluing-or-stutter (sentdedup covers both regardless).
+  - Generation config CORRECTED (2026-10-08, same day): the greedy verdict
+    drafted below was wrong — it probed a reconstructed path
+    (manual from_model_config on the wrapped object), not the deployed one.
+    Loading via from_pretrained, exactly as the sidecar does, yields
+    beams=4, lenpen=2.0, norepeat=3, maxlen=300. The raw-JSON keys DO
+    transfer at load; only post-hoc introspection hides them. Lesson
+    recorded: probe the deployed path, never a reconstruction. Glossary's
+    "greedy" is wrong for our runtime. Reinstated: length-bonus
+    hallucination pressure IS live; no-repeat-3 IS live, so a single read
+    cannot repeat a 3-gram — exact doubles are box-gluing, certain. The
+    shipped [rec-gen] line printed the truth on first contact (4/2.0/3,
+    greedy=False); the offline probe was the liar, not the log line.
+  - Superseded greedy draft (kept for the record, DO NOT USE): deployed
+    config.json carries beams=4/lenpen=2.0/norepeat=3, but manual
+    from_model_config on the wrapped object returned all-None, wrongly
+    suggesting greedy/lenpen-1.0/norepeat-0. The error was the probe path,
+    not the config.
   - Vocab verdict CLOSED (6144 chars): …/！/？/space/fullwidth-latin OOV,
     halfwidth ASCII + kana/kanji IN. Pipeline already routes around every
     OOV (post_process/jaconv/host-normalize); リンク IN → noise class kept.
@@ -307,6 +315,16 @@ rule). Revisit only on evidence:**
     inference behavior), host [longbox] watch (>150 chars vs 300-token
     ceiling). Both observe-only. Next run troubleshoots gen-config,
     ceiling approach, and (with _all.png) margins independently.
+- EasyOCR doc batch verdicts (offline bake-off, 2026-10-08, single saved
+  app-window frame, production scaling replicated):
+  - Detection params CLOSED negative: stock settings find most boxes (66
+    vs 56–62 for mag2/lower-thresholds/combo); variants only merge.
+    Nothing to tune; detector exonerated on this frame.
+  - Margin bake-off CLOSED negative for blanket +10px: 16 same / 48 differ
+    across 64 boxes. Helps edge-truncated glyphs (timestamp digit,
+    IN-GAME TEXT dots, TRANSLATION) but hurts more often by ingesting
+    neighbors (save slots, KILL, overlay text). Not the fix in this form;
+    edge-cuts stand as an unsolved residue with a tighter shape.
 - Zelda inventory geometry (user SVG 2026-10-08, zelda-inventory.svg;
   normalized to game frame): ITEM (0.037,0.070,0.573,0.485), item-name
   (0.666,0.070,0.295,0.187) — the ONLY changing text (カンテラ/
