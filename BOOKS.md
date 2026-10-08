@@ -278,6 +278,22 @@ rule). Revisit only on evidence:**
   verdict still open); startup sidecar-refused ×10 loops (transient,
   self-recovered — startup guard queued); titlegeo untested (no hint at
   boot, bar never reached).
+- Full-sweep verdicts (2026-10-08, 66 fires, 25 shot bundles + keeper):
+  TITLE logic VERIFIED working — loop-213 TITLE minted on the real title
+  screen (attract-loop return, marker row 神々のトライフォース, purity
+  stripped to marker); 4/4 geometry blocks correct (inset fragments).
+  NO title regression: the missed first showing is the startup race (27
+  errors, ALL loops 1–37, zero after) eating the boot window while the
+  sidecar loads. Startup gate upgraded from queued to next-batch:
+  gate the OCR loop on sidecar health.
+  Intro scroll pages 1–2 outrun stability (page seen once at loop 55,
+  never fires; shot confirms panel empty mid-scroll) — needs own scoping.
+  A1: 3/43 avg reads on dialogue (uncle + sage, misreads intact) —
+  engages safely, win unproven, stays in. sentdedup 12/12, 0 exact
+  doubles escaped; fuzzy-halves escapes now ~7 (revisit threshold).
+  KILL×10 + 1995×10 suppressions correct. longbox 0 (ceiling clear).
+  rec-gen line live (4/2.0/3). New areas: big key, Kakariko signposts
+  (SIGN DIALOGUE source confirmed), flute father, pub, yard man cleaner.
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).
@@ -288,6 +304,15 @@ rule). Revisit only on evidence:**
   framework stays game-blind. Veto text negatives re-targeted to
   text-bearing non-dialogue: item menu, PLAYER SELECT, logo/copyright.
   Vetoes stay queued.
+- Zelda textbox sprite map (user spec 2026-10-08, from chat images —
+  sprites, NOT font glyphs; handling needs sprite detection, queued as
+  sidecar+host feature, NOT implemented): heart pickup → emit "<3"
+  inline; sign left-arrow → "<-"; sign down-arrow → "↓" (U+2193);
+  Link-face sprite (wanted poster) → ignore, not text; big decision
+  arrow → selection marker (left of chosen option in decision menus);
+  「/」 brackets present, handling TBD on cited misread. WORKING
+  HYPOTHESIS: unexplained leading-glyph junk (口力, ●, 、) may be
+  sprite misreads — check future junk against this map before scoping.
 - Fuzzy-halves PARKED with data: 14 near-doubles / 18,607 corpus texts,
   ~1 panel escape (loop-731 old woman). Prize too thin for new machinery;
   revisit on recurrences. Exact doubles stay owned by sentdedup (5/5 live).
