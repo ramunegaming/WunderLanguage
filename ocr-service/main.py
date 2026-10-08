@@ -389,6 +389,23 @@ def _load_ocr_stage():
     USE_GPU = DEVICE == "cuda"
     mocr = MangaOcr()
     _slog("mangaocr-loaded")
+    # Inference-behavior self-identification (cited 2026-10-08: deployed
+    # config carries beams/length-penalty/no-repeat, but the config object
+    # hides non-field keys, so from_model_config transfers nothing and
+    # generate() falls back to defaults: greedy, no length bonus, no
+    # repeat ban (max_length=300 comes from the explicit call arg).
+    # Verified offline 2026-10-08 (effective Nones all around). This line
+    # convicts which behavior every log ran under if that ever changes.
+    # Read-only introspection, zero inference change.
+    # Revert: delete this block.
+    try:
+        _gc = mocr.model.generation_config
+        _beams = _gc.num_beams if _gc.num_beams is not None else 1
+        _lenpen = _gc.length_penalty if _gc.length_penalty is not None else 1.0
+        _norep = _gc.no_repeat_ngram_size if _gc.no_repeat_ngram_size is not None else 0
+        print(f"[WunderLanguage] rec-gen beams={_beams} lenpen={_lenpen} norepeat={_norep} maxlen=300 greedy={_beams == 1}", flush=True)
+    except Exception as _gce:
+        print(f"[WunderLanguage] rec-gen introspection failed ({_gce})", flush=True)
     reader = easyocr.Reader(["ja"], gpu=USE_GPU)
     _slog("easyocr-loaded")
     READY["ocr"] = "ready"

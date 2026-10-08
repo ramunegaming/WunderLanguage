@@ -809,6 +809,13 @@ namespace WunderLanguage.Host.Capture
                     string? remembered = null;
                     try { remembered = LookupMined(rawTrim); } catch { }
                     string extractedText = ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(remembered ?? rawTrim)));
+                    // 300-token ceiling watch (cited 2026-10-08: model
+                    // max_length=300; our longest boxes run ~100 chars, so
+                    // 150 chars is early warning, not a boundary. Observe-only:
+                    // proves the ceiling stays irrelevant, or convicts the
+                    // first box that approaches it. Revert: delete this block.
+                    if (extractedText.Length > 150)
+                        FileLogger.Log($"[loop {iteration}] [longbox] len={extractedText.Length} \"{Truncate(extractedText, 60)}\"");
                     try { MineCorrection(rawTrim, extractedText); } catch { }
                     try { CorpusRecordOcr(iteration, rawTrim, ocrBlocks, extractedText, remembered != null); } catch { }
                     // Phase 1a probe only: shape signal for menus/titles, dialogue path below unchanged.
