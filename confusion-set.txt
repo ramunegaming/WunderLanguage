@@ -1,0 +1,45 @@
+# Zelda confusion set v1 (2026-10-08)
+# Mined from 2741 [ocr-fixup] pairs in live keeper logs (our own pipeline
+# data, NOT script-sourced). Format: TRUTH -> READ count.
+# Discipline transfer (STT weighted-CE): known-confusable substitutions
+# cost less in fuzzy paths. OOV/script fixes never derive from this.
+入 -> 人 269
+賢 -> 腎 269
+む -> も 206
+賢 -> 貿 151
+' ' -> 、 146
+王 -> エ 130
+ニ -> ー 109
+運 -> 選 108
+封 -> 射 106
+げ -> け 90
+祭 -> 宗 74
+ご -> こ 67
+Ｂ -> 日 63
+Ｂ -> ロ 58
+ボ -> ポ 56
+ハ -> バ 52
+Ａ -> 日 43
+封 -> 針 41
+エ -> ュ 40
+封 -> 樹 38
+７ -> 『 37
+あ -> お 37
+Ｂ -> 目 33
+グ -> ゲ 33
+封 -> 掛 29
+娘 -> 塊 28
+開 -> 聞 28
+賢 -> 覧 24
+す -> ず 24
+さ -> き 22
+城 -> 姉 22
+む -> な 20
+ゾ -> ジ 18
+司 -> 同 18
+封 -> 批 16
+７ -> Ｐ 15
+Ａ -> 自 15
+ブ -> プ 14
+カ -> ガ 12
+Ｂ -> 自 12

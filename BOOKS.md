@@ -393,6 +393,16 @@ rule). Revisit only on evidence:**
   (0.666,0.612,0.295,0.284). Everything else sprites. Unlocks (when
   cited, not before): item-name closed vocab, menu geometry gating.
   No inventory-screen failure cited to date — recorded, unimplemented.
+- Confusion set v1 (2026-10-08, confusion-set.txt): 2741 mined [ocr-fixup]
+  pairs from live keeper logs aligned to single-char substitutions, ranked.
+  Top: 入→人 269, 賢→腎 269, む→も 206, 賢→貿 151; voicing cluster
+  (ボ→ポ, ハ→バ, グ→ゲ, ブ→プ, ゾ→ジ, す→ず, ご→こ); 封 magnet (射/針/
+  樹/掛/批); Latin-vs-kanji (Ｂ→日/ロ/目/自, Ａ→日/自). Our data, not
+  script-sourced. STT weighted-CE discipline transfer: known pairs cost
+  0.4 in fuzzy paths. Measured on 10 fire escapes: plain halves-ratios
+  already 0.05–0.17 (weights change 2/10 mildly) — fuzzy-halves needs no
+  weights, just a threshold from the full-distribution measurement;
+  weights apply to C3 vocab matching. Implementation proposed, awaiting go.
 - B5 positional-instability (HDIP): growth excluded, equal-length settled
   runs read near-perfect (max 2 disagreements at any position over 52
   runs) — no drift-shaped positional effect, no position-weighted trust
