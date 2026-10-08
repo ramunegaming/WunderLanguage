@@ -304,11 +304,16 @@ rule). Revisit only on evidence:**
   considered and REJECTED (would only delay recovery).
   Shipped startup-survival batch: (1) host quiet-hold on OCR transport
   failure (first + every 20th logged, state untouched); (2) /health
-  defaults honest ("warming", was "ready" — also fixes the CAT watcher
-  instant-ready lie); (3) 503 bodies attached to host errors; (4) CAT load
-  deferred 120s post-OCR-ready (boot window serves on a quiet machine,
-  translations fall back meanwhile). Revert phrases: revert quiet-hold,
-  revert health-defaults, revert ocr-503-detail, revert cat-defer.
+  defaults honest ("warming") — DOWNGRADED on re-verification 2026-10-08:
+  READY initializes to warming and keys are never deleted, so the live
+  path already reported correctly; the change is defense-in-depth only,
+  no live behavior change; (3) 503 bodies attached to host errors;
+  (4) CAT load deferred 120s post-OCR-ready (boot window serves on a
+  quiet machine, translations fall back meanwhile); (5) CAT watcher cap
+  90→150 polls so the deferred CAT-ready line can't expire unseen.
+  Revert phrases: revert quiet-hold,
+  revert health-defaults, revert ocr-503-detail, revert cat-defer,
+  revert catwatch-cap.
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).

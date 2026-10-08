@@ -363,7 +363,8 @@ namespace WunderLanguage.Host.Sidecar
         // Fire-and-forget poller, log-only: ready/disabled/failed lands as
         // [startup] stage=cat-<state>. No popup — the fallback chain covers
         // function, and a dialog mid-gameplay is worse than the gap.
-        // Bounded (~3min cap), cancelled on Stop. Revert: delete + 2 calls.
+        // Bounded (~5min cap to cover the 120s CAT deferral + load;
+        // cited 2026-10-08), cancelled on Stop. Revert: delete + 2 calls.
         private CancellationTokenSource? _catWatchCts;
         private void StartCatWatcher()
         {
@@ -378,7 +379,7 @@ namespace WunderLanguage.Host.Sidecar
                     try
                     {
                         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-                        for (int i = 0; i < 90 && !token.IsCancellationRequested; i++)
+                        for (int i = 0; i < 150 && !token.IsCancellationRequested; i++)
                         {
                             await Task.Delay(2000, token);
                             string cat = "unknown";
