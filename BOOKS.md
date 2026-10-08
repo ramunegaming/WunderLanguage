@@ -278,8 +278,7 @@ rule). Revisit only on evidence:**
   verdict still open); startup sidecar-refused ×10 loops (transient,
   self-recovered — startup guard queued); titlegeo untested (no hint at
   boot, bar never reached).
-- Full-sweep verdicts (2026-10-08, 66 fires, 25 shot bundles + keeper):
-  TITLE logic VERIFIED working — loop-213 TITLE minted on the real title
+- Full-sweep verdicts (2026-10-08, 66 fires, 25 shot bundles + keeper):  TITLE logic VERIFIED working — loop-213 TITLE minted on the real title
   screen (attract-loop return, marker row 神々のトライフォース, purity
   stripped to marker); 4/4 geometry blocks correct (inset fragments).
   NO title regression: the missed first showing is the startup race (27
@@ -294,6 +293,22 @@ rule). Revisit only on evidence:**
   KILL×10 + 1995×10 suppressions correct. longbox 0 (ceiling clear).
   rec-gen line live (4/2.0/3). New areas: big key, Kakariko signposts
   (SIGN DIALOGUE source confirmed), flute father, pub, yard man cleaner.
+- Boot-window outage ROOT-CAUSED (2026-10-08, same session): NOT a title
+  regression. The tree died 35s into warmup (ABNORMAL + active-process-zero
+  20:29:42) during CAT 4-bit weight load; auto-restart correctly recovered
+  (healthy 20:30:04, first OCR 20:30:05). Killer unconvicted — prime suspect
+  is the combined load spike on 6GB VRAM; a process-memory-limit job event
+  with no configured limit is on record but unexplained (possible PID-reuse
+  artifact; observability retained, no fix built on it). The restart was
+  correct (alternative was a dead engine); a warmup grace period was
+  considered and REJECTED (would only delay recovery).
+  Shipped startup-survival batch: (1) host quiet-hold on OCR transport
+  failure (first + every 20th logged, state untouched); (2) /health
+  defaults honest ("warming", was "ready" — also fixes the CAT watcher
+  instant-ready lie); (3) 503 bodies attached to host errors; (4) CAT load
+  deferred 120s post-OCR-ready (boot window serves on a quiet machine,
+  translations fall back meanwhile). Revert phrases: revert quiet-hold,
+  revert health-defaults, revert ocr-503-detail, revert cat-defer.
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).
