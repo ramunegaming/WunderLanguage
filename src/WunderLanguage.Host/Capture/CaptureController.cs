@@ -2189,6 +2189,27 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint})");
                     return packTitle;
                 }
+                // Observability for the geometry gate (cited 2026-10-08: a
+                // session with no publish can't tell blocked from untested).
+                // Fires only on the non-FFVI hinted path — FFVI identical.
+                if (_quietCount == titleBar && _quietHint && !ffviTitle && !logoGeometry)
+                {
+                    string geo = "n/a";
+                    try
+                    {
+                        if (blocks != null)
+                        {
+                            foreach (var b in blocks)
+                            {
+                                if (!HasJapanese(b.Text)) continue;
+                                geo = $"x={b.X} w={b.Width} h={b.Height} fw={_battleFrameW}";
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                    FileLogger.Log($"[menu] quiet-title blocked (non-logo geometry, {geo})");
+                }
                 return null;
             }
             catch { return null; }

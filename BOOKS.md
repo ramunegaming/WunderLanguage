@@ -256,7 +256,19 @@ rule). Revisit only on evidence:**
   inset scroll text). Hinted non-FFVI publish now requires logo geometry
   (all JA blocks full-bleed short bands, same test as logo hold); FFVI
   byte-identical, bare-quiet/static paths unchanged. Replay 0 /
-  263-identical. Live proof pending (TITLE timing on next boot).
+  263-identical. Geometry-block observability added ([menu] quiet-title
+  blocked) after a no-publish session proved indistinguishable from an
+  untested one. Live proof still pending.
+- Village session verdicts (2026-10-08, keeper-preserved, 13 fires):
+  sentdedup 7/7 correct incl. 2 new shapes (shop rupee, flute-father);
+  new areas read clean (hideout man, fortune teller, Sahasrahla search,
+  pub べっぴん改善); 4/13 junk fires (wanted-sign garble, サプリ garble,
+  自分 fragment, アプリセンター) queued for next scoping; 2 more
+  variance-double fires (thieves/かなぁ, fortune-teller/ない) — fuzzy-halves
+  escapes now 3, still parked; avg 26 activations all menu/boot (A1 dialogue
+  verdict still open); startup sidecar-refused ×10 loops (transient,
+  self-recovered — startup guard queued); titlegeo untested (no hint at
+  boot, bar never reached).
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances,
