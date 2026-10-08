@@ -415,3 +415,30 @@ rule). Revisit only on evidence:**
   detector boxes. The proposers cover different regions by design; there is
   no cross-proposer contest to fuse. Revisit only if the classical-vs-detector
   contest ever fires live (observable in [blocks] cls markers).
+- Papers #13–16 (bottleneck-2 batch, quickest-change detection; concepts
+  only, no models imported): #13 Xie et al survey (2104.04186) + #15
+  Veeravalli & Banerjee chapter (1210.5552) — transient-change framing is
+  the diagnosis (our 3-count assumes persistent pages; scroll pages are
+  transient, gone before 3 reads); Shewhart (fire-now, detect-at-onset)
+  vs CUSUM (accumulate, delay-averaged) mismatch named; thresholds come
+  off a measured delay/false-alarm curve, not fixed counts. #14 Adams &
+  MacKay BOCD — run-length posterior discipline (score over same-vs-new
+  page, not a resetting count); their likelihoods NOT transferred (we
+  have no text-read likelihood model). #16 Ren obs-scheduling PARKED
+  (needs a cost model unmeasured). Nothing to copy; framing + method
+  transferred, math left behind.
+- Bottleneck-2 dwell + single-read measurements (offline, 2026-10-09, 16
+  Zelda corpora + script oracle): 1672 sighting runs — span 1: 1250,
+  span 2: 181, span ≥3: 241 (86% dwell ≤2 loops, unfireable by the
+  3-count; loop-55 typical, not outlier). 759 substantial low-dwell
+  runs: full-page match 133 correct (18%) vs fragment-aware match 434
+  correct fragments (57%), 325 non-fragments (43%). Verdict: single
+  sights are mostly truth-fragments (scroll windows), not pages and not
+  junk — firing raw posts fragments (loop-25 mistitle precedent). Fix
+  shape is assemble-then-fire, not lower-the-count. 43% non-fragment
+  rate sets the false-alarm bar for any fast path.
+- Scroll-window assembly SCOPED offline (awaiting measurement): stitch
+  consecutive span-1 fragments in loop order, fire when the stitched
+  page matches script shape; scored on the same 759 with zero junk-fire
+  regression required. No production change until the offline number
+  lands.
