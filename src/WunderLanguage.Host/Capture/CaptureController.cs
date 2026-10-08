@@ -519,10 +519,15 @@ namespace WunderLanguage.Host.Capture
         {
             // Split into (body, terminator); compare bodies punctuation-
             // blind (… vs ！ variants are the same sentence re-read).
-            // Collapse adjacent identicals, then an exact repeated half
-            // (XYXY → XY). Bodies < 2 chars never collapse (choice menus).
-            // Keeps the LAST occurrence (later reads are the more complete
-            // ones: … → ！ as the line finishes typing).
+            // Collapse adjacent identicals/near-identicals, then a repeated
+            // half (XYXY → XY, exact or near). Bodies < 2 chars never
+            // collapse (choice menus); near-match needs len ≥ 4 both sides.
+            // Near threshold 0.40: calibrated 2026-10-08 over 6126 corpus
+            // multi-sentence texts (duplicates top out 0.333, distinct game
+            // lines bottom out 0.531 — zero observed errors either side).
+            // Closed-vocab guard: a pair touching pack vocab (item/monster/
+            // command names are distinct entities — FFVI ホーション next to
+            // ハイホーション) never collapses. Keeps the LAST occurrence.
             var parts = Regex.Split(s, @"([。！？…]+)");
             var bodies = new System.Collections.Generic.List<string>();
             var terms = new System.Collections.Generic.List<string>();
@@ -533,12 +538,32 @@ namespace WunderLanguage.Host.Capture
                 if (body.Length > 0) { bodies.Add(body); terms.Add(term); }
             }
             if (bodies.Count < 2) return s;
+            System.Collections.Generic.HashSet<string>? closed = null;
+            bool TouchesClosedVocab(string a, string b)
+            {
+                try
+                {
+                    closed ??= ClosedVocabSet();
+                    if (closed.Count == 0) return false;
+                    return closed.Contains(a) || closed.Contains(b);
+                }
+                catch { return false; }
+            }
+            bool NearDup(string a, string b)
+            {
+                if (a == b) return true;
+                if (a.Length < 4 || b.Length < 4) return false;
+                if (TouchesClosedVocab(a, b)) return false;
+                int d = LevenshteinDistance(a, b);
+                if (d == 0) return true;
+                return (double)d / System.Math.Max(a.Length, b.Length) < 0.40;
+            }
             var keptB = new System.Collections.Generic.List<string>();
             var keptT = new System.Collections.Generic.List<string>();
             bool cut = false;
             for (int i = 0; i < bodies.Count; i++)
             {
-                if (keptB.Count > 0 && bodies[i].Length >= 2 && bodies[i] == keptB[keptB.Count - 1])
+                if (keptB.Count > 0 && bodies[i].Length >= 2 && NearDup(bodies[i], keptB[keptB.Count - 1]))
                 {
                     keptT[keptT.Count - 1] = terms[i];
                     cut = true;
@@ -552,7 +577,7 @@ namespace WunderLanguage.Host.Capture
                 int h = keptB.Count / 2;
                 bool halves = true;
                 for (int i = 0; i < h; i++)
-                    if (keptB[i].Length < 2 || keptB[i] != keptB[h + i]) { halves = false; break; }
+                    if (keptB[i].Length < 2 || !NearDup(keptB[i], keptB[h + i])) { halves = false; break; }
                 if (halves)
                 {
                     for (int i = 0; i < h; i++) keptT[i] = terms[h + i];
@@ -566,6 +591,19 @@ namespace WunderLanguage.Host.Capture
             for (int i = 0; i < keptB.Count; i++) { sb.Append(keptB[i]); sb.Append(keptT[i]); }
             try { FileLogger.Log($"[sentdedup] \"{s}\" -> \"{sb}\""); } catch { }
             return sb.ToString();
+        }
+        private static System.Collections.Generic.HashSet<string> ClosedVocabSet()
+        {
+            var set_ = new System.Collections.Generic.HashSet<string>();
+            try
+            {
+                var p = Packs.PackRegistry.Current;
+                foreach (var v in p.ItemVocabulary ?? new System.Collections.Generic.List<string>()) set_.Add(v);
+                foreach (var v in p.MonsterVocabulary ?? new System.Collections.Generic.List<string>()) set_.Add(v);
+                foreach (var v in p.BattleCommands ?? new System.Collections.Generic.List<string>()) set_.Add(v);
+            }
+            catch { }
+            return set_;
         }
 
         public CaptureController(IntPtr hWnd, GameRegion gameRegion, OcrClient ocrClient, TranslationManager translationManager, Func<IntPtr, bool>? isCompanionWindow = null)
@@ -590,7 +628,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -2338,6 +2376,43 @@ namespace WunderLanguage.Host.Capture
 
             return dp[a.Length, b.Length];
         }
+        // Confusion-weighted Levenshtein (STT weighted-CE discipline):
+        // substitutions in the mined confusion set (confusion-set.txt v1,
+        // 2741 live fixup pairs) cost 0.4 instead of 1. Insert/delete stay
+        // 1. Symmetric (both directions). Used ONLY by the NormItemKey
+        // second pass — the shared integer function above is untouched.
+        // Revert: delete this function + the second pass.
+        private static readonly System.Collections.Generic.HashSet<(char, char)> ConfusionPairs = new()
+        {
+            ('入','人'), ('賢','腎'), ('む','も'), ('賢','貿'), ('王','エ'),
+            ('ニ','ー'), ('運','選'), ('封','射'), ('げ','け'), ('祭','宗'),
+            ('ご','こ'), ('Ｂ','日'), ('Ｂ','ロ'), ('ボ','ポ'), ('ハ','バ'),
+            ('Ａ','日'), ('封','針'), ('エ','ュ'), ('封','樹'), ('７','『'),
+            ('あ','お'), ('Ｂ','目'), ('グ','ゲ'), ('封','掛'), ('娘','塊'),
+            ('開','聞'), ('賢','覧'), ('す','ず'), ('さ','き'), ('城','姉'),
+            ('む','な'), ('ゾ','ジ'), ('司','同'), ('封','批'), ('７','Ｐ'),
+            ('Ａ','自'), ('ブ','プ'), ('カ','ガ'), ('Ｂ','自'),
+        };
+        private static double WeightedLevenshtein(string a, string b)
+        {
+            var dp = new double[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) dp[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) dp[0, j] = j;
+            for (int i = 1; i <= a.Length; i++)
+            {
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    double cost;
+                    if (a[i - 1] == b[j - 1]) cost = 0;
+                    else if (ConfusionPairs.Contains((a[i - 1], b[j - 1])) || ConfusionPairs.Contains((b[j - 1], a[i - 1]))) cost = 0.4;
+                    else cost = 1;
+                    dp[i, j] = System.Math.Min(
+                        System.Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1),
+                        dp[i - 1, j - 1] + cost);
+                }
+            }
+            return dp[a.Length, b.Length];
+        }
 
         // GAME OVER pack: fixed screen (big GAME OVER + 3 セーブ rows, often
         // merged into one OCR block). Shape: GAME*OVER present + 2+ セーブ rows.
@@ -3918,6 +3993,28 @@ namespace WunderLanguage.Host.Capture
                     {
                         FileLogger.Log($"[fuzzy] \"{normed}\" -> \"{best}\" (d={bestD})");
                         return best;
+                    }
+                    // Weighted second pass (cited STT discipline: known-
+                    // confusable substitutions cost less; confusion-set.txt
+                    // v1 mined from 2741 live fixup pairs). Runs ONLY when
+                    // the integer pass abstains, so existing mappings are
+                    // untouched. Unique-best, same ratio bar. Revert: delete
+                    // to the catch.
+                    string? wbest = null;
+                    double wbestD = 99;
+                    bool wtied = false;
+                    foreach (var v in vocab)
+                    {
+                        if (System.Math.Abs(v.Length - normed.Length) > 2) continue;
+                        double wd = WeightedLevenshtein(normed, v);
+                        if (wd < wbestD - 1e-9) { wbestD = wd; wbest = v; wtied = false; }
+                        else if (System.Math.Abs(wd - wbestD) < 1e-9) wtied = true;
+                    }
+                    if (!wtied && wbest != null && wbestD >= 0.4 - 1e-9 && wbestD <= 2.0
+                        && wbestD / System.Math.Max(1, normed.Length) < 0.30)
+                    {
+                        FileLogger.Log($"[fuzzy-w] \"{normed}\" -> \"{wbest}\" (d={wbestD:0.0})");
+                        return wbest;
                     }
                 }
             }
