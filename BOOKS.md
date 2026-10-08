@@ -12,6 +12,15 @@ Project-wide disciplines that came out of the reading:
 - Panel proof over compile proof; new drift needs cited truth (log/panel/screenshot).
 - Corpora under `%AppData%\WunderLanguage\corpus\` are never rewritten.
 - One thing at a time; every batch ships a revert phrase.
+- Governing principles (user, 2026-10-08 — gate every change):
+  1. Scalability: untested future games playable with zero personal
+     intervention. Pack-scoped or game-blind work only.
+  2. Reliability: accurate reads, accurate translations, posts landing
+     with the on-screen text (latency is correctness), every screen read
+     as what it is (menus, battle UI, decisions, titles). Omission over
+     misteaching, always.
+  3. Adaptability: survives setup variance — machines, ROMs, games,
+     programs. Degrades gracefully, never assumes the dev machine.
 - No finetuning on live outputs ever (circularity + bias feedback);
   adaptation lives in the symbolic layer (packs, memos, caches, thresholds).
 
