@@ -276,9 +276,37 @@ rule). Revisit only on evidence:**
 - Fuzzy-halves PARKED with data: 14 near-doubles / 18,607 corpus texts,
   ~1 panel escape (loop-731 old woman). Prize too thin for new machinery;
   revisit on recurrences. Exact doubles stay owned by sentdedup (5/5 live).
-- Corpus stub noted: ...20261007_112103.jsonl.gz (295 bytes, truncated
-  gzip from a killed session) breaks naive full-corpus scans; left in
-  place (corpora never rewritten), readers must skip-unreadable.
+- Manga-ocr doc batch verdicts (offline, 2026-10-08, all pages + installed
+  source + local HF cache; zero implementation):
+  - Generation config CONVICTED greedy: deployed config.json carries
+    beams=4/lenpen=2.0/norepeat=3, but VisionEncoderDecoderConfig hides
+    non-field keys, so from_model_config transfers nothing (effective all
+    None → defaults: greedy, lenpen 1.0, norepeat 0, maxlen 300 explicit).
+    Verified end-to-end offline. Glossary right, training page not
+    applicable at inference. CORRECTION: the length-bonus hallucination
+    mechanism and the no-repeat box-gluing certainty are both RETRACTED —
+    hallucination pressure is decoder-prior only; doubles stay
+    box-gluing-or-stutter (sentdedup covers both regardless).
+  - Vocab verdict CLOSED (6144 chars): …/！/？/space/fullwidth-latin OOV,
+    halfwidth ASCII + kana/kanji IN. Pipeline already routes around every
+    OOV (post_process/jaconv/host-normalize); リンク IN → noise class kept.
+    No structural gaps for our domain.
+  - Package 0.1.16 installed (docs describe 0.1.14; claims re-verified
+    against installed source — no drift found).
+  - Crop margins: sidecar cuts EXACTLY at box bounds (main.py crop call,
+    zero margin) vs 10px-margin training convention. Edge-cut misreads
+    plausibly related. Offline shave test: 4/14 crops robust to 8px shave,
+    rest degrade — but re-OCRed saved crops already differ from live reads,
+    so this measures fragility generally, not our tightness specifically.
+    METHODOLOGY NOTE: saved-crop re-OCR is not live-equivalent; the real
+    margin experiment (expand live boxes into full frames) needs
+    troubleshoot _all.png + corpus from one run — scoped, awaiting play.
+    Back up _all.png before replay/wipe from now on.
+  - Observability shipped: sidecar [rec-gen] startup line (effective
+    beams/lenpen/norepeat/greedy — every future log self-identifies
+    inference behavior), host [longbox] watch (>150 chars vs 300-token
+    ceiling). Both observe-only. Next run troubleshoots gen-config,
+    ceiling approach, and (with _all.png) margins independently.
 - Zelda inventory geometry (user SVG 2026-10-08, zelda-inventory.svg;
   normalized to game frame): ITEM (0.037,0.070,0.573,0.485), item-name
   (0.666,0.070,0.295,0.187) — the ONLY changing text (カンテラ/
