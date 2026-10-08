@@ -494,6 +494,18 @@ def _load_all_stages():
         READY["ocr"] = f"failed: {ex}"
         print(f"[WunderLanguage] OCR stage failed ({ex}).", flush=True)
         return
+    # Boot-window protection (cited 2026-10-08: the sidecar tree died 35s
+    # into warmup while CAT 4-bit weights loaded alongside OCR models —
+    # prime suspect is the combined load spike on 6GB VRAM, unconvicted).
+    # CAT now waits 120s after OCR-ready so the boot/title window serves
+    # on a quiet machine; translations fall back meanwhile (existing
+    # fallback chain). Daemon thread: dies with the process, no leak.
+    # Revert: delete the sleep.
+    try:
+        print("[WunderLanguage] CAT-Translate deferred 120s (boot-window protection).", flush=True)
+        time.sleep(120)
+    except Exception:
+        pass
     _load_cat_stage()
 _threading.Thread(target=_load_all_stages, daemon=True).start()
 print(f"[WunderLanguage] sidecar code version {CODE_VERSION}.")
@@ -961,8 +973,11 @@ class TranslateRequest(BaseModel):
     target_lang: str = "en"
 @app.get("/health")
 async def health():
-    ocr = READY.get("ocr", "ready")
-    cat = READY.get("cat", "ready")
+    # Honest defaults (cited 2026-10-08: defaulting to "ready" told the
+    # host the engine was up during warmup). Absent keys mean warming,
+    # never ready. Revert: restore "ready" defaults.
+    ocr = READY.get("ocr", "warming")
+    cat = READY.get("cat", "warming")
     if _NO_CAT:
         cat = "disabled"
     return {"status": "ok" if ocr == "ready" else "starting", "ocr": ocr, "device": DEVICE, "code_version": CODE_VERSION, "cat": cat}

@@ -57,7 +57,18 @@ namespace WunderLanguage.Host.Ocr
             content.Add(imageContent, "file", "capture.png");
 
             var response = await _http.PostAsync($"{_endpoint}/ocr", content);
-            response.EnsureSuccessStatusCode();
+            // Diagnostic detail (cited 2026-10-08: bare 503s hid whether the
+            // server was warming, failed, or refusing — the detail string
+            // decides the next action). Behavior unchanged: still throws on
+            // non-success, now with the server's reason attached.
+            // Revert: restore EnsureSuccessStatusCode().
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = "";
+                try { detail = (await response.Content.ReadAsStringAsync()).Trim(); } catch { }
+                if (detail.Length > 160) detail = detail.Substring(0, 160);
+                throw new HttpRequestException($"OCR {(int)response.StatusCode} {response.StatusCode}: {detail}".Trim());
+            }
 
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);

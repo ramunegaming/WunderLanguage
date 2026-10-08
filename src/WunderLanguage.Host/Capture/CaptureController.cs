@@ -228,6 +228,9 @@ namespace WunderLanguage.Host.Capture
 
         private int _consecutiveCaptureFailures;
         private const int MaxConsecutiveCaptureFailures = 5;
+        // Boot/outage survival: consecutive OCR transport failures (see
+        // catch below). Reset on every successful OCR read.
+        private int _consecutiveOcrTransportFailures;
 
         private string? _lastFrameHash;
         private string? _pendingFrameHash;
@@ -772,6 +775,7 @@ namespace WunderLanguage.Host.Capture
                     }
                     catch { avgBitmap = null; ocrBitmap = bitmap; }
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(ocrBitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
+                    _consecutiveOcrTransportFailures = 0;
                     try { avgBitmap?.Dispose(); } catch { }
                     // Stash this capture for next loop's mean (all paths).
                     try
@@ -1570,6 +1574,19 @@ namespace WunderLanguage.Host.Capture
                         WindowLost?.Invoke();
                         break;
                     }
+                }
+                catch (System.Net.Http.HttpRequestException hex)
+                {
+                    // Boot/outage survival (cited 2026-10-08: 27 ERRORs in
+                    // loops 1-37 while the sidecar warmed/restarted — full
+                    // stack spam that ate the boot window's readability while
+                    // changing nothing: the frames were unservable either
+                    // way). Transport failure holds quietly: first and every
+                    // 20th logged with cause, state untouched, loop continues.
+                    // Revert: delete this catch (falls into generic ERROR).
+                    _consecutiveOcrTransportFailures++;
+                    if (_consecutiveOcrTransportFailures == 1 || _consecutiveOcrTransportFailures % 20 == 0)
+                        FileLogger.Log($"[loop {iteration}] OCR transport hold ({_consecutiveOcrTransportFailures} consecutive): {hex.Message.Split('\n')[0]}");
                 }
                 catch (Exception ex)
                 {
