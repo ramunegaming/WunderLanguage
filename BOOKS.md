@@ -380,11 +380,14 @@ rule). Revisit only on evidence:**
   - Detection params CLOSED negative: stock settings find most boxes (66
     vs 56–62 for mag2/lower-thresholds/combo); variants only merge.
     Nothing to tune; detector exonerated on this frame.
-  - Margin bake-off CLOSED negative for blanket +10px: 16 same / 48 differ
-    across 64 boxes. Helps edge-truncated glyphs (timestamp digit,
-    IN-GAME TEXT dots, TRANSLATION) but hurts more often by ingesting
-    neighbors (save slots, KILL, overlay text). Not the fix in this form;
-    edge-cuts stand as an unsolved residue with a tighter shape.
+  - Margin bake-off CLOSED negative for blanket +10px, twice
+    independently: (a) 16 same / 48 differ on 64 boxes (single frame);
+    (b) 2026-10-08, 25 saved frames, same=62 diff=212 judged — fixes some
+    edge glyphs (みっかり→みつかり, ささけ→ささげ, leading しかし
+    recovered) but breaks more (賢者→貿者, 封印→射印 regressions on reads
+    that were right; neighbor-line soup). Mechanism: dialogue line spacing
+    ≈ margin size, so +10px eats the next line. Edge-cuts stand; next
+    shape (if ever): background-only expansion, unscoped.
 - Zelda inventory geometry (user SVG 2026-10-08, zelda-inventory.svg;
   normalized to game frame): ITEM (0.037,0.070,0.573,0.485), item-name
   (0.666,0.070,0.295,0.187) — the ONLY changing text (カンテラ/
