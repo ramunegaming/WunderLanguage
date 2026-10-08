@@ -272,9 +272,11 @@ rule). Revisit only on evidence:**
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).
-  CORRECTION 2026-10-08: the overworld map carries NO text (user) — map
-  negatives can only ever be image-level (frames of the map screen for a
-  no-text-screen veto), never text. Veto text negatives re-targeted to
+  CORRECTION 2026-10-08: ZELDA's overworld map carries NO text (user) —
+  Zelda map negatives can only ever be image-level (frames of the map
+  screen for a no-text-screen veto), never text. This is game-specific,
+  not a general claim: other games' maps may carry text, and the veto
+  framework stays game-blind. Veto text negatives re-targeted to
   text-bearing non-dialogue: item menu, PLAYER SELECT, logo/copyright.
   Vetoes stay queued.
 - Fuzzy-halves PARKED with data: 14 near-doubles / 18,607 corpus texts,
