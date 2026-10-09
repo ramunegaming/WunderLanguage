@@ -1264,6 +1264,7 @@ namespace WunderLanguage.Host.Capture
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-weak-challenger (keeping held line, weakHold={_weakHoldCount})");
                             if (_weakHoldCount >= _weakHoldThreshold
                                 && !StartsHeadlessFragment(_candidateText)
+                                && !_frameIsTitle
                                 && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
                                 && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
                             {
