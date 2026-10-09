@@ -540,6 +540,14 @@ rule). Revisit only on evidence:**
   frame+blocks); (e) translation glossary gaps (gilded, High Vor ion,
   Bicks — translation-quality queue). Proposed order: profanity guard
   (omit+log, game-blind) → A3 bake-off → battle polish scoping.
+- Profanity-hallucination guard SHIPPED: EN-trigger list (6 unambiguous
+  stems) + JA-alibi list (12 markers); withholds EN only (posts "------"
+  like untranslatable, JA read kept, no silent vanish); provider-blind
+  (fire + update paths). Predicate verified on 5 cases (cited hold,
+  Yakuza passthrough, 2 clean passes, embroidery hold). Build +0 new
+  warnings / 0 errors; replay 0 / 263-identical. Live proof (a
+  [profanity-hold] line) needs real CAT output — pending play.
+  Revert: revert profanity-guard.
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
