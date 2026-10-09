@@ -212,6 +212,16 @@ namespace WunderLanguage.Host.Packs.FFVI
             // right row 2): イートボット → オートボウガン (イートボック
             // family + ト).
             ("イートボット", "オートボウガン"),
+            // Panel-cited 2026-10-09 (FFVI Narshe run screenshots, on-screen
+            // truth): Biggs intro + guard 魔導アーマー lines. Narrow shapes;
+            // outputs match no from-pattern (idempotent, verified).
+            ("いて突っこむ", "して突っこむ"),
+            ("突っこむサコには", "突っこむザコには"),
+            ("かまっな", "かまうな"),
+            ("鹿野アニマー", "魔導アーマー"),
+            ("アニマー", "アーマー"),
+            ("サルシェ", "ナルシェ"),
+            ("どうとうこの", "とうとうこの"),
         };
         // Battle command vocabulary (cited): fight / ability / magic / item.
         // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
