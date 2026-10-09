@@ -478,3 +478,17 @@ rule). Revisit only on evidence:**
   39/39 byte-identical on banked crops, rec cost neutral (5005 vs
   5019ms); any mismatch parks the probe live; per-frame [rec-beam]
   line (ratio/tail), no host contract change. Revert: revert rec-beam.
+- Beam-SCORE metrics CLOSED negative (offline, 2026-10-09, 182
+  dialogue-band crops, script oracle): tail 0.250–0.251 on ALL crops,
+  ratio 0.04–0.09 (inverted) — sequences_scores equalize across beams,
+  carry zero signal. Paper C's score-shape does not transfer as stated.
+- Beam-STRING diversity MEASURED positive (same 182): all crops have
+  diverse beams (0 all-agree), splitting exactly on confusion pairs
+  (賢/貿/腎, ハ/バ/パ, みっかり/みつかり). Accuracy falls with
+  diversity: 0.47/0.78/0.69/0.33/0.18 across quintiles; mean div
+  correct 0.149 vs incorrect 0.235. Suspect-flag div>0.20: precision
+  0.82, recall 0.49 for wrong reads. Game-blind, no training — the
+  rec-confidence signal bottleneck 3 needed. Rescorer/combiner roadmap
+  UNBLOCKED to scoping (lower beams sometimes right, e.g. みつかり).
+  Proposed: log div + flag in [rec-beam] (observe-only), stability use
+  after. Awaiting go.
