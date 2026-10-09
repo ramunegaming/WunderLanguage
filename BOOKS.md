@@ -570,6 +570,12 @@ rule). Revisit only on evidence:**
   Wedge/Biggs NOT pinned (absent from manual pages — no source, no
   pin). Replay 0 / 263-identical. Revert: restore Matthew pin, drop
   the rest.
+- Unknown-name mask SHIPPED (`67066d0`): runs of [?？]{2,} masked
+  with private-use tokens pre-translate, restored after (fire + update
+  paths, provider-blind); single ? stays punctuation; CAT-eaten tokens
+  keep EN as-is + [qmask-lost] log. Round-trip verified (multi-run,
+  fullwidth, drop fallback). Build +0/0; replay 0 / 263-identical.
+  Live proof (masked CAT output) pending play. Revert: revert qmask.
 - Battle BATTLE-panel gaps CLOSED as designed (FFVI run corpus: 92
   battle-frame:fire, event rows post correctly; static menus don't
   repost by design — no spam). No action.
