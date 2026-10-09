@@ -341,6 +341,7 @@ def detect_and_ocr(pil_image: Image.Image):
             Image.LANCZOS,
         )
         _crop_px += recognition_crop.width * recognition_crop.height
+        _crop_div = 0.0
         try:
             if _REC_BEAM["parity"] is False:
                 raise RuntimeError("beam-probe parked")
@@ -354,9 +355,11 @@ def detect_and_ocr(pil_image: Image.Image):
                     print("[rec-beam] parity=MISMATCH probe parked, plain path", flush=True)
                     text, _beams = _plain, None
             if _beams:
-                _beam_divs.append(_beam_diversity(_beams))
+                _crop_div = _beam_diversity(_beams)
+                _beam_divs.append(_crop_div)
         except Exception:
             text, _beams = mocr(recognition_crop), None
+            _crop_div = 0.0
         if not text.strip():
             continue
         # Box confidence v0 (geometric prior ONLY — not a calibrated
@@ -380,6 +383,7 @@ def detect_and_ocr(pil_image: Image.Image):
             "conf": _conf,
             "nmerge": int(_nmerge),
             "src": _src,
+            "div": round(max(0.0, min(1.0, float(_crop_div))), 3),
         })
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:
