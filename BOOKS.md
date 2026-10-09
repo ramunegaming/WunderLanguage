@@ -517,6 +517,13 @@ rule). Revisit only on evidence:**
   pageturn 21, publish-new 37. C3/confw ZERO live engagement
   ([fuzzy]/[fuzzy-w] absent) — vocab paths untested live; A3 stays
   offline (15 FFVI frames banked for beam-choice bake-off).
+- A3 bake-off CLOSED on this material (offline, 2026-10-09, 15 FFVI
+  frames, 654 boxes, full 34-word vocab): top exact=3, fuzzy=0,
+  abstain=651; rescue opportunities 0, conflicts 0; even weakest
+  oracle (any beam within d≤2 of vocab) finds 4. Vocab reads are
+  exact or nowhere-near — no beam-choice prize exists outside
+  shop/inventory screens, which this run never opened. A3 parks
+  behind shop screens (deferred with shop UI work), not engineering.
 - A1 coverage boundary PROVEN live (FFVI corpus div audit): garbles
   that stabilize read at div 0.07–0.14 (サコ×24 loops, 鹿野アニマー/
   サルシェ×3 — beams AGREE on the wrong reading). Suspect-hold is
