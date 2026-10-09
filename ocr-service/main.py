@@ -181,6 +181,39 @@ def _det_conf(orig_w, orig_h, dom_area):
         return round(max(0.0, min(1.0, 0.5 * _s + 0.5 * _d)), 3)
     except Exception:
         return 0.0
+def _rec_with_beams(crop):
+    # Recognition-confidence probe (bottleneck 3, Paper C: beam-distribution
+    # shape, not top-beam prob). Runs the SAME generate as mocr.__call__
+    # (same preprocess, same generation_config beams, same max_length=300)
+    # but keeps all beams + sequence scores instead of dropping them.
+    # Returns (text, beam_logprobs); text must equal mocr(crop) or the
+    # caller parks the probe. return_dict gives sequences_scores (length-
+    # penalized beam log-probs — ranking preserved, fine for ratio/tail).
+    # output_scores=True is required for sequences_scores to be populated
+    # (transient ~150MB logits, freed with `out`; generate dominates).
+    # Revert: delete helper + call-site lines (revert rec-beam).
+    from manga_ocr.ocr import post_process as _pp
+    _nb = 1
+    try:
+        _nb = int(mocr.model.generation_config.num_beams or 1)
+    except Exception:
+        _nb = 1
+    img = crop.convert("L").convert("RGB")
+    if _nb < 2:
+        return mocr(crop), None
+    x = mocr._preprocess(img)
+    out = mocr.model.generate(
+        x[None].to(mocr.model.device),
+        max_length=300,
+        num_return_sequences=min(4, _nb),
+        output_scores=True,
+        return_dict_in_generate=True,
+    )
+    top = mocr.tokenizer.decode(out.sequences[0], skip_special_tokens=True)
+    text, _lp = _pp(top), [float(s) for s in out.sequences_scores]
+    del out
+    return text, _lp
+_REC_BEAM = {"parity": None}
 def detect_and_ocr(pil_image: Image.Image):
     det_scale = DETECTION_UPSCALE_FACTOR
     if pil_image.width * det_scale > 900:
@@ -259,6 +292,7 @@ def detect_and_ocr(pil_image: Image.Image):
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
+    _beam_lps = []  # per-crop beam log-probs for the [rec-beam] frame line
     for (_wb, _nmerge, _cls) in _work:
         (x_min, y_min, x_max, y_max) = _wb
         orig_x_min = x_min / det_scale
@@ -281,7 +315,22 @@ def detect_and_ocr(pil_image: Image.Image):
             Image.LANCZOS,
         )
         _crop_px += recognition_crop.width * recognition_crop.height
-        text = mocr(recognition_crop)
+        try:
+            if _REC_BEAM["parity"] is False:
+                raise RuntimeError("beam-probe parked")
+            text, _blp = _rec_with_beams(recognition_crop)
+            if _REC_BEAM["parity"] is None:
+                _plain = mocr(recognition_crop)
+                _REC_BEAM["parity"] = (text == _plain)
+                if _REC_BEAM["parity"]:
+                    print("[rec-beam] parity=ok scored path live", flush=True)
+                else:
+                    print("[rec-beam] parity=MISMATCH probe parked, plain path", flush=True)
+                    text, _blp = _plain, None
+            if _blp:
+                _beam_lps.append(_blp)
+        except Exception:
+            text, _blp = mocr(recognition_crop), None
         if not text.strip():
             continue
         # Box confidence v0 (geometric prior ONLY — not a calibrated
@@ -309,6 +358,26 @@ def detect_and_ocr(pil_image: Image.Image):
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:
         print(f"[ocr-timing] det={_det_ms:.0f}ms rec={_rec_ms:.0f}ms raw={_raw_n} merged={len(merged_boxes)} kept={len(blocks)} skip={_skipped} scal={det_scale:.2f} px={_crop_px}")
+    except Exception:
+        pass
+    try:
+        # Frame-level beam-shape summary (observe-only): log-ratio p1/pK
+        # (Paper C ratio) + tail thinness (sum of squared softmax shares).
+        # Ratio/tail interpretation happens offline from these logs.
+        if _beam_lps:
+            import math as _math
+            _rs, _ts = [], []
+            for _blp in _beam_lps:
+                if not _blp or len(_blp) < 2:
+                    continue
+                _s = sorted(_blp, reverse=True)
+                _rs.append(_s[0] - _s[-1])
+                _mx = _s[0]
+                _ex = [_math.exp(v - _mx) for v in _s]
+                _Z = sum(_ex)
+                _ts.append(sum((v / _Z) ** 2 for v in _ex))
+            if _rs:
+                print(f"[rec-beam] crops={len(_beam_lps)} scored={len(_rs)} ratiomax={max(_rs):.2f} tailmin={min(_ts):.3f}", flush=True)
     except Exception:
         pass
     primary_text = ""
