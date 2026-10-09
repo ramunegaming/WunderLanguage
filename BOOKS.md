@@ -451,3 +451,14 @@ rule). Revisit only on evidence:**
   Verdict: tiling signal is real and game-blind; the 12% needs a gate
   (length/provenance, dedup-first ordering) before any production fast
   path. Implementation proposed, awaiting go.
+- Gate search CLOSED negative (offline, 2026-10-09, 147 tiles): length
+  fails (shaped 16–57 vs junk 15–78, full overlap); dedup-first removes
+  1/18; sentdedup-shaped internal-repeat catches 0/18 (stutter isn't
+  clean XX/XYXY); B-novelty inverted (junk median 0.61 > shaped 0.33 —
+  drifted restatements contribute long tails); symmetric-tiling weak and
+  wrong-direction (shaped 50% vs junk 28%). No cheap textual separator
+  exists. Rate context: 18 junk tiles / 16 corpora ≈ 1 per session —
+  unshippable under omission-over-misteaching. Remaining shape (if
+  ever): provenance gating (fast path engages only where stability
+  starves), unmeasured. Assembly parked with data, same precedent as
+  fuzzy-halves.
