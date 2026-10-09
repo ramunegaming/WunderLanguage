@@ -620,7 +620,17 @@ rule). Revisit only on evidence:**
   JA), `--simreplay` feeds corpus (loop, extracted) through the REAL
   step and reports fire overlap vs recorded decision bubbles. JA-side
   only: dwell/bitmap, TITLE/menu, suspect-div(0), density, vocab paths
-  stay live-only by construction. Revert: revert m7c-slice2.
+  stay live-only by construction. Gap analysis (polish, proven):
+  81/83 + 99/100 overlap; extras (24+32) = dwell-fired dialogue
+  (live dwell fires carry no decision-bubble record — sim
+  stability-fires the same JA, benign) + battle/menu rows (live
+  FFVI-pack battle tracker owns them; sim runs replay-default pack —
+  known caveat); misses (2+1) = cascade from extras shifting
+  _lastTranslatedText + missing real-block context. Seam faithful;
+  gaps are documented live-only contexts, not move corruption.
+  Slice v3 scoped (needs go): feed recorded blocks (corpora carry
+  c/n/s/d) + select FFVI pack in sim; dwell/bitmap stays live-only.
+  Revert: revert m7c-slice2.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):

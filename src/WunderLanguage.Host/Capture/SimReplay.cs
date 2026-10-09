@@ -79,6 +79,33 @@ namespace WunderLanguage.Host.Capture
                 FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
                 for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
+                // Gap analysis (slice v2 polish): name the misses (recorded
+                // but never sim-fired) and extras (sim-fired but never
+                // recorded), bounded. Causes scope slice v3.
+                try
+                {
+                    var sim = new Dictionary<string, int>(StringComparer.Ordinal);
+                    foreach (var j in simFireJa) sim[j] = sim.TryGetValue(j, out int c) ? c + 1 : 1;
+                    int shown = 0;
+                    foreach (var j in recordedFires)
+                    {
+                        if (sim.TryGetValue(j, out int c) && c > 0) { sim[j] = c - 1; continue; }
+                        if (shown < 8) FileLogger.Log($"[simreplay] missed=\"{j}\"");
+                        shown++;
+                    }
+                    FileLogger.Log($"[simreplay] missedTotal={shown}");
+                    var rec2 = new Dictionary<string, int>(StringComparer.Ordinal);
+                    foreach (var j in recordedFires) rec2[j] = rec2.TryGetValue(j, out int c) ? c + 1 : 1;
+                    shown = 0;
+                    foreach (var j in simFireJa)
+                    {
+                        if (rec2.TryGetValue(j, out int c) && c > 0) { rec2[j] = c - 1; continue; }
+                        if (shown < 8) FileLogger.Log($"[simreplay] extra=\"{j}\"");
+                        shown++;
+                    }
+                    FileLogger.Log($"[simreplay] extraTotal={shown}");
+                }
+                catch { }
                 return 0;
             }
             catch (Exception ex) { try { FileLogger.Log($"[simreplay] ERROR: {ex.Message}"); } catch { } return 9999; }
