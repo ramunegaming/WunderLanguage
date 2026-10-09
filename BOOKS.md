@@ -500,3 +500,13 @@ rule). Revisit only on evidence:**
   text on div≥0.20 ([suspect-hold] log), flush paths untouched.
   Old corpora lack d → Div 0 → never holds → parity by construction.
   Revert: revert suspect-hold.
+- Combiner A2 CLOSED negative (offline bake-off, 2026-10-09, 182
+  banked crops, script oracle): top 0.489, oracle ceiling 0.533 (+8
+  crops — thin prize). Majority vote: 0 gain / 0 flips (beams never
+  agree exactly). Confusion-medoid: net -1 (1 harm: イケニエ→イケ三エ
+  — truth isn't the centroid when beams share error direction).
+  Suspect-gated medoid: 0/0, identical to top. No blind rule reaches
+  the ceiling; beams differ in punctuation/trivia, not rescue material.
+  Parked with data. A3 dissolves: confw second pass already IS the
+  shipped vocab-rescorer; beam-choice-for-vocab needs FFVI crops
+  (unbanked) → parked behind material.
