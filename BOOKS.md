@@ -615,3 +615,9 @@ rule). Revisit only on evidence:**
   qmask machinery (manual names, dialogue path) — awaiting go;
   len-ratio/repeat stay observed (thin); meta-refusal guard queued
   (n=1).
+- Name-placeholders SHIPPED (pending replay parity): pack NameGlossary
+  (FFVI 12 manual names; others empty) masked through live CAT as
+  E010 tokens, restored after (fire + update paths, provider-blind);
+  katakana-boundary longest-first (モグリン untouched, ティナ masked —
+  verified); CAT-eaten tokens keep EN + [namemask-lost]. Wedge/Biggs
+  still unpinned (no manual source). Revert: revert namemask.

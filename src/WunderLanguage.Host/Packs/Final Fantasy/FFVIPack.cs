@@ -294,6 +294,24 @@ namespace WunderLanguage.Host.Packs.FFVI
             // メタルナックル under みぎて, left hand empty). Official EN.
             ("メタルナックル", "Metal Knuckle"),
         };
+        // Dialogue name glossary (user-cited 2026-10-09: official manual
+        // literal EN). Masked through live translation (see MaskNames) —
+        // NOT merged into BattleGlossary (row-exact mechanism differs).
+        public static readonly (string ja, string en)[] NameGlossary =
+        {
+            ("ティナ", "Tina"),
+            ("ロック", "Lock"),
+            ("モグ", "Mog"),
+            ("エドガー", "Edgar"),
+            ("マッシュ", "Mash"),
+            ("カイエン", "Cayenne"),
+            ("ガウ", "Gau"),
+            ("セリス", "Celes"),
+            ("セッツァー", "Setzer"),
+            ("シャドウ", "Shadow"),
+            ("ストラゴス", "Stragus"),
+            ("リルム", "Relm"),
+        };
         public static readonly (string from, string to)[] DisplayFixups = { };
         public const string TitleMarker = "FINAL FANTASY";
         public const string FullTitle = "FINAL FANTASY VI";
@@ -352,7 +370,7 @@ namespace WunderLanguage.Host.Packs.FFVI
         public System.Collections.Generic.IReadOnlyList<string> ItemVocabulary => FfviPack.ItemVocabulary;
         public System.Collections.Generic.IReadOnlyList<string> WeaponLabels => FfviPack.WeaponLabels;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary => FfviPack.BattleGlossary;
-        // Vision item 3 calibration: neutral (today's globals exactly —
+        public System.Collections.Generic.IReadOnlyList<(string ja, string en)> NameGlossary => FfviPack.NameGlossary;        // Vision item 3 calibration: neutral (today's globals exactly —
         // no threshold, no inset, no suppression, unscaled). Tuned only
         // per citation, never preemptively.
         public double BoxScoreThreshold => 0.0;

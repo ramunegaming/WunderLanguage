@@ -42,6 +42,12 @@ namespace WunderLanguage.Host.Packs
         // translation — no CAT/DeepL burn, no JA-verbatim flicker while the
         // refresh leg crawls. Empty = unknown game, everything live.
         System.Collections.Generic.IReadOnlyList<(string ja, string en)> BattleGlossary { get; }
+        // Dialogue name glossary (cited per game, official manual forms):
+        // party names masked through live translation as placeholders and
+        // restored after (qmask machinery) so CAT can't mangle them
+        // ("tina-foreigner", "Ke-fugu"). Katakana-boundary matched, so
+        // モグ never fires inside モグリン. Empty = unknown game, names live.
+        System.Collections.Generic.IReadOnlyList<(string ja, string en)> NameGlossary { get; }
         // Vision item 3 — per-game calibration (estimated in learning
         // mode, required at publish). Neutral defaults reproduce today's
         // global behavior exactly; tuned packs override per citation.

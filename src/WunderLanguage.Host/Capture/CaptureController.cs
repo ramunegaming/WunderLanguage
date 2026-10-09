@@ -1772,7 +1772,13 @@ namespace WunderLanguage.Host.Capture
                 }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
                 string sendText = MaskQMarks(text, out var qruns);
+                sendText = MaskNames(sendText, out var nruns);
                 string translated = await _translationManager.TranslateAsync(sendText);
+                if (nruns.Count > 0)
+                {
+                    translated = RestoreNames(translated, nruns, out bool nok);
+                    if (!nok) FileLogger.Log($"[translate] namemask-lost token for \"{Truncate(text)}\" (EN kept as-is)");
+                }
                 if (qruns.Count > 0)
                 {
                     translated = RestoreQMarks(translated, qruns, out bool qok);
@@ -1847,7 +1853,13 @@ namespace WunderLanguage.Host.Capture
                 }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\" (update)");
                 string sendText = MaskQMarks(text, out var qruns);
+                sendText = MaskNames(sendText, out var nruns);
                 string translated = await _translationManager.TranslateAsync(sendText);
+                if (nruns.Count > 0)
+                {
+                    translated = RestoreNames(translated, nruns, out bool nok);
+                    if (!nok) FileLogger.Log($"[translate] namemask-lost token update for \"{Truncate(text)}\" (EN kept as-is)");
+                }
                 if (qruns.Count > 0)
                 {
                     translated = RestoreQMarks(translated, qruns, out bool qok);
@@ -1913,6 +1925,55 @@ namespace WunderLanguage.Host.Capture
                     s = s.Replace(tok, runs[i], StringComparison.Ordinal);
                 }
                 if (runs.Count == 0) ok = true;
+                return s;
+            }
+            catch { ok = false; return en ?? ""; }
+        }
+
+        // Dialogue name masking (bottleneck-4 audit: CAT mangles unpinned
+        // dialogue names — "tina-foreigner", "Ke-fugu"). Pack NameGlossary
+        // entries ride through live translation as private-use tokens and
+        // are restored after (qmask machinery, separate token base E010).
+        // Katakana-boundary matched (longest-first), so モグ never fires
+        // inside モグリン. Empty pack list = names live (Zelda/unknown).
+        // If CAT eats a token, EN is kept as-is + logged. Revert: delete
+        // helpers + the two call sites.
+        private static string MaskNames(string ja, out System.Collections.Generic.List<(string tok, string en)> subs)
+        {
+            var found = new System.Collections.Generic.List<(string tok, string en)>();
+            subs = found;
+            try
+            {
+                string s = ja ?? "";
+                System.Collections.Generic.List<(string ja, string en)> names;
+                try { names = new System.Collections.Generic.List<(string ja, string en)>(Packs.PackRegistry.Current.NameGlossary ?? new System.Collections.Generic.List<(string ja, string en)>()); }
+                catch { return s; }
+                names.Sort((a, b) => b.ja.Length.CompareTo(a.ja.Length));
+                int i = 0;
+                foreach (var (nj, ne) in names)
+                {
+                    if (string.IsNullOrEmpty(nj) || string.IsNullOrEmpty(ne)) continue;
+                    string pat = @"(?<![ァ-ヶー])" + Regex.Escape(nj) + @"(?![ァ-ヶー])";
+                    bool any = false;
+                    s = Regex.Replace(s, pat, m => { any = true; return "\uE010" + (i) + "\uE011"; });
+                    if (any) { found.Add(("\uE010" + i + "\uE011", ne)); i++; }
+                }
+                subs = found;
+                return s;
+            }
+            catch { return ja ?? ""; }
+        }
+        private static string RestoreNames(string en, System.Collections.Generic.List<(string tok, string en)> subs, out bool ok)
+        {
+            ok = true;
+            try
+            {
+                string s = en ?? "";
+                foreach (var (tok, ne) in subs)
+                {
+                    if (!s.Contains(tok, StringComparison.Ordinal)) { ok = false; continue; }
+                    s = s.Replace(tok, ne, StringComparison.Ordinal);
+                }
                 return s;
             }
             catch { ok = false; return en ?? ""; }
