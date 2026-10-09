@@ -601,6 +601,44 @@ rule). Revisit only on evidence:**
   Parked with data. A3 dissolves: confw second pass already IS the
   shipped vocab-rescorer; beam-choice-for-vocab needs FFVI crops
   (unbanked) → parked behind material.
+
+## Session state — 2026-10-10 pre-compaction resume ledger
+Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
+- sentdedup (exact doubles) → revert sentdedup
+- fuzzy-halves ratio 0.40 vocab-guarded → revert fuzzy-halves
+- confw second pass (NormItemKey, 40 mined pairs @0.4) → revert confw
+- A1 averaging trial (live, verdict-open) → revert a1-trial
+- rec-beam probe: beam strings + div + suspect flag, parity 39/39 →
+  revert rec-beam
+- suspect-hold A1 (div≥0.20 holds count+text) → revert suspect-hold
+- profanity guard (EN stems + JA alibi, ------ pattern) →
+  revert profanity-guard
+- qmask (?-runs through CAT) → revert qmask
+- name placeholders (E010) + 12 manual pins (Mash replaces Matthew) →
+  revert namemask
+- FFVI run fixups (7 pairs), title weak-hold guard (!_frameIsTitle),
+  startup-survival batch, titlegeo, keeplog, rec-gen line, longbox watch
+Pending live proof (need play with real CAT output): profanity-hold
+line, qmask round-trip, namemask round-trip, suspect-hold on misread,
+A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
+titlegeo Zelda, sentdedup Zelda shapes, intro scroll (Zelda + FFVI).
+Parked with measured reasons: combiner (thin ceiling + 1 harm),
+assembly (no gate; provenance stability≥0.4 keeps 79%/suppresses 83%
+is the scoped-but-unimplemented shape), blanket margin (rejected 2×),
+ConNet/training (banned), beam scores (zero signal), Ren scheduling
+(no cost model), A3 beam-choice (needs shop screens), len-ratio/repeat
+guards (n=7), meta-refusal (n=1), live consistency checks (too costly),
+empty-logo-title gap, confidently-wrong class (needs symbolic pairs).
+Queues: bottlenecks 5–7 UNDEFINED (user to name); shop UI deferred
+until books done; game #3 after FFVI polish + shop; Zelda confirmatory
+run; FFVI shop/inventory screens (A3 material); Wedge/Biggs EN (no
+manual source — user call); いたぞ (no panel truth); glossary gaps
+(gilded, High Vor ion — exact-match policy intact).
+Protocols: taskkill-first rebuilds, GREEN = +0 warnings/0 errors
+(2 pre-existing CS8604 at TranslateAndPublishAsync warmup logs),
+replay = the two pinned FFVI corpora, git checkout translation_cache
+after replays, corpora never rewritten, keeper armed via keep-log.armed,
+troubleshoot/ wipes per launch (pull before relaunch).
 - Bottleneck-4 papers graded (P1 WMT19 QE, P2 unsupervised QE, P3
   robustness): usable = referenceless framing, severity tiers, MCC,
   dispersion-over-mean (black-box), confusion-mapped perturbations;
