@@ -462,6 +462,16 @@ rule). Revisit only on evidence:**
   ever): provenance gating (fast path engages only where stability
   starves), unmeasured. Assembly parked with data, same precedent as
   fuzzy-halves.
+- Provenance gating MEASURED positive (offline, 2026-10-09): turnover
+  as run-count fails (scroll chain-merges, everything reads 2), but
+  neighbor-stability separates — junk lives in flicker (med 0.27),
+  shaped tiles in smooth glide (med 0.54). Engage-only-if-stability≥0.4
+  keeps 102/129 shaped (79%), suppresses 15/18 junk (83%); ≥0.3 keeps
+  113/129 (88%) / suppresses 11/18 (61%). Coherent: stability machine
+  owns stable-identical, flicker stays off, glide is the fast path's
+  territory. Caveat: n=18 junk is thin. Metric is live-computable and
+  game-blind (rolling adjacent-similarity). Scopes (not implements) the
+  assembly fast path: tile + stability≥0.4 + fire mechanics TBD.
 - Bottleneck-3 batch (recognition confidence; concepts only, no
   training): Paper A (Wang et al 2020 NMT inference calibration) —
   ECE + reliability diagrams with TER/oracle correctness labels is the
