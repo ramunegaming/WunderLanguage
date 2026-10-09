@@ -621,7 +621,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - name placeholders (E010) + 12 manual pins (Mash replaces Matthew) →
   revert namemask
 - FFVI run fixups (7 pairs), title weak-hold guard (!_frameIsTitle),
-  startup-survival batch, titlegeo, keeplog, rec-gen line, longbox watch
+  startup-survival batch, titlegeo, keeplog, rec-gen line, longbox watch,
+  prov-stab observability (trailing window, log-only).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
