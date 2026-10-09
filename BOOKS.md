@@ -605,6 +605,12 @@ rule). Revisit only on evidence:**
   10-loop adjacent-similarity window + per-loop [prov-stab] line,
   observe-only (banks live distributions for flush-hardening, which
   owns the シルバリオカートリー instance). Revert: revert prov-stab.
+- M7c slice v1 SHIPPED (parity proven): injectable clock (TimeProvider
+  field, default System; loop pacing + cost-flush read it, perf
+  Stopwatches stay real) + wall-ms `wt` banked per corpus ocr line
+  (additive, replay ignores) + `--simcheck` PASS (clock-injection,
+  cost-predicate, delay-overload). Step extraction (ticktape shape)
+  stays next slice. Revert: revert m7c-slice1.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):

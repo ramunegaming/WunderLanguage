@@ -21,6 +21,14 @@ namespace WunderLanguage.Host.Capture
         private readonly TranslationManager _translationManager;
         private readonly Func<IntPtr, bool>? _isCompanionWindow;
         private CancellationTokenSource? _cts;
+        // M7c injectable clock (TimeProvider manuscripts: Fake It Til You Make
+        // It + FakeTimeProvider docs). Default System = live behavior
+        // identical; tests inject a FakeTimeProvider and Advance() instead of
+        // waiting. Only loop pacing + cost-flush read it; perf Stopwatches
+        // stay real (they never change decisions). Revert: delete field +
+        // setter, restore DateTime.UtcNow / Task.Delay(ms, token).
+        private TimeProvider _clock = TimeProvider.System;
+        internal void SetClock(TimeProvider clock) { try { _clock = clock ?? TimeProvider.System; } catch { } }
         private readonly string _id = Guid.NewGuid().ToString("N")[..6];
         private volatile bool _stopped;
         private string _gameId;
@@ -88,7 +96,7 @@ namespace WunderLanguage.Host.Capture
         // thread only; reset per flush with the counters.
         private double _costPngSum;
         private long _costPngN;
-        private DateTime _costFlushAt = DateTime.UtcNow;
+        private DateTimeOffset _costFlushAt;
         private readonly object _costLock = new();
         private static void CostPush(double[] ring, ref int ix, ref int n, double v)
         {
@@ -108,8 +116,8 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
-                if ((DateTime.UtcNow - _costFlushAt).TotalSeconds < 60) return;
-                _costFlushAt = DateTime.UtcNow;
+                if ((_clock.GetUtcNow() - _costFlushAt).TotalSeconds < 60) return;
+                _costFlushAt = _clock.GetUtcNow();
                 double[] pub; int pn;
                 lock (_costLock) { pub = (double[])_costPub.Clone(); pn = _costPubN; }
                 FileLogger.Log($"[loop-cost] game={_gameId} loops={_costLoops} ocr={_costOcrLoops} skipped={_costSkipped} holds={_costHolds} " +
@@ -648,6 +656,7 @@ namespace WunderLanguage.Host.Capture
             _translationManager = translationManager;
             _isCompanionWindow = isCompanionWindow;
             _gameId = ResolveGameId(hWnd);
+            try { _costFlushAt = _clock.GetUtcNow(); } catch { }
             FileLogger.Log(
                                 $"CaptureController created id={_id}. hWnd=0x{hWnd:X}, gameRegion baseline=(L{_gameRegion.GetRelativeCropRect().Left},T{_gameRegion.GetRelativeCropRect().Top},W{_gameRegion.GetRelativeCropRect().Width},H{_gameRegion.GetRelativeCropRect().Height})");
         }
@@ -715,7 +724,7 @@ namespace WunderLanguage.Host.Capture
                         _sessHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator minimized, holding");
-                        await Task.Delay(IdleDelayMs, token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                         continue;
                     }
                     IntPtr fgFocus = WindowCapture.GetForegroundWindowHandle();
@@ -726,7 +735,7 @@ namespace WunderLanguage.Host.Capture
                         _sessHolds++;
                         if (iteration % 20 == 0)
                             FileLogger.Log($"[loop {iteration}] emulator not focused (fg=0x{fgFocus:X}), holding");
-                        await Task.Delay(IdleDelayMs, token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                         continue;
                     }
                     if (_focusHoldActive)
@@ -789,7 +798,7 @@ namespace WunderLanguage.Host.Capture
                                 _ = TranslateAndPublishAsync(dwellText);
                             }
                         }
-                        await Task.Delay(IdleDelayMs, token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                         try { _prevFullFrame?.Dispose(); _prevFullFrame = null; _prevFullFrame = (Bitmap)bitmap.Clone(); } catch { _prevFullFrame = null; }
                         continue;
                     }
@@ -806,7 +815,7 @@ namespace WunderLanguage.Host.Capture
 
                     if (_pendingFrameStableCount < RequiredPreOcrStablePolls)
                     {
-                        await Task.Delay(SettlingDelayMs, token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(SettlingDelayMs), _clock, token);
                         continue;
                     }
 
@@ -1068,7 +1077,7 @@ namespace WunderLanguage.Host.Capture
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
                         _flashFired = false;
-                        await Task.Delay(IdleDelayMs, token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                         continue;
                     }
                     // Phase 1b: menu/title tracker. Dialogue path below frozen.
@@ -1699,7 +1708,7 @@ namespace WunderLanguage.Host.Capture
 
                 try
                 {
-                    await Task.Delay(IdleDelayMs, token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -2126,7 +2135,11 @@ namespace WunderLanguage.Host.Capture
                 // proven per batch. Old files simply lack c/n/s.).
                 // Revert: drop c/n/s from the anonymous type.
                 foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src, d = Math.Round(b.Div, 3) });
-                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
+                // M7c time-data (ticktape "time is data" + event-sourcing
+                // ordering): wall ms banked per ocr line, additive forward-only
+                // (replay ignores unknown fields — parity proven per batch).
+                long wt = 0; try { wt = _clock.GetUtcNow().ToUnixTimeMilliseconds(); } catch { }
+                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, wt = wt, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
             }
             catch { }
         }
