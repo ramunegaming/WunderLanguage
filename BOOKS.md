@@ -462,3 +462,19 @@ rule). Revisit only on evidence:**
   ever): provenance gating (fast path engages only where stability
   starves), unmeasured. Assembly parked with data, same precedent as
   fuzzy-halves.
+- Bottleneck-3 batch (recognition confidence; concepts only, no
+  training): Paper A (Wang et al 2020 NMT inference calibration) —
+  ECE + reliability diagrams with TER/oracle correctness labels is the
+  validation method to steal; softmax miscalibration gap (train 1.39 vs
+  inf 15.83) predicts our pixel-shifted OCR needs the same distrust;
+  their fixes are training (banned). Paper B (Lu et al 2022 ConNet) —
+  CLOSED (joint-trained confidence net = training, banned); survives
+  only as caution (MSP fails silently on 35.8% of BAD outputs, same
+  death as box-conf). Paper C (Flores et al 2025 beam-shape) — the
+  transfer: ratio p1/pK + tail-thinness over live beams, no fine-tuning;
+  maps to our confusion-mass-split pathology.
+- rec-beam probe SHIPPED (sidecar, observe-only): scored generate
+  (4 beams + sequences_scores) replaces bare mocr() call; parity
+  39/39 byte-identical on banked crops, rec cost neutral (5005 vs
+  5019ms); any mismatch parks the probe live; per-frame [rec-beam]
+  line (ratio/tail), no host contract change. Revert: revert rec-beam.
