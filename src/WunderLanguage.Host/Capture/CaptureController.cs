@@ -1780,6 +1780,14 @@ namespace WunderLanguage.Host.Capture
                     TextTranslated?.Invoke(text, "------");
                     return;
                 }
+                if (IsHallucinatedProfanity(text, translated))
+                {
+                    FileLogger.Log($"[translate] profanity-hold (hallucinated EN, no JA alibi) for \"{Truncate(text)}\"");
+                    if (_stopped) { FileLogger.Log($"[translate] id={_id} dropped (stopped)"); return; }
+                    CostPubSample(pubSw.Elapsed.TotalMilliseconds);
+                    TextTranslated?.Invoke(text, "------");
+                    return;
+                }
                 // Stale guard: a longer version already shown covers this one
                 // (truncated completing after its full line). Don't re-append.
                 if (!string.IsNullOrEmpty(_lastTranslatedText)
@@ -1838,6 +1846,12 @@ namespace WunderLanguage.Host.Capture
                     TextUpdated?.Invoke(expectedOldJa, text, " ------");
                     return;
                 }
+                if (IsHallucinatedProfanity(text, translated))
+                {
+                    FileLogger.Log($"[translate] profanity-hold update for \"{Truncate(text)}\"");
+                    TextUpdated?.Invoke(expectedOldJa, text, " ------");
+                    return;
+                }
                 FileLogger.Log($"[translate-update] \"{text}\" -> \"{translated}\"");
                 try { CorpusRecordBubble("dialogue-update", text, translated, expectedOldJa); } catch { }
                 TextUpdated?.Invoke(expectedOldJa, text, translated);
@@ -1850,6 +1864,40 @@ namespace WunderLanguage.Host.Capture
 
         private static string Truncate(string s, int max = 80)
             => s.Length <= max ? s : s.Substring(0, max) + "...";
+
+        // Profanity-hallucination guard (cited 2026-10-09 FFVI live:
+        // ウェッジビックス??? → "What is the Japanese word for 'wet
+        // dick'?" — model invention, not game text). Blocks ONLY
+        // hallucinated profanity: EN trigger with no JA alibi passes
+        // genuine in-game swearing through (くそ in → fuck out is the
+        // game's own words). Provider-blind (CAT and DeepL both land
+        // here). Withheld EN posts "------" like untranslatable (panel
+        // stays honest, JA read kept). Revert: delete lists + predicate
+        // + the two call sites.
+        private static readonly string[] ProfaneEnStems = { "fuck", "shit", "dick", "cunt", "whore", "slut" };
+        private static readonly string[] ProfaneJaAlibi = { "くそ", "ちくしょう", "ちきしょう", "やろう", "死ね", "しね", "くたばれ", "ふざけんな", "ふざけるな", "ばかやろう", "バカヤロー", "くそったれ" };
+        private static bool IsHallucinatedProfanity(string ja, string en)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(en)) return false;
+                bool hit = false;
+                foreach (var w in ProfaneEnStems)
+                {
+                    if (Regex.IsMatch(en, @"\b\w*" + w + @"\w*\b", RegexOptions.IgnoreCase)) { hit = true; break; }
+                }
+                if (!hit) return false;
+                if (!string.IsNullOrEmpty(ja))
+                {
+                    foreach (var m in ProfaneJaAlibi)
+                    {
+                        if (ja.Contains(m, StringComparison.Ordinal)) return false;
+                    }
+                }
+                return true;
+            }
+            catch { return false; }
+        }
 
         // Fragment-hold terminator set (mirrors IsUnterminatedComposite's
         // complete-endings; hiragana-cut carve-out NOT applied here — a bare
