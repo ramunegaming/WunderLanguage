@@ -601,6 +601,10 @@ rule). Revisit only on evidence:**
   Parked with data. A3 dissolves: confw second pass already IS the
   shipped vocab-rescorer; beam-choice-for-vocab needs FFVI crops
   (unbanked) → parked behind material.
+- Provenance observability SHIPPED (pending replay parity): trailing
+  10-loop adjacent-similarity window + per-loop [prov-stab] line,
+  observe-only (banks live distributions for flush-hardening, which
+  owns the シルバリオカートリー instance). Revert: revert prov-stab.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
