@@ -73,6 +73,18 @@ namespace WunderLanguage.Host
                         Shutdown(mism == 0 ? 0 : 1);
                         return;
                     }
+                    // M7c simcheck (slice v1): proves the injectable clock seam.
+                    // ManualClock at T0 -> cost-flush correctly holds; +61s ->
+                    // flush path runs. No emulator, no sidecar, instant.
+                    // Revert: delete this block + Capture/SimClock.cs.
+                    if (args[i] == "--simcheck")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool ok = Capture.SimCheck.Run();
+                        FileLogger.Log($"[simcheck] exit ok={ok}");
+                        Shutdown(ok ? 0 : 1);
+                        return;
+                    }
                 }
             }
             catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
