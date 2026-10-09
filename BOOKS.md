@@ -562,6 +562,14 @@ rule). Revisit only on evidence:**
   reads EMPTY (total=0) so the flag was false at the cited loops — the
   empty-logo-title gap stays queued (quiet-watch interaction unscoped).
   Revert: delete the conjunct.
+- Manual name pins SHIPPED (12 entries, user-cited official manual
+  literal EN): Tina/Lock/Mog/Edgar/Mash/Cayenne/Gau/Celes/Setzer/
+  Shadow/Stragus/Relm. Mash REPLACES the earlier Matthew pin per the
+  same user decision. Mechanism confirmed (TryBattleGlossary exact
+  match on menu/battle rows); merged rows stay live (known boundary).
+  Wedge/Biggs NOT pinned (absent from manual pages — no source, no
+  pin). Replay 0 / 263-identical. Revert: restore Matthew pin, drop
+  the rest.
 - Battle BATTLE-panel gaps CLOSED as designed (FFVI run corpus: 92
   battle-frame:fire, event rows post correctly; static menus don't
   repost by design — no spam). No action.

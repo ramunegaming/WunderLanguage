@@ -251,8 +251,21 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("ぬすむ", "Steal"),
             ("まほう", "Magic"),
             ("アイテム", "Item"),
-            // Party name pin (user-cited): マッシュ renders Matthew.
-            ("マッシュ", "Matthew"),
+            // Party name pins (user-cited 2026-10-09: official manual
+            // literal EN forms — manual differs from Woolsey, manual wins.
+            // Replaces the earlier Matthew pin per the same user decision.)
+            ("マッシュ", "Mash"),
+            ("ティナ", "Tina"),
+            ("ロック", "Lock"),
+            ("モグ", "Mog"),
+            ("エドガー", "Edgar"),
+            ("カイエン", "Cayenne"),
+            ("ガウ", "Gau"),
+            ("セリス", "Celes"),
+            ("セッツァー", "Setzer"),
+            ("シャドウ", "Shadow"),
+            ("ストラゴス", "Stragus"),
+            ("リルム", "Relm"),
             ("ポーション", "Potion"),
             ("ハイポーション", "Hi-Potion"),
             ("ねぶくろ", "Sleeping Bag"),
