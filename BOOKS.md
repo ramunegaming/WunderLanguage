@@ -474,10 +474,12 @@ rule). Revisit only on evidence:**
   transfer: ratio p1/pK + tail-thinness over live beams, no fine-tuning;
   maps to our confusion-mass-split pathology.
 - rec-beam probe SHIPPED (sidecar, observe-only): scored generate
-  (4 beams + sequences_scores) replaces bare mocr() call; parity
-  39/39 byte-identical on banked crops, rec cost neutral (5005 vs
-  5019ms); any mismatch parks the probe live; per-frame [rec-beam]
-  line (ratio/tail), no host contract change. Revert: revert rec-beam.
+  (all 4 beam strings) replaces bare mocr() call; parity 39/39
+  byte-identical on banked crops, rec cost neutral (4726 vs 4718ms);
+  any mismatch parks the probe live; per-frame [rec-beam] line
+  (divmax + suspect count at div>0.20), no host contract change.
+  output_scores=False (strings only, no logits transient).
+  Revert: revert rec-beam.
 - Beam-SCORE metrics CLOSED negative (offline, 2026-10-09, 182
   dialogue-band crops, script oracle): tail 0.250–0.251 on ALL crops,
   ratio 0.04–0.09 (inverted) — sequences_scores equalize across beams,
