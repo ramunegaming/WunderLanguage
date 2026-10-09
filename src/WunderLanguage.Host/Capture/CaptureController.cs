@@ -33,6 +33,15 @@ namespace WunderLanguage.Host.Capture
         private int _successorCount;
         private int _weakHoldCount;
         private string _weakHoldFor = string.Empty;
+        // Provenance window-stability (bottleneck-2 metric, observe-only):
+        // mean adjacent-read similarity over the trailing window. Offline
+        // it separates smooth-glide tiling zones (med 0.54) from flicker
+        // (med 0.27); engage-only-if-≥0.4 keeps 79% / suppresses 83%.
+        // Log-only here to bank live distributions for flush-hardening.
+        // Revert: delete fields + the logging block.
+        private readonly System.Collections.Generic.Queue<double> _provSimWindow = new();
+        private const int ProvWindowSize = 10;
+        private string _provLastText = "";
         // S1.2 honest min-spec: worst-case warmup timings pick the profile once per session.
         // Full bar=12, reduced bar=18 (slower bubbles, never wrong ones). Omission-only if ever wrong.
         private int _weakHoldThreshold = 12;
@@ -1070,6 +1079,24 @@ namespace WunderLanguage.Host.Capture
                     try { if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId) UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
                     token.ThrowIfCancellationRequested();
                     FileLogger.Log($"[loop {iteration}] OCR result: \"{extractedText}\"");
+                    try
+                    {
+                        // Provenance window update (observe-only): adjacent-read
+                        // similarity into the trailing window; blanks skipped
+                        // (similarity undefined), mean logged for calibration.
+                        if (!string.IsNullOrEmpty(extractedText) && !string.IsNullOrEmpty(_provLastText))
+                        {
+                            _provSimWindow.Enqueue(ComputeSimilarity(extractedText, _provLastText));
+                            while (_provSimWindow.Count > ProvWindowSize) _provSimWindow.Dequeue();
+                        }
+                        _provLastText = extractedText ?? "";
+                        if (_provSimWindow.Count > 0)
+                        {
+                            double _ps = 0; foreach (var _v in _provSimWindow) _ps += _v;
+                            FileLogger.Log($"[loop {iteration}] prov-stab={_ps / _provSimWindow.Count:0.00} (n={_provSimWindow.Count})");
+                        }
+                    }
+                    catch { }
 
                     if (string.IsNullOrWhiteSpace(extractedText))
                     {
