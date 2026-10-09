@@ -548,6 +548,13 @@ rule). Revisit only on evidence:**
   warnings / 0 errors; replay 0 / 263-identical. Live proof (a
   [profanity-hold] line) needs real CAT output — pending play.
   Revert: revert profanity-guard.
+- FFVI run fixups SHIPPED (7 pairs, shot-cited 2026-10-09): いて突っこむ/
+  突っこむサコ/かまっな/鹿野アニマー/アニマー/サルシェ/どうとうこの.
+  Both cited lines repair exactly to on-screen truth, idempotent, no
+  cross-fire. Build +0/0; replay 0 / 263-identical. Revert: drop the 7
+  pairs. Name pins (Biggs/Wedge/Terra…) NOT touched — EN forms need
+  user say (Matthew precedent). Glossary gaps (gilded, High Vor ion)
+  stay in translation-quality queue (exact-match-only policy intact).
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
