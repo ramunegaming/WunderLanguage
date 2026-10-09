@@ -182,15 +182,17 @@ def _det_conf(orig_w, orig_h, dom_area):
     except Exception:
         return 0.0
 def _rec_with_beams(crop):
-    # Recognition-confidence probe (bottleneck 3, Paper C: beam-distribution
-    # shape, not top-beam prob). Runs the SAME generate as mocr.__call__
-    # (same preprocess, same generation_config beams, same max_length=300)
-    # but keeps all beams + sequence scores instead of dropping them.
-    # Returns (text, beam_logprobs); text must equal mocr(crop) or the
-    # caller parks the probe. return_dict gives sequences_scores (length-
-    # penalized beam log-probs — ranking preserved, fine for ratio/tail).
-    # output_scores=True is required for sequences_scores to be populated
-    # (transient ~150MB logits, freed with `out`; generate dominates).
+    # Recognition-confidence probe (bottleneck 3): beam-STRING diversity,
+    # not beam scores. sequences_scores equalize across beams (measured
+    # 0.250 tail on all 182 banked crops — score-shape carries nothing),
+    # but beam strings split exactly on confusion pairs (Paper C's
+    # mass-split, visible in strings). Diversity = mean pairwise
+    # lev/maxlen over beams; div>0.20 flags wrong reads at precision
+    # 0.82 / recall 0.49 (2026-10-09, 182 crops, script oracle).
+    # Runs the SAME generate as mocr.__call__ (same preprocess, same
+    # generation_config beams, same max_length=300); output_scores=False
+    # (strings only — no 150MB logits transient). Top-beam text must equal
+    # mocr(crop) or the caller parks the probe.
     # Revert: delete helper + call-site lines (revert rec-beam).
     from manga_ocr.ocr import post_process as _pp
     _nb = 1
@@ -198,22 +200,46 @@ def _rec_with_beams(crop):
         _nb = int(mocr.model.generation_config.num_beams or 1)
     except Exception:
         _nb = 1
-    img = crop.convert("L").convert("RGB")
     if _nb < 2:
         return mocr(crop), None
+    img = crop.convert("L").convert("RGB")
     x = mocr._preprocess(img)
     out = mocr.model.generate(
         x[None].to(mocr.model.device),
         max_length=300,
         num_return_sequences=min(4, _nb),
-        output_scores=True,
+        output_scores=False,
         return_dict_in_generate=True,
     )
-    top = mocr.tokenizer.decode(out.sequences[0], skip_special_tokens=True)
-    text, _lp = _pp(top), [float(s) for s in out.sequences_scores]
+    _beams = [_pp(mocr.tokenizer.decode(s, skip_special_tokens=True)) for s in out.sequences]
     del out
-    return text, _lp
+    return _beams[0], _beams
+def _beam_diversity(beams):
+    # Mean pairwise lev/maxlen over beam strings. Pure-python, short
+    # strings only; exceptions → 0.0 (unflagged, never blocks).
+    try:
+        if not beams or len(beams) < 2:
+            return 0.0
+        _tot, _n = 0.0, 0
+        for _i in range(len(beams)):
+            for _j in range(_i + 1, len(beams)):
+                _a, _b = beams[_i], beams[_j]
+                _m = max(1, max(len(_a), len(_b)))
+                if len(_a) < len(_b):
+                    _a, _b = _b, _a
+                _dp = list(range(len(_b) + 1))
+                for _k, _ca in enumerate(_a, 1):
+                    _ndp = [_k]
+                    for _l, _cb in enumerate(_b, 1):
+                        _ndp.append(min(_dp[_l] + 1, _ndp[-1] + 1, _dp[_l - 1] + (_ca != _cb)))
+                    _dp = _ndp
+                _tot += _dp[len(_b)] / _m
+                _n += 1
+        return _tot / max(1, _n)
+    except Exception:
+        return 0.0
 _REC_BEAM = {"parity": None}
+_REC_BEAM_SUSPECT_DIV = 0.20
 def detect_and_ocr(pil_image: Image.Image):
     det_scale = DETECTION_UPSCALE_FACTOR
     if pil_image.width * det_scale > 900:
@@ -292,7 +318,7 @@ def detect_and_ocr(pil_image: Image.Image):
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
-    _beam_lps = []  # per-crop beam log-probs for the [rec-beam] frame line
+    _beam_divs = []  # per-crop beam string-diversity for [rec-beam]
     for (_wb, _nmerge, _cls) in _work:
         (x_min, y_min, x_max, y_max) = _wb
         orig_x_min = x_min / det_scale
@@ -318,7 +344,7 @@ def detect_and_ocr(pil_image: Image.Image):
         try:
             if _REC_BEAM["parity"] is False:
                 raise RuntimeError("beam-probe parked")
-            text, _blp = _rec_with_beams(recognition_crop)
+            text, _beams = _rec_with_beams(recognition_crop)
             if _REC_BEAM["parity"] is None:
                 _plain = mocr(recognition_crop)
                 _REC_BEAM["parity"] = (text == _plain)
@@ -326,11 +352,11 @@ def detect_and_ocr(pil_image: Image.Image):
                     print("[rec-beam] parity=ok scored path live", flush=True)
                 else:
                     print("[rec-beam] parity=MISMATCH probe parked, plain path", flush=True)
-                    text, _blp = _plain, None
-            if _blp:
-                _beam_lps.append(_blp)
+                    text, _beams = _plain, None
+            if _beams:
+                _beam_divs.append(_beam_diversity(_beams))
         except Exception:
-            text, _blp = mocr(recognition_crop), None
+            text, _beams = mocr(recognition_crop), None
         if not text.strip():
             continue
         # Box confidence v0 (geometric prior ONLY — not a calibrated
@@ -361,23 +387,11 @@ def detect_and_ocr(pil_image: Image.Image):
     except Exception:
         pass
     try:
-        # Frame-level beam-shape summary (observe-only): log-ratio p1/pK
-        # (Paper C ratio) + tail thinness (sum of squared softmax shares).
-        # Ratio/tail interpretation happens offline from these logs.
-        if _beam_lps:
-            import math as _math
-            _rs, _ts = [], []
-            for _blp in _beam_lps:
-                if not _blp or len(_blp) < 2:
-                    continue
-                _s = sorted(_blp, reverse=True)
-                _rs.append(_s[0] - _s[-1])
-                _mx = _s[0]
-                _ex = [_math.exp(v - _mx) for v in _s]
-                _Z = sum(_ex)
-                _ts.append(sum((v / _Z) ** 2 for v in _ex))
-            if _rs:
-                print(f"[rec-beam] crops={len(_beam_lps)} scored={len(_rs)} ratiomax={max(_rs):.2f} tailmin={min(_ts):.3f}", flush=True)
+        # Frame-level beam-diversity summary (observe-only): max diversity
+        # + suspect count (div>0.20). Interpretation happens offline/host-side.
+        if _beam_divs:
+            _sus = sum(1 for _d in _beam_divs if _d > _REC_BEAM_SUSPECT_DIV)
+            print(f"[rec-beam] crops={len(_beam_divs)} divmax={max(_beam_divs):.2f} suspect={_sus}", flush=True)
     except Exception:
         pass
     primary_text = ""
