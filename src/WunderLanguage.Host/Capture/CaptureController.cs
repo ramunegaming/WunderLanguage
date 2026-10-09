@@ -1771,7 +1771,13 @@ namespace WunderLanguage.Host.Capture
                     }
                 }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\"");
-                string translated = await _translationManager.TranslateAsync(text);
+                string sendText = MaskQMarks(text, out var qruns);
+                string translated = await _translationManager.TranslateAsync(sendText);
+                if (qruns.Count > 0)
+                {
+                    translated = RestoreQMarks(translated, qruns, out bool qok);
+                    if (!qok) FileLogger.Log($"[translate] qmask-lost token for \"{Truncate(text)}\" (EN kept as-is)");
+                }
                 FileLogger.Log($"[translate-provider] {_translationManager.ActiveProviderName} for \"{Truncate(text)}\"");
                 if (IsUnpublishable(translated))
                 {
@@ -1840,7 +1846,13 @@ namespace WunderLanguage.Host.Capture
                     return;
                 }
                 FileLogger.Log($"[translate-fire] \"{Truncate(text)}\" (update)");
-                string translated = await _translationManager.TranslateAsync(text);
+                string sendText = MaskQMarks(text, out var qruns);
+                string translated = await _translationManager.TranslateAsync(sendText);
+                if (qruns.Count > 0)
+                {
+                    translated = RestoreQMarks(translated, qruns, out bool qok);
+                    if (!qok) FileLogger.Log($"[translate] qmask-lost token update for \"{Truncate(text)}\" (EN kept as-is)");
+                }
                 if (IsUnpublishable(translated))
                 {
                     FileLogger.Log($"[translate] untranslatable update -> ---- for \"{text}\"");
@@ -1865,6 +1877,46 @@ namespace WunderLanguage.Host.Capture
 
         private static string Truncate(string s, int max = 80)
             => s.Length <= max ? s : s.Substring(0, max) + "...";
+
+        // Unknown-name mask (cited 2026-10-09 FFVI: unmet characters show
+        // ?????? of varying length — JRPG-common; ??? tails also feed CAT
+        // mangles: "Wedge Bix???", and the wet-dick hallucination rode a
+        // ??? tail). Runs of [?？]{2,} are masked with private-use tokens
+        // pre-translate and restored after (provider-blind, fire + update
+        // paths). Single ? stays punctuation. If CAT eats a token, EN is
+        // kept as-is + logged (no positional games). Revert: delete helpers
+        // + the four call-site lines.
+        private static readonly Regex QMaskRun = new(@"[?？]{2,}", RegexOptions.Compiled);
+        private static string MaskQMarks(string ja, out System.Collections.Generic.List<string> runs)
+        {
+            var found = new System.Collections.Generic.List<string>();
+            runs = found;
+            try
+            {
+                int i = 0;
+                string s = QMaskRun.Replace(ja ?? "", m => { found.Add(m.Value); return "" + (i++) + ""; });
+                runs = found;
+                return s;
+            }
+            catch { return ja ?? ""; }
+        }
+        private static string RestoreQMarks(string en, System.Collections.Generic.List<string> runs, out bool ok)
+        {
+            ok = true;
+            try
+            {
+                string s = en ?? "";
+                for (int i = 0; i < runs.Count; i++)
+                {
+                    string tok = "" + i + "";
+                    if (!s.Contains(tok, StringComparison.Ordinal)) { ok = false; continue; }
+                    s = s.Replace(tok, runs[i], StringComparison.Ordinal);
+                }
+                if (runs.Count == 0) ok = true;
+                return s;
+            }
+            catch { ok = false; return en ?? ""; }
+        }
 
         // Profanity-hallucination guard (cited 2026-10-09 FFVI live:
         // ウェッジビックス??? → "What is the Japanese word for 'wet
