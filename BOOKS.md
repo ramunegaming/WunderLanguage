@@ -611,6 +611,16 @@ rule). Revisit only on evidence:**
   (additive, replay ignores) + `--simcheck` PASS (clock-injection,
   cost-predicate, delay-overload). Step extraction (ticktape shape)
   stays next slice. Revert: revert m7c-slice1.
+- M7c slice v2 SHIPPED (pending proof runs): decision seam —
+  611-line stability machine moved verbatim into
+  ProcessOcrObservationAsync (only exits adapted: chart-hold
+  continue→false, scroll-composite loop-exit→true + caller re-exit;
+  chart delay skipped in sim), all 11 fire + 3 update sites route via
+  PublishDecision/UpdateAsync (live forwards identically, sim captures
+  JA), `--simreplay` feeds corpus (loop, extracted) through the REAL
+  step and reports fire overlap vs recorded decision bubbles. JA-side
+  only: dwell/bitmap, TITLE/menu, suspect-div(0), density, vocab paths
+  stay live-only by construction. Revert: revert m7c-slice2.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):

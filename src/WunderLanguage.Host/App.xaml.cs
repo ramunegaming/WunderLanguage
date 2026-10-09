@@ -85,6 +85,17 @@ namespace WunderLanguage.Host
                         Shutdown(ok ? 0 : 1);
                         return;
                     }
+                    // M7c simreplay (slice v2): corpus (loop, extracted) via
+                    // the real stability step. Revert: delete this block +
+                    // Capture/SimReplay.cs.
+                    if (args[i] == "--simreplay" && i + 1 < args.Length)
+                    {
+                        FileLogger.ReplayMode = true;
+                        int rc = Capture.SimReplay.Run(args[i + 1]);
+                        FileLogger.Log($"[simreplay] exit rc={rc}");
+                        Shutdown(rc == 0 ? 0 : 1);
+                        return;
+                    }
                 }
             }
             catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
