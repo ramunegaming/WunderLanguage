@@ -29,6 +29,35 @@ namespace WunderLanguage.Host.Capture
         // setter, restore DateTime.UtcNow / Task.Delay(ms, token).
         private TimeProvider _clock = TimeProvider.System;
         internal void SetClock(TimeProvider clock) { try { _clock = clock ?? TimeProvider.System; } catch { } }
+        // M7c slice v2 sim harness (ticktape "same struct runs in the
+        // simulator"): _simMode captures JA publish decisions instead of
+        // translating. Live path forwards identically (parity proven by
+        // replay). SimReplay constructs via the internal ctor, feeds corpus
+        // (loop, extracted) through ProcessOcrObservationAsync, and diffs
+        // _simPublished against recorded dialogue-decision bubbles.
+        // Revert: delete fields/ctor/wrappers + --simreplay block, restore
+        // TranslateAndPublish/Update names at the call sites.
+        internal bool _simMode = false;
+        internal readonly System.Collections.Generic.List<string> _simPublished = new();
+        internal CaptureController()
+        {
+            _hWnd = IntPtr.Zero;
+            _gameRegion = null!;
+            _ocrClient = null!;
+            _translationManager = null!;
+            _gameId = "sim";
+            try { _costFlushAt = _clock.GetUtcNow(); } catch { }
+        }
+        private System.Threading.Tasks.Task PublishDecisionAsync(string ja)
+        {
+            if (_simMode) { try { _simPublished.Add("fire:" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            return TranslateAndPublishAsync(ja);
+        }
+        private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja)
+        {
+            if (_simMode) { try { _simPublished.Add("update:" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            return TranslateAndUpdateAsync(prev, ja);
+        }
         private readonly string _id = Guid.NewGuid().ToString("N")[..6];
         private volatile bool _stopped;
         private string _gameId;
@@ -703,6 +732,628 @@ namespace WunderLanguage.Host.Capture
             try { Windows.PowerAvailability.Release(); } catch { }
         }
 
+        // M7c slice v2 decision seam (ticktape shape): the whole text-in
+        // stability machine as one step. Live loop calls it per observation;
+        // SimReplay feeds recorded corpus lines through the SAME code and
+        // inspects _simPublished. Returns true = stop loop (preserves the
+        // scroll-composite loop-exit). Zero behavior change: verbatim move
+        // of the old loop body (only exit statements adapted).
+        // Revert: inline this body back into RunLoopAsync.
+        internal async Task<bool> ProcessOcrObservationAsync(int iteration, string? extractedText, System.Collections.Generic.List<OcrBlock> ocrBlocks, CancellationToken token)
+        {
+                    // Kana-chart gate (name entry etc.): merged-blob shape.
+                    // Suppresses whole screen in both tiers: header, arrows,
+                    // END and blobs cost nothing and post nothing.
+                    // Battle veto (cited 2026-10-01: open item box reads
+                    // 20+ kana with zero kanji per column, tripping this
+                    // gate for 8s until scroll breaks the blob shape).
+                    // Name entry never happens mid-battle; battle-shaped
+                    // frames route to the battle handlers below instead.
+                    if (IsKanaChartScreen(ocrBlocks)
+                        && !BattleFrame.IsBattle(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, _itemBoxOpen)
+                        && !(_itemBoxOpen && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese)))
+                    {
+                        FileLogger.Log($"[loop {iteration}] chart-suppressed (kana input grid)");
+                        _menuStableCount = 0;
+                        _menuSignature = "";
+                        _candidateText = string.Empty;
+                        _candidateStableCount = 0;
+                        _candidateGrewThisRead = false;
+                        _flashFired = false;
+                        if (!_simMode) await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token); // sim: no wall wait; clock already injected (slice v1)
+                        return false;
+                    }
+                    // Phase 1b: menu/title tracker. Dialogue path below frozen.
+                    try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
+                    // Zelda repair: the battle tracker (publishes BATTLE frames,
+                    // owns _battleFiredSig/cooldown/stickies) runs on FFVI packs
+                    // only — same gate as the suppression above. Revert: drop the if.
+                    try { if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId) UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
+                    token.ThrowIfCancellationRequested();
+                    FileLogger.Log($"[loop {iteration}] OCR result: \"{extractedText}\"");
+                    try
+                    {
+                        // Provenance window update (observe-only): adjacent-read
+                        // similarity into the trailing window; blanks skipped
+                        // (similarity undefined), mean logged for calibration.
+                        if (!string.IsNullOrEmpty(extractedText) && !string.IsNullOrEmpty(_provLastText))
+                        {
+                            _provSimWindow.Enqueue(ComputeSimilarity(extractedText, _provLastText));
+                            while (_provSimWindow.Count > ProvWindowSize) _provSimWindow.Dequeue();
+                        }
+                        _provLastText = extractedText ?? "";
+                        if (_provSimWindow.Count > 0)
+                        {
+                            double _ps = 0; foreach (var _v in _provSimWindow) _ps += _v;
+                            FileLogger.Log($"[loop {iteration}] prov-stab={_ps / _provSimWindow.Count:0.00} (n={_provSimWindow.Count})");
+                        }
+                    }
+                    catch { }
+
+                    if (string.IsNullOrWhiteSpace(extractedText))
+                    {
+                        if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText) && !_frameIsTitle
+                            && _candidateText != _lastTranslatedText
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText) && !IsScrollBlend(_candidateText) && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-blank (publishing held line)");
+                            _lastTranslatedText = _candidateText;
+                            string flushText = _candidateText;
+                            _ = PublishDecisionAsync(flushText);
+                        }
+                        _candidateText = string.Empty;
+                        _candidateStableCount = 0;
+                        _candidateGrewThisRead = false;
+                        _flashFired = false;
+                    }
+                    else if (!string.IsNullOrEmpty(_candidateText)
+                        && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
+                            || extractedText.Contains(_candidateText, StringComparison.Ordinal)
+                            || _candidateText.Contains(extractedText, StringComparison.Ordinal)
+                            || HasCommonPrefix(extractedText, _candidateText, 10)
+                            || HasCommonPrefix(StripForOverlap(extractedText), StripForOverlap(_candidateText), 6)))
+                    {
+                        // Beam-diversity suspect flag for this read (sidecar div
+                        // rides OcrBlock; absent in old corpora → 0.0 → never holds).
+                        double frameDiv = FrameSuspectDiv(ocrBlocks, extractedText);
+                        bool suspectHold = frameDiv >= SuspectDivThreshold;
+                        // Blend-stuck escape: dirty blend must not pin clean line.
+                        if ((IsScrollBlend(_candidateText) || IsZeldaTransitionBlend(_candidateText))
+                            && !(IsScrollBlend(extractedText) || IsZeldaTransitionBlend(extractedText))
+                            && !suspectHold)
+                        {
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
+                        else if (suspectHold)
+                        {
+                            // Suspect-hold (bottleneck-3 A1): hold count AND text —
+                            // neither increment nor adopt. Flush paths below still
+                            // rescue real pageturns. Revert: delete this branch.
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suspect-hold (div={frameDiv:0.00} holding \"{Truncate(_candidateText)}\")");
+                            _candidateGrewThisRead = false;
+                        }
+                        else
+                        {
+                        // Same line re-read, growth step, or scroll settling.
+                        // Growth (longer) and contained (cleaner) adopt at once
+                        // so autoscroll tracks with no lag. Same-length variants
+                        // (scroll-blur/flicker) settle-first: held until the SAME
+                        // variant repeats, so one garbled frame can't overwrite.
+                        _candidateStableCount++;
+                        if (_candidateText.Contains(extractedText, StringComparison.Ordinal))
+                        {
+                            // R1 (steadiness): never trade a complete held line
+                            // for a much-shorter contained tail (OCR head-loss).
+                            // Normalization jitter (<6) still adopts as before.
+                            if (IsCompleteDialogueLine(_candidateText)
+                                && StripForOverlap(_candidateText).Length - StripForOverlap(extractedText).Length >= 6)
+                            {
+                                if (_successorText == extractedText)
+                                    _successorCount++;
+                                else
+                                {
+                                    _successorText = extractedText;
+                                    _successorCount = 1;
+                                }
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-short-tail (keeping complete held line)");
+                                _candidateGrewThisRead = false;
+                            }
+                            else
+                            {
+                                _candidateText = extractedText;
+                                _candidateGrewThisRead = false;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                            }
+                        }
+                        else if (extractedText.Length > _candidateText.Length)
+                        {
+                            // Flash-post (pair-2): a stable fragment absorbed by
+                            // growth was really shown (telepathy flashes). Post
+                            // once per lineage on substantial jumps only (no
+                            // typewriter spam); the full line follows via update.
+                            if (!_flashFired && _candidateStableCount >= RequiredStableReadings
+                                && StripForOverlap(extractedText).Length - StripForOverlap(_candidateText).Length >= 6
+                                && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText) && !IsScrollBlend(_candidateText)
+                                && !IsZeldaTransitionBlend(_candidateText) && !EndsWithContinuation(_candidateText)
+                                && !IsIncompleteSacrifice(_candidateText) && IsCompleteDialogueLine(_candidateText) && !_frameIsTitle
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flash-post (stable fragment absorbed by growth)");
+                                _lastTranslatedText = _candidateText;
+                                string flashText = _candidateText;
+                                _ = PublishDecisionAsync(flashText);
+                                _flashFired = true;
+                            }
+                            _candidateText = extractedText;
+                            _candidateGrewThisRead = true;
+                            _successorText = string.Empty;
+                            _successorCount = 0;
+                        }
+                        else if (_successorText == extractedText)
+                        {
+                            _successorCount++;
+                            if (_successorCount >= 2)
+                            {
+                                _candidateText = extractedText;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                            }
+                            _candidateGrewThisRead = false;
+                        }
+                        else
+                        {
+                            _successorText = extractedText;
+                            _successorCount = 1;
+                            _candidateGrewThisRead = false;
+                        }
+                        } // end else (clean read)
+                    }
+                    else
+                    {
+                        // MILESTONE 4 (page-turn flush): substantial held line
+                        // replaced by a dissimilar substantial line = the player
+                        // turned the page. Publish the held page now; it will
+                        // never stabilize again. Noise can't trigger this: both
+                        // sides must be substantial, and menu screens are out.
+                        if (!string.IsNullOrEmpty(_candidateText)
+                            && IsSubstantialLine(_candidateText)
+                            && IsSubstantialLine(extractedText)
+                            && !IsGameOverText(extractedText)
+                            && string.IsNullOrEmpty(_menuSignature)
+                            && !_frameIsTitle
+                            && !EndsWithContinuation(_candidateText)
+                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                            && !IsIncompleteSacrifice(_candidateText)
+                            && IsCompleteDialogueLine(_candidateText)
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                            // R2a: shown line younger than 3 loops + dissimilar held page = lone intruder, hold it.
+                            // True turns arrive with an old shown line and fire instantly, as before.
+                            && (iteration - _lastFireLoop >= 3))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-pageturn (publishing turned page)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
+                            _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
+                            string pageText = _candidateText;
+                            _ = PublishDecisionAsync(pageText);
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                            _successorText = string.Empty;
+                            _successorCount = 0;
+                            _weakHoldCount = 0;
+                            _weakHoldFor = string.Empty;
+                        }
+                        // MILESTONE 4 (challenger guard): weak incoming
+                        // (junk, anchorless, or fragment) can never evict a
+                        // substantial held line. Tracked as successor so a
+                        // real scene change still breaks through below.
+                        // MILESTONE 5 step 1 (recall): survival is stability.
+                        // A held line outliving the weak-hold bar (12 full / 18 reduced, see S1.2) posts on
+                        // its own instead of waiting 70+ loops for the next
+                        // page-turn (the 昨年Ｐ/ブーメラン stall).
+                        else if (!string.IsNullOrEmpty(_candidateText)
+                            && IsSubstantialLine(_candidateText)
+                            && !IsSubstantialLine(extractedText)
+                            && !IsGameOverText(extractedText))
+                        {
+                            if (_successorText == extractedText)
+                                _successorCount++;
+                            else
+                            {
+                                _successorText = extractedText;
+                                _successorCount = 1;
+                            }
+                            if (_weakHoldFor != _candidateText)
+                            {
+                                _weakHoldFor = _candidateText;
+                                _weakHoldCount = 0;
+                            }
+                            _weakHoldCount++;
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-weak-challenger (keeping held line, weakHold={_weakHoldCount})");
+                            if (_weakHoldCount >= _weakHoldThreshold
+                                && !StartsHeadlessFragment(_candidateText)
+                                && !_frameIsTitle
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-weak-hold (held line survived churn)");
+                                try { CorpusRecordBubble("dialogue-decision:publish-weak-hold", _candidateText, ""); } catch { }
+                                _prevTranslatedText = _lastTranslatedText;
+                                _lastTranslatedText = _candidateText;
+                                _lastFireLoop = iteration;
+                                string weakHoldText = _candidateText;
+                                _ = PublishDecisionAsync(weakHoldText);
+                                _candidateStableCount = RequiredStableReadings;
+                                _weakHoldCount = 0;
+                                _weakHoldFor = string.Empty;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                            }
+                        }
+                        // Scroll-flush: the held line just scrolled (its successor
+                        // starts with its tail). Publish the full held text now --
+                        // it will never stabilize again.
+                        else if (_candidateStableCount >= 2
+                            && !string.IsNullOrEmpty(_candidateText)
+                            && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText)
+                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                            && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                            && HasJapanese(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-scroll (publishing scrolled line)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-scroll", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
+                            _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
+                            string flushText = _candidateText;
+                            _ = PublishDecisionAsync(flushText);
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
+                        // Turned-page rescue (cited 2026-10-07, measured: 109 long
+                        // unterminated Zelda texts never fired — both flush paths
+                        // demand completeness, so a scroll page that turns
+                        // mid-sentence dies silently). Same turn evidence as
+                        // flush-on-scroll, but for long substantial pages that
+                        // never terminated: publish or lose forever. Headless
+                        // fragments excluded (M5 recall shape), shorts excluded
+                        // (fragment-hold owns them), junk/blend/sacrifice as
+                        // usual. Shared: FFVI item rows are short (<15 strip)
+                        // and can't reach this branch; replay parity decides.
+                        // Revert: delete this branch.
+                        else if (_candidateStableCount >= 2
+                            && !string.IsNullOrEmpty(_candidateText)
+                            && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
+                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText)
+                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                            && !IsIncompleteSacrifice(_candidateText) && !StartsHeadlessFragment(_candidateText)
+                            && HasJapanese(_candidateText) && HasAnchorSubstance(_candidateText)
+                            && StripForOverlap(_candidateText).Length >= 15)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-turned-page (publishing unterminated scrolled page)");
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-turned-page", _candidateText, ""); } catch { }
+                            _prevTranslatedText = _lastTranslatedText;
+                            _lastTranslatedText = _candidateText;
+                            _lastFireLoop = iteration;
+                            string turnedText = _candidateText;
+                            _ = PublishDecisionAsync(turnedText);
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
+                        // Single garbled scroll-out must not wipe a held line.
+                        else if (_candidateStableCount >= RequiredStableReadings
+                            && !IsJunkOcr(_candidateText) && !IsEllipsisOnly(_candidateText)
+                            && (IsScrollBlend(extractedText) || IsJunkOcr(extractedText) || extractedText.Length < 6))
+                        {
+                            // Guard-break: a challenger stabilizing twice means
+                            // the scene really changed (Zelda cell blocks) -
+                            // adopt it instead of holding forever.
+                            if (_successorText == extractedText)
+                            {
+                                _successorCount++;
+                                if (_successorCount >= 2)
+                                {
+                                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=guard-break (challenger stabilized, adopting)");
+                                    _candidateText = extractedText;
+                                    _candidateStableCount = 1;
+                                    _candidateGrewThisRead = false;
+                                    _successorText = string.Empty;
+                                    _successorCount = 0;
+                                    _flashFired = false;
+                                }
+                            }
+                            else
+                            {
+                                _successorText = extractedText;
+                                _successorCount = 1;
+                            }
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-new-guard (keeping held line)");
+                        }
+                        else
+                        {
+                            // Ellipsis-dismissal flush: outgoing line was stable and clean,
+                            // incoming read is dots only. Publish the held line instead of
+                            // letting it die (same gates as breakthrough-publish).
+                            if (IsEllipsisOnly(extractedText)
+                                && _candidateStableCount >= RequiredStableReadings
+                                && !_candidateGrewThisRead
+                                && !string.IsNullOrEmpty(_candidateText)
+                                && HasJapanese(_candidateText)
+                                && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText)
+                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                                && !_frameIsTitle
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && !(_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                    && !string.IsNullOrEmpty(_lastOcrText)
+                                    && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-ellipsis (publishing dismissed line)");
+                                _lastTranslatedText = _candidateText;
+                                string ellipsisFlush = _candidateText;
+                                _ = PublishDecisionAsync(ellipsisFlush);
+                            }
+                            // Replacement flush (uncle-2nd/3rd, escape line):
+                            // stable clean held line, incoming is a different
+                            // real line (not ellipsis) -> post the held one.
+                            if (!IsEllipsisOnly(extractedText)
+                                && _candidateStableCount >= RequiredStableReadings
+                                && !_candidateGrewThisRead
+                                && !string.IsNullOrEmpty(_candidateText)
+                                && HasJapanese(_candidateText)
+                                && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText)
+                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
+                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                                && !_frameIsTitle
+                                && _candidateText != _lastTranslatedText
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-replace (publishing replaced line)");
+                                _lastTranslatedText = _candidateText;
+                                string replaceFlush = _candidateText;
+                                _ = PublishDecisionAsync(replaceFlush);
+                            }
+                            // Genuinely new line: track the LATEST read fresh.
+                            _candidateText = extractedText;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
+                    }
+                    FileLogger.Log($"[loop {iteration}] candidateText=\"{_candidateText}\" stableCount={_candidateStableCount}");
+
+                    if (_candidateStableCount >= RequiredStableReadings)
+                    {
+                        if (_candidateGrewThisRead && _candidateStableCount < GrowthBreakthroughPolls)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-growth (still lengthening)");
+                        }
+                        else if (_candidateGrewThisRead)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-growth (releasing long-held line)");
+                            _candidateGrewThisRead = false;
+                            string breakthroughText = _candidateText;
+                            if (IsIncompleteSacrifice(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-sacrifice");
+                            }
+                            else if (EndsWithContinuation(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-continuation");
+                            }
+                            else if (IsScrollBlend(breakthroughText) || IsZeldaTransitionBlend(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-blend");
+                            }
+                            else if (IsEllipsisOnly(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-ellipsis");
+                            }
+                            else if (IsJunkOcr(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-junk");
+                            }
+                            else if (!HasJapanese(breakthroughText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-nonja");
+                            }
+                            else if (_frameIsTitle)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-title");
+                            }
+                            else if (!string.IsNullOrEmpty(_lastTranslatedText)
+                                && _lastTranslatedText.Contains(breakthroughText, StringComparison.Ordinal))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-subpart");
+                            }
+                            else if (ComputeSimilarity(breakthroughText, _lastTranslatedText) >= NearDuplicateSimilarityThreshold)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-dupe");
+                            }
+                            else if (_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                && !string.IsNullOrEmpty(_lastOcrText)
+                                && ComputeSimilarity(_lastOcrText, breakthroughText) >= 0.80)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-contentless");
+                            }
+                            else if (StripForOverlap(breakthroughText).Length < 6)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-fragment");
+                            }
+                            else
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-publish");
+                                try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, ""); } catch { }
+                                _lastTranslatedText = breakthroughText;
+                                string breakthroughFire = breakthroughText;
+                                _ = PublishDecisionAsync(breakthroughFire);
+                            }
+                        }
+                        else if (IsIncompleteSacrifice(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-sacrifice (つぎつぎ without ささげ)");
+                        }
+                        else if (EndsWithContinuation(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-continuation (mid-sentence)");
+                        }
+                        else if (IsScrollBlend(_candidateText) || IsZeldaTransitionBlend(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-blend (scroll transition)");
+                        }
+                        else if (IsEllipsisOnly(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-ellipsis");
+                            if (iteration % 20 == 0)
+                                FileLogger.Log($"[loop {iteration}] candidate is ellipsis-only (\"{_candidateText}\") - holding, not publishing as its own line");
+                        }
+                        else if (IsJunkOcr(_candidateText))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-junk: \"{_candidateText}\"");
+                        }
+                        else
+                        {
+                        // ANCHOR-SHADOW (log-only): would a substance gate hold this?
+                        // Observational only - the decision below runs unchanged.
+                        if (!HasAnchorSubstance(_candidateText))
+                            FileLogger.Log($"[anchor-shadow] would-hold \"{_candidateText}\" (no kanji/katakana)");
+                        double similarity = ComputeSimilarity(_candidateText, _lastTranslatedText);
+                        bool isNearDuplicate = similarity >= NearDuplicateSimilarityThreshold;
+
+                        bool isGrowth = !string.IsNullOrEmpty(_lastTranslatedText)
+                            && _candidateText.Length > _lastTranslatedText.Length
+                            && (_candidateText.StartsWith(_lastTranslatedText, StringComparison.Ordinal)
+                                || _candidateText.Contains(_lastTranslatedText, StringComparison.Ordinal));
+
+                        bool isOverlapContinuation = !isNearDuplicate && _candidateText != _lastTranslatedText
+                            && StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 12);
+
+                        // R1: return-to-predecessor with another line shown = oscillation, not a new page.
+                        // Same trust shape as update-neardupe (>=0.90, or >=0.70 with common affix), aimed backward.
+                        double prevSimilarity = string.IsNullOrEmpty(_prevTranslatedText) ? 0.0 : ComputeSimilarity(_candidateText, _prevTranslatedText);
+                        bool isOscillationReturn = !string.IsNullOrEmpty(_prevTranslatedText)
+                            && _prevTranslatedText != _lastTranslatedText
+                            && (prevSimilarity >= NearDuplicateSimilarityThreshold
+                                || (prevSimilarity >= 0.70
+                                    && (HasCommonPrefix(_candidateText, _prevTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(_candidateText, _prevTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(_prevTranslatedText, _candidateText, 6))));
+
+                        if (isGrowth)
+                        {
+                            string prev = _lastTranslatedText;
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-in-place");
+                            _lastTranslatedText = _candidateText;
+
+                            string textToTranslate = _candidateText;
+                            _ = PublishUpdateAsync(prev, textToTranslate);
+                        }
+                        else if (isOverlapContinuation)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-overlap (scroll tail glued to next head)");
+                        }
+                        else if (!string.IsNullOrEmpty(_lastTranslatedText)
+                            && _lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=subpart-suppressed (tail of shown line)");
+                        }
+                        else if ((similarity >= 0.70
+                            && (HasCommonPrefix(_candidateText, _lastTranslatedText, 6)
+                                || StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 6)
+                                || StartsWithSuffixOfStrip(_lastTranslatedText, _candidateText, 6)))
+                            || HasLongCommonMiddle(_candidateText, _lastTranslatedText, 10))
+                        {
+                            // Flicker variant (こらこら ねなさい/ねえさい): same
+                            // bubble, update in place - never a second post.
+                            string prev = _lastTranslatedText;
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
+                            _lastTranslatedText = _candidateText;
+                            string textToTranslate = _candidateText;
+                            _ = PublishUpdateAsync(prev, textToTranslate);
+                        }
+                        else if (!isNearDuplicate)
+                        {
+                            // Density gate: 4+ words, zero content (POS), matching the
+                            // candidate -> chrome, not dialogue. Short lines exempt.
+                            if (_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                && !string.IsNullOrEmpty(_lastOcrText)
+                                && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-contentless (words {_lastOcrContent}/{_lastOcrTotal})");
+                            }
+                            else if (!HasJapanese(_candidateText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-non-ja");
+                            }
+                            // MILESTONE 2 (enforced, shadow-verified): no kanji/
+                            // katakana, no bubble. Omission-only if ever wrong.
+                            else if (!HasAnchorSubstance(_candidateText))
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-anchor (no kanji/katakana)");
+                            }
+                            else if (_frameIsTitle)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=title-guard (title-screen misread, holding)");
+                            }
+                            else if (isOscillationReturn)
+                            {
+                                // R1 (corpus loops 555-557): the returnee proves the middle fire was the intruder.
+                                // Single bubble: rewrite it back, never a second post. Omission-only if ever wrong.
+                                string prev = _lastTranslatedText;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-oscillation (return flicker, single bubble)");
+                                _prevTranslatedText = _lastTranslatedText;
+                                _lastTranslatedText = _candidateText;
+                                string textToTranslate = _candidateText;
+                                _ = PublishUpdateAsync(prev, textToTranslate);
+                            }
+                            else if (IsUnterminatedComposite(_candidateText))
+                            {
+                                FileLogger.Log($"[translate] suppressed scroll-composite for \"{Truncate(_candidateText)}\"");
+                                return true; // was loop-exit (scroll-composite); caller re-exits to preserve
+                            }
+                            else
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-new (similarity to last shown: {similarity:F2})");
+                                try { CorpusRecordBubble("dialogue-decision:publish-new", _candidateText, ""); } catch { }
+                                _prevTranslatedText = _lastTranslatedText;
+                                _lastTranslatedText = _candidateText;
+                                _lastFireLoop = iteration;
+
+                                string textToTranslate = _candidateText;
+                                _ = PublishDecisionAsync(textToTranslate);
+                            }
+                        }
+                        else
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=near-duplicate (similarity {similarity:F2})");
+                        }
+                        }
+                    }
+            return false;
+        }
+
         private async Task RunLoopAsync(CancellationToken token)
         {
             FileLogger.Log("CaptureController loop starting (cc-converge-overlap)");
@@ -795,7 +1446,7 @@ namespace WunderLanguage.Host.Capture
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-on-dwell (static frame confirms held line)");
                                 _lastTranslatedText = _candidateText;
                                 string dwellText = _candidateText;
-                                _ = TranslateAndPublishAsync(dwellText);
+                                _ = PublishDecisionAsync(dwellText);
                             }
                         }
                         await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
@@ -1058,616 +1709,8 @@ namespace WunderLanguage.Host.Capture
                         if (extractedText != _settleLastText) _settleLastText = extractedText ?? "";
                     }
                     catch { }
-                    // Kana-chart gate (name entry etc.): merged-blob shape.
-                    // Suppresses whole screen in both tiers: header, arrows,
-                    // END and blobs cost nothing and post nothing.
-                    // Battle veto (cited 2026-10-01: open item box reads
-                    // 20+ kana with zero kanji per column, tripping this
-                    // gate for 8s until scroll breaks the blob shape).
-                    // Name entry never happens mid-battle; battle-shaped
-                    // frames route to the battle handlers below instead.
-                    if (IsKanaChartScreen(ocrBlocks)
-                        && !BattleFrame.IsBattle(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, _itemBoxOpen)
-                        && !(_itemBoxOpen && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese)))
-                    {
-                        FileLogger.Log($"[loop {iteration}] chart-suppressed (kana input grid)");
-                        _menuStableCount = 0;
-                        _menuSignature = "";
-                        _candidateText = string.Empty;
-                        _candidateStableCount = 0;
-                        _candidateGrewThisRead = false;
-                        _flashFired = false;
-                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
-                        continue;
-                    }
-                    // Phase 1b: menu/title tracker. Dialogue path below frozen.
-                    try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
-                    // Zelda repair: the battle tracker (publishes BATTLE frames,
-                    // owns _battleFiredSig/cooldown/stickies) runs on FFVI packs
-                    // only — same gate as the suppression above. Revert: drop the if.
-                    try { if (Packs.PackRegistry.Current.GameId == Packs.PackRegistry.FfviGameId) UpdateBattleFrame(ocrBlocks); } catch (Exception bex) { FileLogger.Log($"[battle] tracker error: {bex.Message}"); }
-                    token.ThrowIfCancellationRequested();
-                    FileLogger.Log($"[loop {iteration}] OCR result: \"{extractedText}\"");
-                    try
-                    {
-                        // Provenance window update (observe-only): adjacent-read
-                        // similarity into the trailing window; blanks skipped
-                        // (similarity undefined), mean logged for calibration.
-                        if (!string.IsNullOrEmpty(extractedText) && !string.IsNullOrEmpty(_provLastText))
-                        {
-                            _provSimWindow.Enqueue(ComputeSimilarity(extractedText, _provLastText));
-                            while (_provSimWindow.Count > ProvWindowSize) _provSimWindow.Dequeue();
-                        }
-                        _provLastText = extractedText ?? "";
-                        if (_provSimWindow.Count > 0)
-                        {
-                            double _ps = 0; foreach (var _v in _provSimWindow) _ps += _v;
-                            FileLogger.Log($"[loop {iteration}] prov-stab={_ps / _provSimWindow.Count:0.00} (n={_provSimWindow.Count})");
-                        }
-                    }
-                    catch { }
-
-                    if (string.IsNullOrWhiteSpace(extractedText))
-                    {
-                        if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText) && !_frameIsTitle
-                            && _candidateText != _lastTranslatedText
-                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText) && !IsScrollBlend(_candidateText) && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-blank (publishing held line)");
-                            _lastTranslatedText = _candidateText;
-                            string flushText = _candidateText;
-                            _ = TranslateAndPublishAsync(flushText);
-                        }
-                        _candidateText = string.Empty;
-                        _candidateStableCount = 0;
-                        _candidateGrewThisRead = false;
-                        _flashFired = false;
-                    }
-                    else if (!string.IsNullOrEmpty(_candidateText)
-                        && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
-                            || extractedText.Contains(_candidateText, StringComparison.Ordinal)
-                            || _candidateText.Contains(extractedText, StringComparison.Ordinal)
-                            || HasCommonPrefix(extractedText, _candidateText, 10)
-                            || HasCommonPrefix(StripForOverlap(extractedText), StripForOverlap(_candidateText), 6)))
-                    {
-                        // Beam-diversity suspect flag for this read (sidecar div
-                        // rides OcrBlock; absent in old corpora → 0.0 → never holds).
-                        double frameDiv = FrameSuspectDiv(ocrBlocks, extractedText);
-                        bool suspectHold = frameDiv >= SuspectDivThreshold;
-                        // Blend-stuck escape: dirty blend must not pin clean line.
-                        if ((IsScrollBlend(_candidateText) || IsZeldaTransitionBlend(_candidateText))
-                            && !(IsScrollBlend(extractedText) || IsZeldaTransitionBlend(extractedText))
-                            && !suspectHold)
-                        {
-                            _candidateText = extractedText;
-                            _candidateStableCount = 1;
-                            _candidateGrewThisRead = false;
-                            _flashFired = false;
-                        }
-                        else if (suspectHold)
-                        {
-                            // Suspect-hold (bottleneck-3 A1): hold count AND text —
-                            // neither increment nor adopt. Flush paths below still
-                            // rescue real pageturns. Revert: delete this branch.
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suspect-hold (div={frameDiv:0.00} holding \"{Truncate(_candidateText)}\")");
-                            _candidateGrewThisRead = false;
-                        }
-                        else
-                        {
-                        // Same line re-read, growth step, or scroll settling.
-                        // Growth (longer) and contained (cleaner) adopt at once
-                        // so autoscroll tracks with no lag. Same-length variants
-                        // (scroll-blur/flicker) settle-first: held until the SAME
-                        // variant repeats, so one garbled frame can't overwrite.
-                        _candidateStableCount++;
-                        if (_candidateText.Contains(extractedText, StringComparison.Ordinal))
-                        {
-                            // R1 (steadiness): never trade a complete held line
-                            // for a much-shorter contained tail (OCR head-loss).
-                            // Normalization jitter (<6) still adopts as before.
-                            if (IsCompleteDialogueLine(_candidateText)
-                                && StripForOverlap(_candidateText).Length - StripForOverlap(extractedText).Length >= 6)
-                            {
-                                if (_successorText == extractedText)
-                                    _successorCount++;
-                                else
-                                {
-                                    _successorText = extractedText;
-                                    _successorCount = 1;
-                                }
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-short-tail (keeping complete held line)");
-                                _candidateGrewThisRead = false;
-                            }
-                            else
-                            {
-                                _candidateText = extractedText;
-                                _candidateGrewThisRead = false;
-                                _successorText = string.Empty;
-                                _successorCount = 0;
-                            }
-                        }
-                        else if (extractedText.Length > _candidateText.Length)
-                        {
-                            // Flash-post (pair-2): a stable fragment absorbed by
-                            // growth was really shown (telepathy flashes). Post
-                            // once per lineage on substantial jumps only (no
-                            // typewriter spam); the full line follows via update.
-                            if (!_flashFired && _candidateStableCount >= RequiredStableReadings
-                                && StripForOverlap(extractedText).Length - StripForOverlap(_candidateText).Length >= 6
-                                && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
-                                && !IsEllipsisOnly(_candidateText) && !IsScrollBlend(_candidateText)
-                                && !IsZeldaTransitionBlend(_candidateText) && !EndsWithContinuation(_candidateText)
-                                && !IsIncompleteSacrifice(_candidateText) && IsCompleteDialogueLine(_candidateText) && !_frameIsTitle
-                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flash-post (stable fragment absorbed by growth)");
-                                _lastTranslatedText = _candidateText;
-                                string flashText = _candidateText;
-                                _ = TranslateAndPublishAsync(flashText);
-                                _flashFired = true;
-                            }
-                            _candidateText = extractedText;
-                            _candidateGrewThisRead = true;
-                            _successorText = string.Empty;
-                            _successorCount = 0;
-                        }
-                        else if (_successorText == extractedText)
-                        {
-                            _successorCount++;
-                            if (_successorCount >= 2)
-                            {
-                                _candidateText = extractedText;
-                                _successorText = string.Empty;
-                                _successorCount = 0;
-                            }
-                            _candidateGrewThisRead = false;
-                        }
-                        else
-                        {
-                            _successorText = extractedText;
-                            _successorCount = 1;
-                            _candidateGrewThisRead = false;
-                        }
-                        } // end else (clean read)
-                    }
-                    else
-                    {
-                        // MILESTONE 4 (page-turn flush): substantial held line
-                        // replaced by a dissimilar substantial line = the player
-                        // turned the page. Publish the held page now; it will
-                        // never stabilize again. Noise can't trigger this: both
-                        // sides must be substantial, and menu screens are out.
-                        if (!string.IsNullOrEmpty(_candidateText)
-                            && IsSubstantialLine(_candidateText)
-                            && IsSubstantialLine(extractedText)
-                            && !IsGameOverText(extractedText)
-                            && string.IsNullOrEmpty(_menuSignature)
-                            && !_frameIsTitle
-                            && !EndsWithContinuation(_candidateText)
-                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
-                            && !IsIncompleteSacrifice(_candidateText)
-                            && IsCompleteDialogueLine(_candidateText)
-                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
-                            // R2a: shown line younger than 3 loops + dissimilar held page = lone intruder, hold it.
-                            // True turns arrive with an old shown line and fire instantly, as before.
-                            && (iteration - _lastFireLoop >= 3))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-pageturn (publishing turned page)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, ""); } catch { }
-                            _prevTranslatedText = _lastTranslatedText;
-                            _lastTranslatedText = _candidateText;
-                            _lastFireLoop = iteration;
-                            string pageText = _candidateText;
-                            _ = TranslateAndPublishAsync(pageText);
-                            _candidateText = extractedText;
-                            _candidateStableCount = 1;
-                            _candidateGrewThisRead = false;
-                            _flashFired = false;
-                            _successorText = string.Empty;
-                            _successorCount = 0;
-                            _weakHoldCount = 0;
-                            _weakHoldFor = string.Empty;
-                        }
-                        // MILESTONE 4 (challenger guard): weak incoming
-                        // (junk, anchorless, or fragment) can never evict a
-                        // substantial held line. Tracked as successor so a
-                        // real scene change still breaks through below.
-                        // MILESTONE 5 step 1 (recall): survival is stability.
-                        // A held line outliving the weak-hold bar (12 full / 18 reduced, see S1.2) posts on
-                        // its own instead of waiting 70+ loops for the next
-                        // page-turn (the 昨年Ｐ/ブーメラン stall).
-                        else if (!string.IsNullOrEmpty(_candidateText)
-                            && IsSubstantialLine(_candidateText)
-                            && !IsSubstantialLine(extractedText)
-                            && !IsGameOverText(extractedText))
-                        {
-                            if (_successorText == extractedText)
-                                _successorCount++;
-                            else
-                            {
-                                _successorText = extractedText;
-                                _successorCount = 1;
-                            }
-                            if (_weakHoldFor != _candidateText)
-                            {
-                                _weakHoldFor = _candidateText;
-                                _weakHoldCount = 0;
-                            }
-                            _weakHoldCount++;
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-weak-challenger (keeping held line, weakHold={_weakHoldCount})");
-                            if (_weakHoldCount >= _weakHoldThreshold
-                                && !StartsHeadlessFragment(_candidateText)
-                                && !_frameIsTitle
-                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-weak-hold (held line survived churn)");
-                                try { CorpusRecordBubble("dialogue-decision:publish-weak-hold", _candidateText, ""); } catch { }
-                                _prevTranslatedText = _lastTranslatedText;
-                                _lastTranslatedText = _candidateText;
-                                _lastFireLoop = iteration;
-                                string weakHoldText = _candidateText;
-                                _ = TranslateAndPublishAsync(weakHoldText);
-                                _candidateStableCount = RequiredStableReadings;
-                                _weakHoldCount = 0;
-                                _weakHoldFor = string.Empty;
-                                _successorText = string.Empty;
-                                _successorCount = 0;
-                            }
-                        }
-                        // Scroll-flush: the held line just scrolled (its successor
-                        // starts with its tail). Publish the full held text now --
-                        // it will never stabilize again.
-                        else if (_candidateStableCount >= 2
-                            && !string.IsNullOrEmpty(_candidateText)
-                            && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
-                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText)
-                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
-                            && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
-                            && HasJapanese(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-scroll (publishing scrolled line)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-scroll", _candidateText, ""); } catch { }
-                            _prevTranslatedText = _lastTranslatedText;
-                            _lastTranslatedText = _candidateText;
-                            _lastFireLoop = iteration;
-                            string flushText = _candidateText;
-                            _ = TranslateAndPublishAsync(flushText);
-                            _candidateText = extractedText;
-                            _candidateStableCount = 1;
-                            _candidateGrewThisRead = false;
-                            _flashFired = false;
-                        }
-                        // Turned-page rescue (cited 2026-10-07, measured: 109 long
-                        // unterminated Zelda texts never fired — both flush paths
-                        // demand completeness, so a scroll page that turns
-                        // mid-sentence dies silently). Same turn evidence as
-                        // flush-on-scroll, but for long substantial pages that
-                        // never terminated: publish or lose forever. Headless
-                        // fragments excluded (M5 recall shape), shorts excluded
-                        // (fragment-hold owns them), junk/blend/sacrifice as
-                        // usual. Shared: FFVI item rows are short (<15 strip)
-                        // and can't reach this branch; replay parity decides.
-                        // Revert: delete this branch.
-                        else if (_candidateStableCount >= 2
-                            && !string.IsNullOrEmpty(_candidateText)
-                            && StartsWithSuffixOfStrip(extractedText, _candidateText, 12)
-                            && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText)
-                            && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
-                            && !IsIncompleteSacrifice(_candidateText) && !StartsHeadlessFragment(_candidateText)
-                            && HasJapanese(_candidateText) && HasAnchorSubstance(_candidateText)
-                            && StripForOverlap(_candidateText).Length >= 15)
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-turned-page (publishing unterminated scrolled page)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-turned-page", _candidateText, ""); } catch { }
-                            _prevTranslatedText = _lastTranslatedText;
-                            _lastTranslatedText = _candidateText;
-                            _lastFireLoop = iteration;
-                            string turnedText = _candidateText;
-                            _ = TranslateAndPublishAsync(turnedText);
-                            _candidateText = extractedText;
-                            _candidateStableCount = 1;
-                            _candidateGrewThisRead = false;
-                            _flashFired = false;
-                        }
-                        // Single garbled scroll-out must not wipe a held line.
-                        else if (_candidateStableCount >= RequiredStableReadings
-                            && !IsJunkOcr(_candidateText) && !IsEllipsisOnly(_candidateText)
-                            && (IsScrollBlend(extractedText) || IsJunkOcr(extractedText) || extractedText.Length < 6))
-                        {
-                            // Guard-break: a challenger stabilizing twice means
-                            // the scene really changed (Zelda cell blocks) -
-                            // adopt it instead of holding forever.
-                            if (_successorText == extractedText)
-                            {
-                                _successorCount++;
-                                if (_successorCount >= 2)
-                                {
-                                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=guard-break (challenger stabilized, adopting)");
-                                    _candidateText = extractedText;
-                                    _candidateStableCount = 1;
-                                    _candidateGrewThisRead = false;
-                                    _successorText = string.Empty;
-                                    _successorCount = 0;
-                                    _flashFired = false;
-                                }
-                            }
-                            else
-                            {
-                                _successorText = extractedText;
-                                _successorCount = 1;
-                            }
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-new-guard (keeping held line)");
-                        }
-                        else
-                        {
-                            // Ellipsis-dismissal flush: outgoing line was stable and clean,
-                            // incoming read is dots only. Publish the held line instead of
-                            // letting it die (same gates as breakthrough-publish).
-                            if (IsEllipsisOnly(extractedText)
-                                && _candidateStableCount >= RequiredStableReadings
-                                && !_candidateGrewThisRead
-                                && !string.IsNullOrEmpty(_candidateText)
-                                && HasJapanese(_candidateText)
-                                && !IsJunkOcr(_candidateText)
-                                && !IsEllipsisOnly(_candidateText)
-                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
-                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
-                                && !_frameIsTitle
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
-                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && !(_lastOcrTotal >= 4 && _lastOcrContent == 0
-                                    && !string.IsNullOrEmpty(_lastOcrText)
-                                    && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-ellipsis (publishing dismissed line)");
-                                _lastTranslatedText = _candidateText;
-                                string ellipsisFlush = _candidateText;
-                                _ = TranslateAndPublishAsync(ellipsisFlush);
-                            }
-                            // Replacement flush (uncle-2nd/3rd, escape line):
-                            // stable clean held line, incoming is a different
-                            // real line (not ellipsis) -> post the held one.
-                            if (!IsEllipsisOnly(extractedText)
-                                && _candidateStableCount >= RequiredStableReadings
-                                && !_candidateGrewThisRead
-                                && !string.IsNullOrEmpty(_candidateText)
-                                && HasJapanese(_candidateText)
-                                && !IsJunkOcr(_candidateText)
-                                && !IsEllipsisOnly(_candidateText)
-                                && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
-                                && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
-                                && !_frameIsTitle
-                                && _candidateText != _lastTranslatedText
-                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-replace (publishing replaced line)");
-                                _lastTranslatedText = _candidateText;
-                                string replaceFlush = _candidateText;
-                                _ = TranslateAndPublishAsync(replaceFlush);
-                            }
-                            // Genuinely new line: track the LATEST read fresh.
-                            _candidateText = extractedText;
-                            _candidateStableCount = 1;
-                            _candidateGrewThisRead = false;
-                            _flashFired = false;
-                        }
-                    }
-                    FileLogger.Log($"[loop {iteration}] candidateText=\"{_candidateText}\" stableCount={_candidateStableCount}");
-
-                    if (_candidateStableCount >= RequiredStableReadings)
-                    {
-                        if (_candidateGrewThisRead && _candidateStableCount < GrowthBreakthroughPolls)
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-growth (still lengthening)");
-                        }
-                        else if (_candidateGrewThisRead)
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-growth (releasing long-held line)");
-                            _candidateGrewThisRead = false;
-                            string breakthroughText = _candidateText;
-                            if (IsIncompleteSacrifice(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-sacrifice");
-                            }
-                            else if (EndsWithContinuation(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-continuation");
-                            }
-                            else if (IsScrollBlend(breakthroughText) || IsZeldaTransitionBlend(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-blend");
-                            }
-                            else if (IsEllipsisOnly(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-ellipsis");
-                            }
-                            else if (IsJunkOcr(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-junk");
-                            }
-                            else if (!HasJapanese(breakthroughText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-nonja");
-                            }
-                            else if (_frameIsTitle)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-title");
-                            }
-                            else if (!string.IsNullOrEmpty(_lastTranslatedText)
-                                && _lastTranslatedText.Contains(breakthroughText, StringComparison.Ordinal))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-subpart");
-                            }
-                            else if (ComputeSimilarity(breakthroughText, _lastTranslatedText) >= NearDuplicateSimilarityThreshold)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-dupe");
-                            }
-                            else if (_lastOcrTotal >= 4 && _lastOcrContent == 0
-                                && !string.IsNullOrEmpty(_lastOcrText)
-                                && ComputeSimilarity(_lastOcrText, breakthroughText) >= 0.80)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-contentless");
-                            }
-                            else if (StripForOverlap(breakthroughText).Length < 6)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-held-fragment");
-                            }
-                            else
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-publish");
-                                try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, ""); } catch { }
-                                _lastTranslatedText = breakthroughText;
-                                string breakthroughFire = breakthroughText;
-                                _ = TranslateAndPublishAsync(breakthroughFire);
-                            }
-                        }
-                        else if (IsIncompleteSacrifice(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-sacrifice (つぎつぎ without ささげ)");
-                        }
-                        else if (EndsWithContinuation(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-continuation (mid-sentence)");
-                        }
-                        else if (IsScrollBlend(_candidateText) || IsZeldaTransitionBlend(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-blend (scroll transition)");
-                        }
-                        else if (IsEllipsisOnly(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-ellipsis");
-                            if (iteration % 20 == 0)
-                                FileLogger.Log($"[loop {iteration}] candidate is ellipsis-only (\"{_candidateText}\") - holding, not publishing as its own line");
-                        }
-                        else if (IsJunkOcr(_candidateText))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-junk: \"{_candidateText}\"");
-                        }
-                        else
-                        {
-                        // ANCHOR-SHADOW (log-only): would a substance gate hold this?
-                        // Observational only - the decision below runs unchanged.
-                        if (!HasAnchorSubstance(_candidateText))
-                            FileLogger.Log($"[anchor-shadow] would-hold \"{_candidateText}\" (no kanji/katakana)");
-                        double similarity = ComputeSimilarity(_candidateText, _lastTranslatedText);
-                        bool isNearDuplicate = similarity >= NearDuplicateSimilarityThreshold;
-
-                        bool isGrowth = !string.IsNullOrEmpty(_lastTranslatedText)
-                            && _candidateText.Length > _lastTranslatedText.Length
-                            && (_candidateText.StartsWith(_lastTranslatedText, StringComparison.Ordinal)
-                                || _candidateText.Contains(_lastTranslatedText, StringComparison.Ordinal));
-
-                        bool isOverlapContinuation = !isNearDuplicate && _candidateText != _lastTranslatedText
-                            && StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 12);
-
-                        // R1: return-to-predecessor with another line shown = oscillation, not a new page.
-                        // Same trust shape as update-neardupe (>=0.90, or >=0.70 with common affix), aimed backward.
-                        double prevSimilarity = string.IsNullOrEmpty(_prevTranslatedText) ? 0.0 : ComputeSimilarity(_candidateText, _prevTranslatedText);
-                        bool isOscillationReturn = !string.IsNullOrEmpty(_prevTranslatedText)
-                            && _prevTranslatedText != _lastTranslatedText
-                            && (prevSimilarity >= NearDuplicateSimilarityThreshold
-                                || (prevSimilarity >= 0.70
-                                    && (HasCommonPrefix(_candidateText, _prevTranslatedText, 6)
-                                        || StartsWithSuffixOfStrip(_candidateText, _prevTranslatedText, 6)
-                                        || StartsWithSuffixOfStrip(_prevTranslatedText, _candidateText, 6))));
-
-                        if (isGrowth)
-                        {
-                            string prev = _lastTranslatedText;
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-in-place");
-                            _lastTranslatedText = _candidateText;
-
-                            string textToTranslate = _candidateText;
-                            _ = TranslateAndUpdateAsync(prev, textToTranslate);
-                        }
-                        else if (isOverlapContinuation)
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-overlap (scroll tail glued to next head)");
-                        }
-                        else if (!string.IsNullOrEmpty(_lastTranslatedText)
-                            && _lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=subpart-suppressed (tail of shown line)");
-                        }
-                        else if ((similarity >= 0.70
-                            && (HasCommonPrefix(_candidateText, _lastTranslatedText, 6)
-                                || StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 6)
-                                || StartsWithSuffixOfStrip(_lastTranslatedText, _candidateText, 6)))
-                            || HasLongCommonMiddle(_candidateText, _lastTranslatedText, 10))
-                        {
-                            // Flicker variant (こらこら ねなさい/ねえさい): same
-                            // bubble, update in place - never a second post.
-                            string prev = _lastTranslatedText;
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
-                            _lastTranslatedText = _candidateText;
-                            string textToTranslate = _candidateText;
-                            _ = TranslateAndUpdateAsync(prev, textToTranslate);
-                        }
-                        else if (!isNearDuplicate)
-                        {
-                            // Density gate: 4+ words, zero content (POS), matching the
-                            // candidate -> chrome, not dialogue. Short lines exempt.
-                            if (_lastOcrTotal >= 4 && _lastOcrContent == 0
-                                && !string.IsNullOrEmpty(_lastOcrText)
-                                && ComputeSimilarity(_lastOcrText, _candidateText) >= 0.80)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-contentless (words {_lastOcrContent}/{_lastOcrTotal})");
-                            }
-                            else if (!HasJapanese(_candidateText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suppress-non-ja");
-                            }
-                            // MILESTONE 2 (enforced, shadow-verified): no kanji/
-                            // katakana, no bubble. Omission-only if ever wrong.
-                            else if (!HasAnchorSubstance(_candidateText))
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-anchor (no kanji/katakana)");
-                            }
-                            else if (_frameIsTitle)
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=title-guard (title-screen misread, holding)");
-                            }
-                            else if (isOscillationReturn)
-                            {
-                                // R1 (corpus loops 555-557): the returnee proves the middle fire was the intruder.
-                                // Single bubble: rewrite it back, never a second post. Omission-only if ever wrong.
-                                string prev = _lastTranslatedText;
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-oscillation (return flicker, single bubble)");
-                                _prevTranslatedText = _lastTranslatedText;
-                                _lastTranslatedText = _candidateText;
-                                string textToTranslate = _candidateText;
-                                _ = TranslateAndUpdateAsync(prev, textToTranslate);
-                            }
-                            else if (IsUnterminatedComposite(_candidateText))
-                            {
-                                FileLogger.Log($"[translate] suppressed scroll-composite for \"{Truncate(_candidateText)}\"");
-                                return;
-                            }
-                            else
-                            {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-new (similarity to last shown: {similarity:F2})");
-                                try { CorpusRecordBubble("dialogue-decision:publish-new", _candidateText, ""); } catch { }
-                                _prevTranslatedText = _lastTranslatedText;
-                                _lastTranslatedText = _candidateText;
-                                _lastFireLoop = iteration;
-
-                                string textToTranslate = _candidateText;
-                                _ = TranslateAndPublishAsync(textToTranslate);
-                            }
-                        }
-                        else
-                        {
-                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=near-duplicate (similarity {similarity:F2})");
-                        }
-                        }
-                    }
+                    // M7c slice v2 seam: one step per observation (see ProcessOcrObservationAsync).
+                    if (await ProcessOcrObservationAsync(iteration, extractedText, ocrBlocks, token)) return;
                 }
                 catch (OperationCanceledException)
                 {
