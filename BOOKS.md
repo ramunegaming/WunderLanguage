@@ -562,6 +562,15 @@ rule). Revisit only on evidence:**
   reads EMPTY (total=0) so the flag was false at the cited loops — the
   empty-logo-title gap stays queued (quiet-watch interaction unscoped).
   Revert: delete the conjunct.
+- Battle BATTLE-panel gaps CLOSED as designed (FFVI run corpus: 92
+  battle-frame:fire, event rows post correctly; static menus don't
+  repost by design — no spam). No action.
+- No-box fire MECHANISM FOUND (shot-15 シルバリオカートリー):
+  loop-3059 count-1 text flushed as "turned page" when loop-3060 read
+  dissimilar (pageturn path has no stability minimum). 2nd instance
+  for queued flush-hardening (loop-458 precedent); needs tighter
+  distinguisher (length/provenance — bottleneck-2 window-stability
+  metric is the candidate) + more instances. Still queued, not scoped.
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
