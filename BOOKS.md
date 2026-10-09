@@ -504,6 +504,19 @@ rule). Revisit only on evidence:**
   UNBLOCKED to scoping (lower beams sometimes right, e.g. みつかり).
   Proposed: log div + flag in [rec-beam] (observe-only), stability use
   after. Awaiting go.
+- FFVI run verdicts (live, 2026-10-09, Narshe, loops 20–3296, 2127 ocr /
+  238 bubbles, 15 shot bundles banked): rec-beam parity=ok live;
+  suspect-hold 31 holds, 0 confirmed starvation — battle/UI junk held
+  right (ウェッジビックス??? div 0.92–1.00), held fragments' pages
+  posted complete (ここは→老人 line, お願いしませんよ×2). 3 opens
+  need panel truth: いたぞ×6 holds/0 fires (stable-but-suspect, the
+  exact trade — garbled echo or omitted truth, frames decide),
+  気がついたのか×2 (garbled ログ/ロッフ variants, never 3× either
+  way — hold changed nothing), Kefka帝国 line (garbled, clean form
+  never read). TITLE live on logo (quiet-title publish). sentdedup 167,
+  pageturn 21, publish-new 37. C3/confw ZERO live engagement
+  ([fuzzy]/[fuzzy-w] absent) — vocab paths untested live; A3 stays
+  offline (15 FFVI frames banked for beam-choice bake-off).
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
