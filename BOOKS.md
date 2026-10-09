@@ -601,3 +601,17 @@ rule). Revisit only on evidence:**
   Parked with data. A3 dissolves: confw second pass already IS the
   shipped vocab-rescorer; beam-choice-for-vocab needs FFVI crops
   (unbanked) → parked behind material.
+- Bottleneck-4 papers graded (P1 WMT19 QE, P2 unsupervised QE, P3
+  robustness): usable = referenceless framing, severity tiers, MCC,
+  dispersion-over-mean (black-box), confusion-mapped perturbations;
+  closed = supervised models, glass-box internals, live consistency
+  checks, all retraining. Architecture verdict: discrete guards only.
+- B4 audit done offline (2026-10-10, 1289 banked dialogue-fire
+  bubbles): ja-leak 0, copy-through 0, empty-en 0, repeat 3, len-ratio
+  28. Zelda-oracle calibration: len-ratio 5/5 bad (base 0.29), repeat
+  2/2 bad — perfect precision, thin n. FFVI exhibits: Ke-fugu,
+  tina-foreigner (CAT mangles unpinned dialogue names), one CAT
+  meta-refusal ("already in English"). Proposed: name-placeholders via
+  qmask machinery (manual names, dialogue path) — awaiting go;
+  len-ratio/repeat stay observed (thin); meta-refusal guard queued
+  (n=1).
