@@ -13,7 +13,7 @@ namespace WunderLanguage.Host.Ocr
     // Vision batch item 2: Src tags the proposer ("detector" or
     // "classical"). Host unions classical only in learning mode
     // (empty item vocab) — the tuned path never sees them.
-    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1, string Src = "detector");
+    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1, string Src = "detector", double Div = 0.0);
 
     public class OcrClient
     {
@@ -113,12 +113,17 @@ namespace WunderLanguage.Host.Ocr
                         string src = "detector";
                         if (item.TryGetProperty("src", out var sc) && sc.ValueKind == JsonValueKind.String)
                             src = sc.GetString() ?? "detector";
+                        // Beam-diversity suspect flag (bottleneck-3 A1).
+                        // Absent in old sidecars/corpora → 0.0 → never holds.
+                        double div = 0.0;
+                        if (item.TryGetProperty("div", out var dv) && dv.ValueKind == JsonValueKind.Number && dv.TryGetDouble(out var dd))
+                            div = Math.Min(1.0, Math.Max(0.0, dd));
                         // Learning-mode union (vision item 2): classical
                         // proposals reach assembly only with empty item
                         // vocab; vocab games never see them (tuned path
                         // byte-identical).
                         if (src == "classical" && !includeClassical) continue;
-                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge, src));
+                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge, src, div));
                     }
                     catch { }
                 }

@@ -267,6 +267,31 @@ namespace WunderLanguage.Host.Capture
         private const int RequiredStableReadings = 3;
         private const int GrowthBreakthroughPolls = 10;
         private const int MinCandidateContentLength = 2;
+        // Suspect-hold (bottleneck-3 A1): beam-diverse reads are wrong 82%
+        // of the time (div>0.20, precision 0.82/recall 0.49, 2026-10-09,
+        // 182 banked crops, script oracle). Held reads neither increment
+        // nor replace the candidate; flush paths below still rescue turns.
+        // Revert: delete const + helper + the match-branch wrapper.
+        private const double SuspectDivThreshold = 0.20;
+        private static double FrameSuspectDiv(List<OcrBlock> blocks, string extracted)
+        {
+            // Max beam-diversity among blocks backing this read (text
+            // contained either way). No contributing block → 0 (never holds).
+            // Old corpora lack d → Div defaults 0.0 → replay parity.
+            double m = 0.0;
+            try
+            {
+                if (blocks == null || string.IsNullOrEmpty(extracted)) return 0.0;
+                foreach (var b in blocks)
+                {
+                    if (string.IsNullOrEmpty(b.Text)) continue;
+                    if (!extracted.Contains(b.Text, StringComparison.Ordinal) && !b.Text.Contains(extracted, StringComparison.Ordinal)) continue;
+                    if (b.Div > m) m = b.Div;
+                }
+            }
+            catch { }
+            return Math.Min(1.0, Math.Max(0.0, m));
+        }
 
         private const int IdleDelayMs = 400;
         private const int SettlingDelayMs = 150;
@@ -1070,14 +1095,27 @@ namespace WunderLanguage.Host.Capture
                             || HasCommonPrefix(extractedText, _candidateText, 10)
                             || HasCommonPrefix(StripForOverlap(extractedText), StripForOverlap(_candidateText), 6)))
                     {
+                        // Beam-diversity suspect flag for this read (sidecar div
+                        // rides OcrBlock; absent in old corpora → 0.0 → never holds).
+                        double frameDiv = FrameSuspectDiv(ocrBlocks, extractedText);
+                        bool suspectHold = frameDiv >= SuspectDivThreshold;
                         // Blend-stuck escape: dirty blend must not pin clean line.
                         if ((IsScrollBlend(_candidateText) || IsZeldaTransitionBlend(_candidateText))
-                            && !(IsScrollBlend(extractedText) || IsZeldaTransitionBlend(extractedText)))
+                            && !(IsScrollBlend(extractedText) || IsZeldaTransitionBlend(extractedText))
+                            && !suspectHold)
                         {
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
+                        }
+                        else if (suspectHold)
+                        {
+                            // Suspect-hold (bottleneck-3 A1): hold count AND text —
+                            // neither increment nor adopt. Flush paths below still
+                            // rescue real pageturns. Revert: delete this branch.
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suspect-hold (div={frameDiv:0.00} holding \"{Truncate(_candidateText)}\")");
+                            _candidateGrewThisRead = false;
                         }
                         else
                         {
@@ -1156,7 +1194,7 @@ namespace WunderLanguage.Host.Capture
                             _successorCount = 1;
                             _candidateGrewThisRead = false;
                         }
-                        }
+                        } // end else (clean read)
                     }
                     else
                     {
@@ -1898,7 +1936,7 @@ namespace WunderLanguage.Host.Capture
                 // replay reads lenient properties and ignores them — parity
                 // proven per batch. Old files simply lack c/n/s.).
                 // Revert: drop c/n/s from the anonymous type.
-                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src });
+                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src, d = Math.Round(b.Div, 3) });
                 CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
             }
             catch { }

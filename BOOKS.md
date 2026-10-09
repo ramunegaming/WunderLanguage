@@ -494,3 +494,9 @@ rule). Revisit only on evidence:**
   UNBLOCKED to scoping (lower beams sometimes right, e.g. みつかり).
   Proposed: log div + flag in [rec-beam] (observe-only), stability use
   after. Awaiting go.
+- Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
+  per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
+  (additive, replay-lenient) → stability match-branch holds count AND
+  text on div≥0.20 ([suspect-hold] log), flush paths untouched.
+  Old corpora lack d → Div 0 → never holds → parity by construction.
+  Revert: revert suspect-hold.
