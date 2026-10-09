@@ -517,6 +517,22 @@ rule). Revisit only on evidence:**
   pageturn 21, publish-new 37. C3/confw ZERO live engagement
   ([fuzzy]/[fuzzy-w] absent) — vocab paths untested live; A3 stays
   offline (15 FFVI frames banked for beam-choice bake-off).
+- A1 coverage boundary PROVEN live (FFVI corpus div audit): garbles
+  that stabilize read at div 0.07–0.14 (サコ×24 loops, 鹿野アニマー/
+  サルシェ×3 — beams AGREE on the wrong reading). Suspect-hold is
+  blind to confidently-wrong reads by construction (Paper C's own
+  Table-6 failure class; Lu 35.8% silent failures). That class needs
+  symbolic knowledge (fixup pairs), not confidence — queued.
+- Shot triage (15 FFVI shots, panel truth): (a) CAT profanity
+  hallucination — ウェッジビックス??? → "What is the Japanese word
+  for 'wet dick'?" — NEW, SEVERE, translation-side, trust violation;
+  (b) title quiet + intro crawl unposted (bottleneck-2 FFVI evidence,
+  no action); (c) BATTLE wireframes empty while menus/names visible
+  (FFVI battle-polish proof); (d) no-box dialogue fire
+  (シルバリオカートリー on battle screen — junk-fire instance with
+  frame+blocks); (e) translation glossary gaps (gilded, High Vor ion,
+  Bicks — translation-quality queue). Proposed order: profanity guard
+  (omit+log, game-blind) → A3 bake-off → battle polish scoping.
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
