@@ -628,7 +628,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
   revert namemask
 - FFVI run fixups (7 pairs), title weak-hold guard (!_frameIsTitle),
   startup-survival batch, titlegeo, keeplog, rec-gen line, longbox watch,
-  prov-stab observability (trailing window, log-only).
+  prov-stab observability (trailing window, log-only),
+  M7c slice v1 (injectable clock, corpus wt, simcheck PASS).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
