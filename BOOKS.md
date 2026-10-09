@@ -442,3 +442,12 @@ rule). Revisit only on evidence:**
   page matches script shape; scored on the same 759 with zero junk-fire
   regression required. No production change until the offline number
   lands.
+- Blind overlap tiling MEASURED (offline, 2026-10-09, same 659 pairs,
+  exact suffix/prefix overlap ≥6 or containment — no oracle in the
+  tiling, oracle only for scoring): 147 blind tiles → 129 script-shaped
+  (88%), 18 junk-tiles (12%). Shaped tiles are full intro pages at
+  0.00–0.16. Junk tiles are mostly already-owned shapes (exact-doubles
+  = sentdedup territory, copyright/date fragments, dialogue repeats).
+  Verdict: tiling signal is real and game-blind; the 12% needs a gate
+  (length/provenance, dedup-first ordering) before any production fast
+  path. Implementation proposed, awaiting go.
