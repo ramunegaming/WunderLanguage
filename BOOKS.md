@@ -555,6 +555,13 @@ rule). Revisit only on evidence:**
   pairs. Name pins (Biggs/Wedge/Terra…) NOT touched — EN forms need
   user say (Matthew precedent). Glossary gaps (gilded, High Vor ion)
   stay in translation-quality queue (exact-match-only policy intact).
+- Title weak-hold guard SHIPPED: publish-weak-hold now requires
+  !_frameIsTitle (pageturn-flush precedent; loop-64 title-screen publish
+  of churn-held line is the cited instance). Replay 0 / 263-identical
+  (no old-corpus weak-hold fired on title). Known limit: FFVI logo
+  reads EMPTY (total=0) so the flag was false at the cited loops — the
+  empty-logo-title gap stays queued (quiet-watch interaction unscoped).
+  Revert: delete the conjunct.
 - Suspect-hold A1 SHIPPED (pending replay parity): sidecar div rides
   per-block (d, default 0.0) → OcrBlock.Div (lenient parse) → corpus d
   (additive, replay-lenient) → stability match-branch holds count AND
