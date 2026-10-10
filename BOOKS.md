@@ -789,6 +789,24 @@ Zelda sprite/text spec (user, from chat screenshots):
 - Link-face sprite (wanted poster etc.) → ignore, not text, no symbol.
 Status: recorded only. Triage + scoping after FFVI run.
 
+## FFVI live run notes (2026-10-10, user — triage now, both runs done)
+Same 3 issues as Zelda: (a) latency, (b) half-block-then-repeat,
+(c) hallucinations.
+Battle finding (user-diagnosed): action-menu slot 1 is NOT always
+たたかう — intro shows まどう (Magitek). Fixed-4-slot assumption
+broken; BattleCommands/splitter/glossary impact. Magic menu
+(ケアル/ファイア + MP panel) shot banked as battle-UI reference.
+Party info: ?????? for unnamed Tina (also reward bar + level-up
+banner ??????がレベルアップ); named rows ウェッジ/ビックス live
+(qmask territory; Wedge/Biggs EN still user call).
+Half-block-then-repeat PROOF banked (panel shot: coal-mine line
+posts first half twice instead of completing).
+FFVI brackets: closing 」 has a curled variant (OCR confusion
+candidate); ロック「 speaker-script form re-confirmed.
+Decision screen (save-point はい/いいえ + arrow): same rule as
+Zelda — positioned decision box, question + options in EXACT
+in-game positions, arrow itself not posted.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
