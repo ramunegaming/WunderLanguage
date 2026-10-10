@@ -984,7 +984,9 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    B2 shipped (madou commands/splitter/glossary; magic-menu verdict),
    B3 shipped (locke fixups; qmask live proof),
    B4 shipped (scroll-glue guard; update chains classified),
-   B5 measured (wall-clock: FFVI 2.4s / Zelda 9.1s p50; CAT p50 3.0s; weak-hold 16s).
+   B5 measured (wall-clock: FFVI 2.4s / Zelda 9.1s p50; CAT p50 3.0s; weak-hold 16s),
+   TITLE mistitle confirmed (Zelda sword scene; queued),
+   Game #3 = Paper Mario 480p (onboarding next).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
