@@ -1028,6 +1028,7 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    B3 shipped (locke fixups; qmask live proof),
    B4 shipped (scroll-glue guard; update chains classified),
    B5 measured (wall-clock: FFVI 2.4s / Zelda 9.1s p50; CAT p50 3.0s; weak-hold 16s),
+   Growth-fast shipped (intro 0->4 fires; old +22 fires, overlap 82->76 intended-change),
    TITLE mistitle confirmed (Zelda sword scene; queued),
    Game #3 = Paper Mario 480p (onboarding next).
 Pending live proof (need play with real CAT output): profanity-hold
