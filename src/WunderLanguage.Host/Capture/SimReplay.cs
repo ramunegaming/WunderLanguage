@@ -164,29 +164,67 @@ namespace WunderLanguage.Host.Capture
                 try { Packs.PackRegistry.SetCurrent(prevPack); } catch { }
                 int simFires = 0, simUpdates = 0;
                 var simFireJa = new List<string>();
-                // B6 erasure/lag (re-translation paper §3, adapted: bubbles
-                // for sentences, loops for seconds). Entries are
-                // kind:loop:ja (ja may contain colons — split max 3 parts).
+                // B9 panel latency (stream-latency paper: AL forgives, DAL
+                // never does; interactive-latency paper: distributions not
+                // means; SRE: percentiles + budget assertion). Entries are
+                // kind:loop:decision:ja (ja may contain colons — 4-part max).
                 var simFireLoops = new List<int>();
+                var simFireKinds = new List<string>();
                 foreach (var s in ctl._simPublished)
                 {
-                    int c1 = s.IndexOf(':');
-                    int c2 = c1 >= 0 ? s.IndexOf(':', c1 + 1) : -1;
-                    string kind = c1 > 0 ? s.Substring(0, c1) : s;
-                    int lp = (c1 >= 0 && c2 > c1 && int.TryParse(s.Substring(c1 + 1, c2 - c1 - 1), out int v)) ? v : -1;
-                    string j = c2 >= 0 ? s.Substring(c2 + 1) : s;
-                    if (kind == "fire") { simFires++; simFireJa.Add(j); simFireLoops.Add(lp); }
+                    string[] p = s.Split(new char[] { ':' }, 4);
+                    if (p.Length < 4) continue;
+                    if (!int.TryParse(p[1], out int lp)) lp = -1;
+                    if (p[0] == "fire") { simFires++; simFireJa.Add(p[3]); simFireLoops.Add(lp); simFireKinds.Add(p[2]); }
                     else simUpdates++;
                 }
-                // Sim lag: fire loop minus first-fed loop showing that JA.
+                // Sim lag: fire loop minus the start of the most recent
+                // CONSECUTIVE run of that JA at/under the fire loop (the
+                // run that actually caused the fire). Naive global
+                // first-seen inflates on repeated lines (same JA two scenes
+                // apart) — convicted 2026-10-10 (max=704 artifact).
                 // Sim erasure (NE analogue): updates per sim fire.
-                var firstSeen = new Dictionary<string, int>(StringComparer.Ordinal);
-                foreach (var f in fed)
-                    if (!firstSeen.ContainsKey(f.ja)) firstSeen[f.ja] = f.loop;
-                long lagSum = 0; int lagN = 0;
+                var lagSeq = new List<int>();
+                var kindLag = new Dictionary<string, List<int>>(StringComparer.Ordinal);
                 for (int i = 0; i < simFireJa.Count; i++)
-                    if (firstSeen.TryGetValue(simFireJa[i], out int fl) && simFireLoops[i] >= fl) { lagSum += simFireLoops[i] - fl; lagN++; }
-                double simLag = lagN > 0 ? (double)lagSum / lagN : -1;
+                {
+                    int fireLoop = i < simFireLoops.Count ? simFireLoops[i] : -1;
+                    // Last fed index at/under the fire loop showing this JA…
+                    int runEnd = -1;
+                    for (int j = fed.Count - 1; j >= 0; j--)
+                        if (fed[j].loop <= fireLoop && fed[j].ja == simFireJa[i]) { runEnd = j; break; }
+                    if (runEnd < 0) continue;
+                    // …extended backward while consecutive loops show it.
+                    int runStart = runEnd;
+                    while (runStart - 1 >= 0 && fed[runStart - 1].ja == simFireJa[i]
+                        && fed[runStart - 1].loop == fed[runStart].loop - 1) runStart--;
+                    {
+                        int lag = fireLoop - fed[runStart].loop;
+                        if (lag < 0) continue;
+                        lagSeq.Add(lag);
+                        string k = i < simFireKinds.Count ? simFireKinds[i] : "?";
+                        if (!kindLag.TryGetValue(k, out var kl)) { kl = new List<int>(); kindLag[k] = kl; }
+                        kl.Add(lag);
+                    }
+                }
+                // DAL-like catch-up debt (never forgives) runs on FIRE
+                // ORDER: accumulated growth of consecutive lags. Rises when
+                // the game outruns us (mash/autoscroll); flat on recovery.
+                long dalDebt = 0;
+                for (int i = 1; i < lagSeq.Count; i++)
+                    if (lagSeq[i] > lagSeq[i - 1]) dalDebt += lagSeq[i] - lagSeq[i - 1];
+                var lags = new List<int>(lagSeq);
+                lags.Sort();
+                double simLag = lags.Count > 0 ? lags.Sum(l => (long)l) / (double)lags.Count : -1;
+                int lagP50 = lags.Count > 0 ? lags[lags.Count / 2] : -1;
+                int lagP95 = lags.Count > 0 ? lags[Math.Min(lags.Count - 1, (int)(lags.Count * 0.95))] : -1;
+                int lagMax = lags.Count > 0 ? lags[lags.Count - 1] : -1;
+                var kindMean = new System.Text.StringBuilder();
+                foreach (var kv in kindLag)
+                {
+                    kv.Value.Sort();
+                    kindMean.Append(kv.Key + "=" + kv.Value.Count + "x@" + (kv.Value.Sum(l => (long)l) / Math.Max(1, kv.Value.Count)) + " ");
+                }
                 double simNE = simFires > 0 ? (double)simUpdates / simFires : -1;
                 // Live erasure on the recorded corpus (updates per decision
                 // fire). Live lag needs loop-stamped bubbles (banked going
@@ -200,6 +238,17 @@ namespace WunderLanguage.Host.Capture
                 foreach (var j in simFireJa) if (rec.TryGetValue(j, out int c) && c > 0) { rec[j] = c - 1; overlap++; }
                 FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} dims={sesW}x{sesH}({dimSrc}) simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
                 FileLogger.Log($"[b6metrics] simNE={simNE:0.00} (updates/fire) simLag={simLag:0.0}loops liveNE={liveNE:0.00} liveLag=n/a(old corpora lack bubble loop stamps)");
+                // B9 panel-latency budget (human-anchored: nominal loop
+                // ~0.5s; 2–4s irritating → p50 in single digits, weak-hold
+                // path 12–18 by explicit design so p95 accommodates ~30;
+                // NE at paper-stabilized 0.1 scale with headroom). Budgets
+                // are regression tripwires with headroom (5–10x observed
+                // 2026-10-10: p50=2, p95≤9, max≤21, NE≤0.39 — tightened
+                // from the first generous pass after the run-based lag
+                // definition convicted the first-seen artifact), not
+                // aspirations. Exit stays 0 (observe, SRE-style).
+                bool bOk = lagP50 <= 10 && lagP95 <= 30 && lagMax <= 60 && simNE <= 0.5;
+                FileLogger.Log($"[panellat] p50={lagP50} p95={lagP95} max={lagMax} dalDebt={dalDebt} kinds=({kindMean.ToString().Trim()}) BUDGET-{(bOk ? "OK" : "EXCEEDED")}(p50<=10,p95<=30,max<=60,NE<=0.5)");
                 for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
                 // Gap analysis (slice v2 polish): name the misses (recorded

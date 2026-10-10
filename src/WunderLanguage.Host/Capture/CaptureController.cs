@@ -65,14 +65,14 @@ namespace WunderLanguage.Host.Capture
             _gameId = "sim";
             try { _costFlushAt = _clock.GetUtcNow(); } catch { }
         }
-        private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1)
+        private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire")
         {
-            if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             return TranslateAndPublishAsync(ja);
         }
-        private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja, int loop = -1)
+        private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja, int loop = -1, string kind = "update")
         {
-            if (_simMode) { try { _simPublished.Add("update:" + _simLoop + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            if (_simMode) { try { _simPublished.Add("update:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             return TranslateAndUpdateAsync(prev, ja, loop);
         }
         private readonly string _id = Guid.NewGuid().ToString("N")[..6];
@@ -196,7 +196,8 @@ namespace WunderLanguage.Host.Capture
                 {
                     var (dlCalls, dlChars) = DeepLProvider.SpendStats();
                     var (tcEntries, tcBytes) = _translationManager.CacheSize();
-                    FileLogger.Log($"[spend] game={_gameId} deepl={dlCalls}calls/{dlChars}chars tcache={tcEntries}entries/{tcBytes}B");
+                    var (gateWaits, gateMax) = OfflineTranslationProvider.GateStats();
+                    FileLogger.Log($"[spend] game={_gameId} deepl={dlCalls}calls/{dlChars}chars tcache={tcEntries}entries/{tcBytes}B catgate=waits{gateWaits}/maxdepth{gateMax}");
                 }
                 catch { }
             }
@@ -828,7 +829,7 @@ namespace WunderLanguage.Host.Capture
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-blank (publishing held line)");
                             _lastTranslatedText = _candidateText;
                             string flushText = _candidateText;
-                            _ = PublishDecisionAsync(flushText);
+                            _ = PublishDecisionAsync(flushText, iteration, "flush-blank");
                         }
                         _candidateText = string.Empty;
                         _candidateStableCount = 0;
@@ -916,7 +917,7 @@ namespace WunderLanguage.Host.Capture
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flash-post (stable fragment absorbed by growth)");
                                 _lastTranslatedText = _candidateText;
                                 string flashText = _candidateText;
-                                _ = PublishDecisionAsync(flashText);
+                                _ = PublishDecisionAsync(flashText, iteration, "flash");
                                 _flashFired = true;
                             }
                             _candidateText = extractedText;
@@ -972,7 +973,7 @@ namespace WunderLanguage.Host.Capture
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
                             string pageText = _candidateText;
-                            _ = PublishDecisionAsync(pageText);
+                            _ = PublishDecisionAsync(pageText, iteration, "pageturn");
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
@@ -1021,7 +1022,7 @@ namespace WunderLanguage.Host.Capture
                                 _lastTranslatedText = _candidateText;
                                 _lastFireLoop = iteration;
                                 string weakHoldText = _candidateText;
-                                _ = PublishDecisionAsync(weakHoldText);
+                                _ = PublishDecisionAsync(weakHoldText, iteration, "weakhold");
                                 _candidateStableCount = RequiredStableReadings;
                                 _weakHoldCount = 0;
                                 _weakHoldFor = string.Empty;
@@ -1047,7 +1048,7 @@ namespace WunderLanguage.Host.Capture
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
                             string flushText = _candidateText;
-                            _ = PublishDecisionAsync(flushText);
+                            _ = PublishDecisionAsync(flushText, iteration, "flush-scroll");
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
@@ -1080,7 +1081,7 @@ namespace WunderLanguage.Host.Capture
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
                             string turnedText = _candidateText;
-                            _ = PublishDecisionAsync(turnedText);
+                            _ = PublishDecisionAsync(turnedText, iteration, "turned");
                             _candidateText = extractedText;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
@@ -1139,7 +1140,7 @@ namespace WunderLanguage.Host.Capture
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-ellipsis (publishing dismissed line)");
                                 _lastTranslatedText = _candidateText;
                                 string ellipsisFlush = _candidateText;
-                                _ = PublishDecisionAsync(ellipsisFlush);
+                                _ = PublishDecisionAsync(ellipsisFlush, iteration, "ellipsis");
                             }
                             // Replacement flush (uncle-2nd/3rd, escape line):
                             // stable clean held line, incoming is a different
@@ -1161,7 +1162,7 @@ namespace WunderLanguage.Host.Capture
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-replace (publishing replaced line)");
                                 _lastTranslatedText = _candidateText;
                                 string replaceFlush = _candidateText;
-                                _ = PublishDecisionAsync(replaceFlush);
+                                _ = PublishDecisionAsync(replaceFlush, iteration, "replace");
                             }
                             // Genuinely new line: track the LATEST read fresh.
                             _candidateText = extractedText;
@@ -1236,7 +1237,7 @@ namespace WunderLanguage.Host.Capture
                                 try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, "", "", iteration); } catch { }
                                 _lastTranslatedText = breakthroughText;
                                 string breakthroughFire = breakthroughText;
-                                _ = PublishDecisionAsync(breakthroughFire);
+                                _ = PublishDecisionAsync(breakthroughFire, iteration, "breakthrough");
                             }
                         }
                         else if (IsIncompleteSacrifice(_candidateText))
@@ -1296,7 +1297,7 @@ namespace WunderLanguage.Host.Capture
                             _lastTranslatedText = _candidateText;
 
                             string textToTranslate = _candidateText;
-                            _ = PublishUpdateAsync(prev, textToTranslate, iteration);
+                            _ = PublishUpdateAsync(prev, textToTranslate, iteration, "upd-growth");
                         }
                         else if (isOverlapContinuation)
                         {
@@ -1319,7 +1320,7 @@ namespace WunderLanguage.Host.Capture
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
                             _lastTranslatedText = _candidateText;
                             string textToTranslate = _candidateText;
-                            _ = PublishUpdateAsync(prev, textToTranslate, iteration);
+                            _ = PublishUpdateAsync(prev, textToTranslate, iteration, "upd-neardupe");
                         }
                         else if (!isNearDuplicate)
                         {
@@ -1354,7 +1355,7 @@ namespace WunderLanguage.Host.Capture
                                 _prevTranslatedText = _lastTranslatedText;
                                 _lastTranslatedText = _candidateText;
                                 string textToTranslate = _candidateText;
-                                _ = PublishUpdateAsync(prev, textToTranslate, iteration);
+                                _ = PublishUpdateAsync(prev, textToTranslate, iteration, "upd-osc");
                             }
                             else if (IsUnterminatedComposite(_candidateText))
                             {
@@ -1370,7 +1371,7 @@ namespace WunderLanguage.Host.Capture
                                 _lastFireLoop = iteration;
 
                                 string textToTranslate = _candidateText;
-                                _ = PublishDecisionAsync(textToTranslate);
+                                _ = PublishDecisionAsync(textToTranslate, iteration, "publishnew");
                             }
                         }
                         else
@@ -1474,7 +1475,7 @@ namespace WunderLanguage.Host.Capture
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-on-dwell (static frame confirms held line)");
                                 _lastTranslatedText = _candidateText;
                                 string dwellText = _candidateText;
-                                _ = PublishDecisionAsync(dwellText);
+                                _ = PublishDecisionAsync(dwellText, iteration, "dwell");
                             }
                         }
                         await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
