@@ -756,6 +756,16 @@ Remaining latency work is live-only: wall-clock conversion
 scaling (no hardware). Replay parity 0/263 throughout.
 Revert: revert b9-panellat.
 
+## keep-shots sentinel (user-requested, SHIPPED)
+`keep-shots.armed` next to `keep-log.armed`: present →
+troubleshoot/ shots accumulate across launches (newest 200
+kept, oldest pruned, one log line — bounded storage); absent
+→ last-run-only wipe as before. Startup file handling only,
+zero pipeline touch. Armed-path live proof waits for an armed
+run (arming is the user's call — sentinel must be created in
+%AppData%/WunderLanguage). Replay parity 0/263.
+Revert: revert keep-shots.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
