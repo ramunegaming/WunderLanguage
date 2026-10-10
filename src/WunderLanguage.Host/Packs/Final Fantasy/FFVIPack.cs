@@ -222,9 +222,16 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("アニマー", "アーマー"),
             ("サルシェ", "ナルシェ"),
             ("どうとうこの", "とうとうこの"),
+            // B3 live 2026-10-10 (Locke speaker-slot misreads, loops
+            // 2393/2151: ログ「×3, ＤＶＤの「×1 — ログ/ＤＶＤ never
+            // legit in FFVI dialogue, ロック only). Speaker-anchored;
+            // idempotent (outputs match no from-pattern, verified).
+            ("ログ「", "ロック「"),
+            ("ＤＶＤの「", "ロック「"),
         };
-        // Battle command vocabulary (cited): fight / ability / magic / item.
-        // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
+        // Battle command vocabulary (cited): fight / abilities / magic / item.
+        // Row order is positional: [0] fight, [1..n-2] abilities, [n-2] magic,
+        // [n-1] item (B2 floated the indices so まどう joins the pool).
         public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まどう", "まほう", "アイテム" };
         // Battle monster vocabulary (cited: panel/screenshot/log loops this
         // chat — OCR flickers エビオルニス/エピオルニス/エヒオルニス/
