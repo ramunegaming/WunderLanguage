@@ -866,6 +866,26 @@ title-path hardening (with loop-25 scroll-mid + 20:32 no-corpus
 instances). Needs shot/log context before scoping.
 
 ## Strategic pivot (user 2026-10-10): game #3 = Paper Mario (480p)
+
+## Zelda title+intro shot verdicts (2026-10-10, 6 bundles — keeper+corpus)
+Session: 166 ocr / 4 bubbles (2 decisions + 2 fires) = ONE post
+for ~6 pages. Shots 1–4 (intro movie + throne): panel EMPTY
+("Waiting for dialogue...") — intro-scroll gap CONFIRMED live
+(pages outrun stability; user memory of "working perfectly"
+was recognition fixups, a different layer). Shots 5–6: panel
+shows the Agahnim page accurately but STALE across 2+ game
+pages (same bubble, game moved on) — mash failure mode.
+Mechanism (not translation backlog: [spend] FIRST SIGHTING —
+deepl 0/0, tcache 40→5 pruned, catgate waits0/maxdepth0):
+scrolling reads never yield 2 similar loops → no candidate →
+all flush paths (need _candidateText) dead; the one post used
+publish-new, then nothing dislodged it. No TITLE in window
+(title skipped fast or quiet loops unmet — noted).
+Policy question for user (no build until answered): mashed
+content — (a) keep stale bubble (current), (b) fast-track
+current page (misteaching risk), (c) expire to empty on
+turn-evidence-without-fire (honest emptiness)? Recommending
+(c) under omission-over-misteaching. Revert: n/a (docs).
 Runs tapped dry on FFVI/Zelda data; new game for new data.
 Zelda/FFVI screen fixes (signs, battle/shop UI) deferred to the
 return — the point is a stronger core first. Governing trio
