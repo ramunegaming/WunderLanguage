@@ -924,7 +924,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    Bottleneck 9 shipped (panel budget BUDGET-OK both corpora; p50=2 loops; weak-hold never fired),
    keep-shots sentinel shipped (unarmed default; arming is user call),
    B1 shipped (suspect stain; old-corpora identical; Zelda 54/60 FFVI 50/50),
-   B2 shipped (madou commands/splitter/glossary; magic-menu verdict).
+   B2 shipped (madou commands/splitter/glossary; magic-menu verdict),
+   B3 shipped (locke fixups; qmask live proof).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
