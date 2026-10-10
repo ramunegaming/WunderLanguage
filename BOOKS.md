@@ -766,6 +766,29 @@ run (arming is the user's call — sentinel must be created in
 %AppData%/WunderLanguage). Replay parity 0/263.
 Revert: revert keep-shots.
 
+## B1 suspect×weak-hold guard (SHIPPED, live-triage batch 1)
+Cited: （１）カンテラ suspect-held 14× then weak-published
+(loop 889, lag 26). Fix: lineage stain — suspect-hold sets
+_suspectStainedText; cleared on all 11 adoption/clear points;
+publish-weak-hold requires unstained; hold-stained observability
+line. Principle preserved: suspicion closes the weak-hold
+shortcut, never the breakthrough road (stable clean reads still
+publish). Omission-only if wrong.
+Proof: build +0/0; replay 0/263; old corpora numbers IDENTICAL
+pre/post (div=0 → guard dormant — zero regression); new
+stamped corpora WITH guard: Zelda 54/60 (hold-stained ×34,
+カンテラ now held — the designed trade), FFVI 50/50 missed-0;
+banked dims used live first time (896×788 / 897×788 — matches
+live frames, re-convicts the ~1522 estimator); budget OK FFVI,
+trip on Zelda via by-design weak-hold (documented, not loosened).
+いたぞ ('「いたぞ」ということで、「いたぞ！' suspect-held 9×,
+0 fires) recorded as flush-hardening-related instance #3
+(mechanism differs: suspect-starved vs pageturn — noted).
+Protocol note: rapid-sequential CLI launches lose some log
+lines (3 done-lines vanished mid-chain, others survived); solo
+runs are reliable — read simreplay results solo.
+Revert: revert b1-stain.
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,

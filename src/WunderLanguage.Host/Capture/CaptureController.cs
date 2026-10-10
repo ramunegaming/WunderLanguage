@@ -331,6 +331,16 @@ namespace WunderLanguage.Host.Capture
         private string _candidateText = string.Empty;
         private int _candidateStableCount;
         private bool _candidateGrewThisRead;
+        // B1 suspect stain (bottleneck-4 suspect-hold × weak-hold
+        // interaction, cited live 2026-10-10: （１）カンテラ suspect-held
+        // 14× then weak-hold-published anyway). Set to the candidate whenever
+        // a suspect-hold fires for it; cleared on every candidate adoption or
+        // clear below (new lineage = unstained). publish-weak-hold requires
+        // unstained: suspicion removes the weak-hold shortcut, never the
+        // breakthrough road (stable clean reads still publish there).
+        // Omission-only if ever wrong. Revert: delete field + set/clears +
+        // the publish-weak-hold conjunct.
+        private string _suspectStainedText = string.Empty;
         private string _lastTranslatedText = string.Empty;
         // R1 oscillation memory: previously shown line (one slot). A stable candidate matching _prev
         // while another line is shown = same-box A-B-A flicker; the middle fire was the intruder.
@@ -786,6 +796,7 @@ namespace WunderLanguage.Host.Capture
                         _menuStableCount = 0;
                         _menuSignature = "";
                         _candidateText = string.Empty;
+                        _suspectStainedText = string.Empty;
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
                         _flashFired = false;
@@ -832,6 +843,7 @@ namespace WunderLanguage.Host.Capture
                             _ = PublishDecisionAsync(flushText, iteration, "flush-blank");
                         }
                         _candidateText = string.Empty;
+                        _suspectStainedText = string.Empty;
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
                         _flashFired = false;
@@ -853,6 +865,7 @@ namespace WunderLanguage.Host.Capture
                             && !suspectHold)
                         {
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
@@ -864,6 +877,10 @@ namespace WunderLanguage.Host.Capture
                             // rescue real pageturns. Revert: delete this branch.
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=suspect-hold (div={frameDiv:0.00} holding \"{Truncate(_candidateText)}\")");
                             _candidateGrewThisRead = false;
+                            // B1: stain the lineage (see field). Weak-hold
+                            // shortcut closes for this candidate until a new
+                            // lineage adopts; breakthrough road stays open.
+                            _suspectStainedText = _candidateText;
                         }
                         else
                         {
@@ -894,6 +911,7 @@ namespace WunderLanguage.Host.Capture
                             else
                             {
                                 _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                                 _candidateGrewThisRead = false;
                                 _successorText = string.Empty;
                                 _successorCount = 0;
@@ -921,6 +939,7 @@ namespace WunderLanguage.Host.Capture
                                 _flashFired = true;
                             }
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateGrewThisRead = true;
                             _successorText = string.Empty;
                             _successorCount = 0;
@@ -931,6 +950,7 @@ namespace WunderLanguage.Host.Capture
                             if (_successorCount >= 2)
                             {
                                 _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                                 _successorText = string.Empty;
                                 _successorCount = 0;
                             }
@@ -975,6 +995,7 @@ namespace WunderLanguage.Host.Capture
                             string pageText = _candidateText;
                             _ = PublishDecisionAsync(pageText, iteration, "pageturn");
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
@@ -1013,6 +1034,7 @@ namespace WunderLanguage.Host.Capture
                             if (_weakHoldCount >= _weakHoldThreshold
                                 && !StartsHeadlessFragment(_candidateText)
                                 && !_frameIsTitle
+                                && _suspectStainedText != _candidateText
                                 && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
                                 && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
                             {
@@ -1028,6 +1050,12 @@ namespace WunderLanguage.Host.Capture
                                 _weakHoldFor = string.Empty;
                                 _successorText = string.Empty;
                                 _successorCount = 0;
+                            }
+                            else if (_suspectStainedText == _candidateText && !string.IsNullOrEmpty(_candidateText))
+                            {
+                                // B1 observability: shortcut closed by stain,
+                                // lineage held (omission over misteaching).
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-stained (weak-hold blocked: suspect lineage)");
                             }
                         }
                         // Scroll-flush: the held line just scrolled (its successor
@@ -1050,6 +1078,7 @@ namespace WunderLanguage.Host.Capture
                             string flushText = _candidateText;
                             _ = PublishDecisionAsync(flushText, iteration, "flush-scroll");
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
@@ -1083,6 +1112,7 @@ namespace WunderLanguage.Host.Capture
                             string turnedText = _candidateText;
                             _ = PublishDecisionAsync(turnedText, iteration, "turned");
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
@@ -1102,6 +1132,7 @@ namespace WunderLanguage.Host.Capture
                                 {
                                     FileLogger.Log($"[loop {iteration}] STABLE-DECISION=guard-break (challenger stabilized, adopting)");
                                     _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                                     _candidateStableCount = 1;
                                     _candidateGrewThisRead = false;
                                     _successorText = string.Empty;
@@ -1166,6 +1197,7 @@ namespace WunderLanguage.Host.Capture
                             }
                             // Genuinely new line: track the LATEST read fresh.
                             _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
                             _candidateStableCount = 1;
                             _candidateGrewThisRead = false;
                             _flashFired = false;
