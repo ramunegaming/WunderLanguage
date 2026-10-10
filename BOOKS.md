@@ -666,7 +666,34 @@ honest health+503 detail+quiet hold+fallback chain+lowmem/CPU
 (degrades, never kills ✓); consecutive thresholds where they
 matter (window-death 5). Killer still unconvicted, no recurrence
 → NO behavior change. Revert: revert b6metrics.
-  Revert: revert m7c-slice2.
+
+## Bottleneck 7 — papers graded + recall proxies measured
+Sources (all read, none reupload): TESTR — LOW (training-based,
+curved-text machinery n/a to pixel fonts; ablations confirm our
+detect→recognize shape + upscale/cap operating point); Union14M
+revisit — MEDIUM (method + challenge taxonomy; artistic/
+contextless/salient/multi-words/incomplete map to our logo-
+fonts/item-numbers/neighbor-ingestion/merged-rows/fragments;
+vocab-reliance supports vocab-guarded fuzzy); DSText V2 —
+LOW-MEDIUM (small/dense is the hard regime — our regime;
+no implementation on 6GB VRAM).
+Shipped measurement (offline, both pinned FFVI corpora,
+corpora untouched): zero-blocks == extracted-empty exactly
+(52.6% / 31.0% — detector and extractor never disagree; empties
+are scene-empty, not missed reads); blocks/line mean 1.5/1.9,
+max 22/24 (dense battle screens box fine); fragments 6.6%/3.4%
+(fragment-hold territory); merged-proxy (1 block ≥15ch) 187/324
+(splitter territory, expected); contextless 109/70; blank-gaps
+48/21 (bounded miss-window candidates). Caveats: these two
+corpora predate c/n/s/d banking (conf=1.0 default, src/div
+absent — per-block quality analysis needs newer corpora);
+TRUE recall (text on screen, zero boxes) needs frames — queued
+as the banked-frame audit protocol for next play (settle-eval
+persists; sample offline, user confirms misses).
+Verdict: detection looks healthy on every text-present read;
+no recall failure cited → NO behavior change. Bottleneck 7
+closed pending the play-time frame audit. Revert: revert b7
+(docs-only).
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
