@@ -880,6 +880,28 @@ per directive (misread prefixes post then correct). Replay
 Build +0/0. Live proof needs play.
 Revert: revert growth-fast.
 
+## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
+User: cutscene/single-glimpse text never posts; errors in first
+minutes; title must be recognized; vision ≤1 misteach/2hr.
+Measured: 64–71% of distinct reads are single-glimpse;
+complete+substantial unfired singletons 3/41/46 across 3
+corpora. Conf-gate AUTOPSY (kills the obvious fix): min-c≥0.9
+posts garbage ('１０００円程…' @0.96, confidently-wrong
+maidens line @0.96) AND silences clean ('宝箱の前でＡボタン
+を押す' @0.84, 'あっ魔法の力が足りない！' @0.84). Box-conf is
+presence, not quality (B3 verdict, repriced). No cheap signal
+separates post-worthy from garbage singletons in banked data.
+Corrections banked: more games ≠ learning (only pack data
+accrues — fixups/vocab/titles; policy is static); intro "worked
+before" was recognition fixups, different layer. Options:
+(a) post all complete singletons (commissions ~50% garbage —
+rejected for educational tool); (b) keep omitting (current);
+(c) fuzzy-window counting (similar reads within N loops count
+together — next measurable step); (d) LM fluency scoring
+(new sidecar work, queued). Title = separate vision problem.
+Error-budget SLO proposed: ≤1 misteach/2hr play.
+Revert: n/a (report only — no code).
+
 ## TITLE mistitle CONFIRMED (user 2026-10-10, game-context)
 Zelda 17:27:35 TITLE fired mid-gameplay, right after receiving
 the sword from the dying uncle — first-of-kind (user: never
