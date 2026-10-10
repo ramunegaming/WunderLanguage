@@ -1843,6 +1843,21 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[translate] suppressed gameover-dupe for \"{Truncate(text)}\" (menu pack owns it)");
                     return;
                 }
+                // B4 scroll-glue guard (cited live 2026-10-10 coal line:
+                // the OCR read ITSELF doubled — half-A + half-A′ glued
+                // mid-autoscroll — then stabilized via prefix-match and
+                // fired). Halves-similarity on ComputeSimilarity, calibrated
+                // offline on 406 recorded fires: true dups ≥0.67 (coal
+                // 0.80, sign-glue 0.67–0.78, stutter 0.69), legit
+                // multi-utterance ≤0.60, normal ≤0.22. Threshold 0.65,
+                // min total 16 (halves ≥8). Withhold + log (the clean full
+                // read already follows a loop later); omission over
+                // misteaching. Revert: delete predicate + this block.
+                if (IsSelfDuplicated(text))
+                {
+                    FileLogger.Log($"[translate] suppressed self-dupe for \"{Truncate(text)}\" (scroll-glued read, holding for clean)");
+                    return;
+                }
                 // Double-fire symmetric guard (FFVI Gil doubles): dialogue exactly matching the
                 // currently-stable menu holds — menu owns it (menu-side already holds the reverse).
                 // Omission-only; _menuSignature empties off-menu so holds never go stale.
@@ -2658,6 +2673,20 @@ namespace WunderLanguage.Host.Capture
         }
 
         private const double NearDuplicateSimilarityThreshold = 0.90;
+
+        internal static bool IsSelfDuplicated(string text)
+        {
+            try
+            {
+                string s = (text ?? "").Trim();
+                if (s.Length < 16) return false;
+                int h = s.Length / 2;
+                string a = s.Substring(0, h).Trim(), b = s.Substring(h, h).Trim();
+                if (a.Length < 8 || b.Length < 8) return false;
+                return ComputeSimilarity(a, b) >= 0.65;
+            }
+            catch { return false; }
+        }
 
         private static string StripForOverlap(string s)
         {

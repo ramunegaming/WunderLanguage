@@ -820,6 +820,27 @@ intact). Old corpora lack both targets → replay 0/263 holds.
 Live Locke-slot proof needs next play. Build +0/0.
 Revert: revert b3-lockefix.
 
+## B4 scroll-glue guard (SHIPPED, live-triage batch 4)
+Cited: coal line (loop 1161 read ITSELF doubled mid-autoscroll,
+stabilized via prefix-match, fired). Mechanism redirect: NOT
+update policy (flash-post total = 0 all sessions; update chains
+are battle-list churn + benign near-variants) — read-level
+self-duplication at the fire funnel.
+Predicate (calibrated offline on 406 recorded fires with the REAL
+ComputeSimilarity): halves-sim ≥0.65, min total 16 (halves ≥8).
+True dups ≥0.67 (coal 0.80, sign-glue 0.67–0.78, stutter 0.69),
+legit multi-utterance ≤0.60, normal ≤0.22. same-start-8 rule
+tried and dropped (offset-brittle). Withhold + [selfdup-hold]
+log in TranslateAndPublishAsync (all fire paths; short/menu rows
+skip by length); clean full read supersedes next loop.
+Sim teeth: [selfdup] would-block count — 23/85 on FFVI-new,
+8/8 sampled all true dups (level-up/reward doubles incl.
+counter-tick variants like ６０ギル→ギル; variant-chain coal
+shape). Overlaps the sim-extra class live never posted —
+convergent. Updates untouched (variant chains score low).
+Build +0/0; replay 0/263-identical; live proof needs next play.
+Revert: revert b4-selfdup.
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
