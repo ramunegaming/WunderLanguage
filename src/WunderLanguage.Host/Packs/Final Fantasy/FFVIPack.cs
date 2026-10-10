@@ -225,7 +225,7 @@ namespace WunderLanguage.Host.Packs.FFVI
         };
         // Battle command vocabulary (cited): fight / ability / magic / item.
         // Row order is positional: [0] fight, [1..2] abilities, [3] magic, [4] item.
-        public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まほう", "アイテム" };
+        public static readonly string[] BattleCommands = { "たたかう", "ひっさつわざ", "ぬすむ", "まどう", "まほう", "アイテム" };
         // Battle monster vocabulary (cited: panel/screenshot/log loops this
         // chat — OCR flickers エビオルニス/エピオルニス/エヒオルニス/
         // エヒプルニス/エビオリニス/エロストリニス and シビーラビット/シピーラビット/
@@ -251,6 +251,12 @@ namespace WunderLanguage.Host.Packs.FFVI
             ("ぬすむ", "Steal"),
             ("まほう", "Magic"),
             ("アイテム", "Item"),
+            // B2 live 2026-10-10: まどう published as "Wow" (CAT), spell
+            // names as romaji garbage ("Kearu Faia"). Official FFVI EN
+            // (user corrects if wrong).
+            ("まどう", "Magitek"),
+            ("ケアル", "Cure"),
+            ("ファイア", "Fire"),
             // Party name pins (user-cited 2026-10-09: official manual
             // literal EN forms — manual differs from Woolsey, manual wins.
             // Replaces the earlier Matthew pin per the same user decision.)
