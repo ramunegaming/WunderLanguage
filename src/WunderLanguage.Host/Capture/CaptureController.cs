@@ -1001,6 +1001,70 @@ namespace WunderLanguage.Host.Capture
                             }
                             _candidateGrewThisRead = false;
                         }
+                        else if (ComputeSimilarity(extractedText, _candidateText) >= 0.85
+                            && !IsJunkOcr(extractedText) && !IsEllipsisOnly(extractedText)
+                            && !IsScrollBlend(extractedText) && !IsZeldaTransitionBlend(extractedText)
+                            && HasJapanese(extractedText))
+                        {
+                            // Tier 1 fuzzy-window (B10 Track A, approved 2026-10-11):
+                            // same-length OCR variants of one line count together
+                            // instead of stalling in successor purgatory (old rule:
+                            // adopt only on exact successor repeat, so alternating
+                            // variants never reached count 3). Count was already
+                            // incremented above; adopt a verbatim winner (never
+                            // synthesize): keep a complete held line over an
+                            // incomplete incoming (R1), else take complete
+                            // incoming, else longest stripped, tie keeps held.
+                            // Junk/ellipsis/blend/title-shape still excluded here;
+                            // fire-time gates (complete, substantial, dupe 0.90,
+                            // pageturn R2a) unchanged below. 0.85 is a hypothesis
+                            // under test, not a safety claim — merged/incorrect
+                            // lines count as regressions. Revert: delete this
+                            // branch (falls back to successor handling).
+                            bool candComplete = IsCompleteDialogueLine(_candidateText);
+                            bool extComplete = IsCompleteDialogueLine(extractedText);
+                            if (candComplete && !extComplete)
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim>=0.85 holding complete line)");
+                            }
+                            else if (!candComplete && extComplete)
+                            {
+                                _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim>=0.85 taking complete variant)");
+                            }
+                            else if (StripForOverlap(extractedText).Length > StripForOverlap(_candidateText).Length)
+                            {
+                                _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim>=0.85 taking longer variant)");
+                            }
+                            else
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim>=0.85 holding)");
+                            }
+                            // Successor rescue preserved (measured 2026-10-11:
+                            // clearing successor here held stale variants and
+                            // starved the exact-repeat rescue — FFVI overlap
+                            // 76->73. Track the read as successor too; an exact
+                            // repeat still adopts below.
+                            if (_successorText == extractedText)
+                                _successorCount++;
+                            else
+                            {
+                                _successorText = extractedText;
+                                _successorCount = 1;
+                            }
+                            if (_successorCount >= 2)
+                            {
+                                _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
+                                _successorText = string.Empty;
+                                _successorCount = 0;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-rescue (exact repeat adopts)");
+                            }
+                            _candidateGrewThisRead = false;
+                        }
                         else
                         {
                             _successorText = extractedText;
