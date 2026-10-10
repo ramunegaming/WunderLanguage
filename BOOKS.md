@@ -807,6 +807,41 @@ Decision screen (save-point はい/いいえ + arrow): same rule as
 Zelda — positioned decision box, question + options in EXACT
 in-game positions, arrow itself not posted.
 
+## Live triage verdicts (2026-10-10, both runs — keeper 9.8MB/78k lines)
+New stamped corpora: Zelda 1395 ocr/135 bubbles (wt 100%,
+blocks 4926, conf<1 61%); FFVI 1524 ocr/222 bubbles (battle-
+frame:fire 110, dialogue-fire 58). Loop stamps land (66/52).
+Zelda DECISION fired live (delete-data menu, correct box);
+FFVI DECISION fired on garbled read (needs the positioned-box
+rule). Zelda sign reads post WITHOUT arrows; heart line
+garbled by the sprite (ハート→外国/パート/ト) — sprite-spec
+instances confirmed.
+LATENCY: Zelda weak-hold fires live with lags 12–45 loops
+(12 fires); FFVI has ZERO weak-hold fires (publish-new/
+pageturn only, lags ≤38, mostly ≤7). "Open-5s-then-posts-on-
+close" = flush-on-pageturn on close — policy, not loop speed.
+TITLE: 4 publishes total, all logo-screen quiet-loop; 17:27
+Zelda instance needs game-context check; 20:32 session has
+no corpus (diag off?) — open.
+SUSPECT-HOLD: 118 live holds (div up to 1.00) — first live
+proof it engages. Starvation smell: top held lines (カンテラ
+×14, 図書館 ×11, いたぞ-line ×9, legit dialogue ×9/×6/×4)
+show ZERO later translate lines. INTERACTION BUG: （１）
+カンテラ suspect-held 14× then WEAK-HOLD-published at loop
+889 (lag 26) — weak-hold path doesn't check div.
+NAMES: ログ/ロック/ＤＶＤ instability (pins bypassed by
+misreads); ウェッジ/ビックス + ?????? live (qmask territory).
+DUPLICATION: coal-mine half-posted-twice (panel proof) +
+ログ/ロック update chains — update policy posts misread
+variants, no clause awareness.
+BATTLE: まどう rows publish (act=4, 218 lines) — slot
+correctness vs shots still to verify; action-fuzzy live
+("ただか"→"たたかう" d=2). Boot ERRORs + auto-restart
+re-proven twice (attempt=1 → healthy). min-spec REDUCED both
+runs (rec 846–1469ms) — loop pace itself is a latency input.
+No profanity-hold; no meta-refusal text found in keeper
+(Zelda meta-hallucination needs EN-side hunt).
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
