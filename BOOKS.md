@@ -857,6 +857,29 @@ touched). Weak machines stretch loop period (unmeasured —
 no hardware). TITLE-5-min stays game-context-open. No product
 change (docs only). Revert: revert b5 (docs-only).
 
+## Growth-fast typewriter path (SHIPPED, user directive 2026-10-10)
+Directive: everything posts (intro pages stayed empty whole
+sessions — fragments never reach count 3). Design from reads:
+growth branch posts the prefix NOW (first growth step onward);
+completion via update-in-place (existing road). Fires EXACTLY
+when no other road would post (not update-owned, not
+breakthrough-owned — same loop can't double-post).
+Continuation allowed; junk/blend/ellipsis/title/sacrifice still
+blocked (… runs silent); dupe/subpart vs shown blocked.
+R2a fix inside: prefix fires set _lastTranslatedText ONLY
+(_lastFireLoop/_prev untouched — measured 6 pageturn misses
+from clock reset, fixed). Sim: intro session 0→4 fires (all
+growth, lag 1); old-0917 93→115 fires, NE flat, budget OK.
+Overlap 82→76 with missed 1→7: postmortemed — ≥5/7 post
+content anyway (4 subpart-covered + 1 variant-posted via
+growth+neardupe composing correctly at loops 1044/45); ≤2
+unverified. Exact-match overlap understates under variant
+churn (metric limitation, noted). Commission risk accepted
+per directive (misread prefixes post then correct). Replay
+0/263 (fixup path untouched — vacuous here, reported).
+Build +0/0. Live proof needs play.
+Revert: revert growth-fast.
+
 ## TITLE mistitle CONFIRMED (user 2026-10-10, game-context)
 Zelda 17:27:35 TITLE fired mid-gameplay, right after receiving
 the sword from the dying uncle — first-of-kind (user: never
