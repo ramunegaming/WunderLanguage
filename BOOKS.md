@@ -841,6 +841,22 @@ convergent. Updates untouched (variant chains score low).
 Build +0/0; replay 0/263-identical; live proof needs next play.
 Revert: revert b4-selfdup.
 
+## B5 wall-clock latency (SHIPPED, measurement-only — live-triage batch 5)
+First wall-clock numbers (stamped corpora: wt + loop stamps;
+loop budget ≈ seconds budget at ~1s/loop p50 here):
+loop period 0.94/1.14s p50 (p95 4–7s tails); fire wall-lag FFVI
+p50 2.4s/p95 9.4/max 17.3, Zelda p50 9.1/p95 23.4/max 35.1;
+per-kind: publish-new 0.9–2.4s, pageturn 2.9–9.7s, weak-hold
+16.1s p50 / 35.1 max (Zelda only — the user's complaint,
+quantified); scroll ~1s. Translation per line (all sessions):
+CAT p50 3.0s/p95 8.6s/max 46s; DeepL-fallback p50 5.2s/p95
+28.5s/max 62s. End-to-end typical ≈ 5–12s (stability +
+translation); worst stacks to ~35+46s rare. CAT p95 is the
+biggest typical chunk (hardware/model-bound — noted, not
+touched). Weak machines stretch loop period (unmeasured —
+no hardware). TITLE-5-min stays game-context-open. No product
+change (docs only). Revert: revert b5 (docs-only).
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
