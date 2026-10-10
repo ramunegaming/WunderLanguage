@@ -104,12 +104,28 @@ namespace WunderLanguage.Host
             }
             catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
             // Fresh troubleshoot bundle per launch (never on close, so crashes keep evidence).
+            // keep-shots.armed sentinel (same pattern as keep-log.armed):
+            // present → shots accumulate across launches (newest 200 kept,
+            // oldest pruned — bounded storage); absent → last-run-only wipe
+            // as before. Revert: delete sentinel check + prune (keep wipe).
             try
             {
                 string tsDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot");
+                string shotsSentinel = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "keep-shots.armed");
                 if (System.IO.Directory.Exists(tsDir))
-                    foreach (var f in System.IO.Directory.GetFiles(tsDir))
-                        try { System.IO.File.Delete(f); } catch { }
+                {
+                    if (System.IO.File.Exists(shotsSentinel))
+                    {
+                        var fis = new System.Collections.Generic.List<System.IO.FileInfo>(new System.IO.DirectoryInfo(tsDir).GetFiles());
+                        fis.Sort((a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+                        for (int k = 200; k < fis.Count; k++)
+                            try { fis[k].Delete(); } catch { }
+                        FileLogger.Log($"[shots] keep-armed, newest {System.Math.Min(200, fis.Count)} files kept");
+                    }
+                    else
+                        foreach (var f in System.IO.Directory.GetFiles(tsDir))
+                            try { System.IO.File.Delete(f); } catch { }
+                }
             }
             catch { }
 
