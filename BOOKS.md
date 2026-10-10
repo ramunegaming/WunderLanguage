@@ -791,7 +791,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    Bottleneck 7 measured (recall proxies healthy; frame audit queued for play; no behavior change),
    Bottleneck 8 priced (JA-fire delta zero; price is menu/CAT-side; checklist shipped),
    Hygiene logging shipped (spend/cache lines, first sighting needs live loop),
-   Bottleneck 9 shipped (panel budget BUDGET-OK both corpora; p50=2 loops; weak-hold never fired).
+   Bottleneck 9 shipped (panel budget BUDGET-OK both corpora; p50=2 loops; weak-hold never fired),
+   keep-shots sentinel shipped (unarmed default; arming is user call).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
