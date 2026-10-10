@@ -880,6 +880,27 @@ per directive (misread prefixes post then correct). Replay
 Build +0/0. Live proof needs play.
 Revert: revert growth-fast.
 
+## Tier 1 fuzzy-window commit (SHIPPED 2026-10-11, B10 Track A)
+Hypothesis under test (not assumption): same-length OCR variants
+with sim>=0.85 count as one lineage instead of stalling in
+successor purgatory. First build FAILED honestly (FFVI overlap
+76->73, missed 7->10: 45 keeps starved the exact-repeat rescue).
+Fix: fuzzy counts toward stability but preserves successor rescue
+(exact repeat still adopts). Re-measured per corpus vs baseline:
+FFVI-old 115->117 fires, overlap 76=76, missed 7=7, extra 39->41,
+NE 0.36 flat, budget OK; Zelda-long IDENTICAL every aggregate
+(71/9/50/10/21, panellat EXCEEDED pre-existing both); intro
+unchanged (4/0). JA evidence review: +1 genuine recovery
+(オートボウガン……バイオブラスト… — clean form of a line the
+live session only fired garbled; corpus loops 2647-2805 back it;
+misscored as extra by exact-match) + 1 repeat-fire of an
+evidence-backed variant (サグレム…, 6 consecutive reads 2733-44).
+Zero lost lines, zero merged lines (verbatim-only by
+construction; adopt 1x). Verdict: CONDITIONAL PASS on FFVI,
+no-change elsewhere. B10 NOT resolved — singleton-complete
+lines untouched (FFVI 7 + Zelda-long 10 + intro 3 residue).
+Revert: revert fuzzy-window.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
