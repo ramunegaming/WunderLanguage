@@ -644,9 +644,12 @@ namespace WunderLanguage.Host.Capture
             if (commands == null || commands.Count < 5) return new List<string>(clean);
             string joined = string.Join("", clean.ConvertAll(l => l.Replace(" ", "").Replace("　", "").Replace("…", "").Replace("．", "").Replace(".", "")));
             if (joined.Length == 0) return new List<string>();
-            string fight = commands[0], magic = commands[3], item = commands[4];
+            // B2: ability pool is open-ended (fight first, magic/item last
+            // two — indices float with pack length so まどう-class commands
+            // join without shifting the fixed rows). Priority = list order.
+            string fight = commands[0], magic = commands[commands.Count - 2], item = commands[commands.Count - 1];
             var abilities = new List<string>();
-            for (int i = 1; i < 3 && i < commands.Count; i++) abilities.Add(commands[i]);
+            for (int i = 1; i < commands.Count - 2 && i < commands.Count; i++) abilities.Add(commands[i]);
             var consumed = new List<string>();
             bool MatchCmd(string pattern, out string window)
             {

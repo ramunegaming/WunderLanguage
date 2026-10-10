@@ -789,6 +789,23 @@ lines (3 done-lines vanished mid-chain, others survived); solo
 runs are reliable — read simreplay results solo.
 Revert: revert b1-stain.
 
+## B2 まどう action-menu variance (SHIPPED, live-triage batch 2)
+Cited (user + live 2026-10-10): slot 1 is not always たたかう —
+Magitek intro rows show まどう; panel posted まどう as "Wow"
+(CAT) and spell names as romaji garbage ("Kearu Faia").
+Fix (pack-scoped): まどう appended to FFVI BattleCommands
+(existing priority preserved); SplitActionRows indices floated
+(fight first, magic/item last-two — identical for all existing
+5-entry packs, new path only for FFVI's 6); glossary +Magitek/
+Cure/Fire (official EN, user corrects); ("まどう ?"→"まほう?")
+fixup kept (doubt-suffixed only, clean rows unaffected);
+substring ContainsBattleCommand keeps glued rows action-side
+(remainder dropped once まどう matches). Magic menu verdict:
+publishes already, names were the gap. Action-fuzzy live proof
+recorded ("ただか"→"たたかう" d=2). Slot-vs-shot correctness
+needs next play. Build +0/0; replay 0/263-identical.
+Revert: revert b2-madou.
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
