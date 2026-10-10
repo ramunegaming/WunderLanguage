@@ -766,6 +766,29 @@ run (arming is the user's call — sentinel must be created in
 %AppData%/WunderLanguage). Replay parity 0/263.
 Revert: revert keep-shots.
 
+## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
+Three big issues observed:
+a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
+   shot, close, then it posts); one TITLE posted ~5 min late,
+   minutes into gameplay.
+b) BLOCK SPLITTING — blocks cut off first/last words, or post
+   part then repeat it (copy). User hypothesis: Japanese-language
+   parameters so the pipeline better understands Japanese.
+c) HALLUCINATIONS — random dates, "this is japanese how should
+   I translate"-class meta text.
+Zelda sprite/text spec (user, from chat screenshots):
+- 「 left bracket and 」 right bracket must post 1:1.
+- Decision arrow (white ▶): always marks a player-choice menu =
+  a "decision" category box (alongside menu/title/in-game text);
+  post question + options in EXACT in-game positions; do NOT
+  post the arrow itself (doesn't refresh live).
+- Heart container pickup → post as <3 inline, e.g.
+  ハートのうつわを見つけた ！ / <3 / ハートのレベルが１つあがった.
+- Sign left-arrow → <- inline: この先 <- / カカリコ村.
+- Sign down-arrow → ↓ inline: この先 ↓ / カカリコ村.
+- Link-face sprite (wanted poster etc.) → ignore, not text, no symbol.
+Status: recorded only. Triage + scoping after FFVI run.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
