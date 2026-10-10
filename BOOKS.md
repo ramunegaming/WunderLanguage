@@ -857,6 +857,26 @@ touched). Weak machines stretch loop period (unmeasured —
 no hardware). TITLE-5-min stays game-context-open. No product
 change (docs only). Revert: revert b5 (docs-only).
 
+## TITLE mistitle CONFIRMED (user 2026-10-10, game-context)
+Zelda 17:27:35 TITLE fired mid-gameplay, right after receiving
+the sword from the dying uncle — first-of-kind (user: never
+seen before). Quiet-title logo detector mistook gameplay for
+logo screen (10 quiet loops, hint=True). Instance queued for
+title-path hardening (with loop-25 scroll-mid + 20:32 no-corpus
+instances). Needs shot/log context before scoping.
+
+## Strategic pivot (user 2026-10-10): game #3 = Paper Mario (480p)
+Runs tapped dry on FFVI/Zelda data; new game for new data.
+Zelda/FFVI screen fixes (signs, battle/shop UI) deferred to the
+return — the point is a stronger core first. Governing trio
+restated: scalability, reliability, adaptability.
+Onboarding plan (checklist-driven, bottleneck-8 order):
+pack detection (window title) → title triple → fixups (mined)
+→ vocabs → glossaries → calibration last. Higher-res note:
+480p frames vs SNES crops — detection width-cap 900 +
+upscale behavior re-verified on first corpus, perf watched
+(OCR tails already the open tail).
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
