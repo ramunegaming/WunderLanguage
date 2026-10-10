@@ -695,6 +695,28 @@ no recall failure cited → NO behavior change. Bottleneck 7
 closed pending the play-time frame audit. Revert: revert b7
 (docs-only).
 
+## Bottleneck 8 — cold-start priced + authoring checklist
+Cold-start delta SHIPPED (proof runs): `--simreplay <corpus>
+universal` forces UniversalPackInstance (ForcePackArg, restored
+after). Result on both FFVI corpora: IDENTICAL numbers both
+packs (93/33/82 + NE0.35/lag30.6; 114/20/97 + NE0.18/lag15.9;
+same missed/extra sets). JA-fire cold-start price = ZERO.
+Honest decomposition: the v3 extras win (24→11/32→17) came
+from BLOCKS (geometry-aware menu tracking/div), not pack —
+pack select isolated to nil on dialogue decisions. The real
+cold-start price lives where sim can't score (no live CAT):
+glossary instant-path dead (per-line CAT burn + JA flicker),
+name masking dead (tina-foreigner class returns), fuzzy/confw
+dead (misread fixups lost), splitters passthrough, weapon box
+off. Pack-authoring checklist (fill order by value): 1.
+Signatures (2–7 proper nouns, unlocks routing) 2. Title
+triple 3. Ocr/DisplayFixups (miner-as-pack-data) 4. Battle/
+monster/item vocabs (splitters + fuzzy) 5. BattleGlossary
+(no-burn chrome) 6. NameGlossary (official EN, user-sourced)
+7. WeaponLabels 8. Vision calibration last (learning estimates,
+publish requires). Replay parity 0/263 (override is sim-only).
+Revert: revert b8-coldstart.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup

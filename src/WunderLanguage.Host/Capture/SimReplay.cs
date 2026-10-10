@@ -22,6 +22,7 @@ namespace WunderLanguage.Host.Capture
     // Revert: delete this file + the --simreplay block in App.xaml.cs.
     internal static class SimReplay
     {
+        internal static string? ForcePackArg = null;
         private static int Num(JsonElement e)
         {
             try
@@ -114,8 +115,14 @@ namespace WunderLanguage.Host.Capture
                 // session hook uses; restored after — process exits anyway).
                 // FFVI corpora then route battle rows to the battle tracker
                 // exactly like live instead of leaking into dialogue.
+                // Bottleneck 8: optional "universal" 2nd arg forces the
+                // unknown-game pack, measuring the cold-start price (every
+                // vocab-gated path dead) on the same corpus.
                 var prevPack = Packs.PackRegistry.Current;
                 string packUsed = prevPack.GameId;
+                bool forceUniversal = (ForcePackArg ?? "").Equals("universal", StringComparison.OrdinalIgnoreCase);
+                if (forceUniversal) { try { Packs.PackRegistry.SetCurrent(Packs.UniversalPackInstance.Shared); packUsed = "universal"; } catch { } }
+                else
                 try
                 {
                     string u = (path ?? "").ToUpperInvariant();

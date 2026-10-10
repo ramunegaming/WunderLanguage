@@ -91,6 +91,10 @@ namespace WunderLanguage.Host
                     if (args[i] == "--simreplay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true;
+                        // Bottleneck 8: optional 2nd arg "universal" forces
+                        // the unknown-game pack (cold-start price).
+                        // Revert with SimReplay.ForcePackArg.
+                        if (i + 2 < args.Length) Capture.SimReplay.ForcePackArg = args[i + 2];
                         int rc = Capture.SimReplay.Run(args[i + 1]);
                         FileLogger.Log($"[simreplay] exit rc={rc}");
                         Shutdown(rc == 0 ? 0 : 1);
