@@ -21,6 +21,18 @@ namespace WunderLanguage.Host.Translation
         // prefetch, sticky, glossary) never reach here; single-row dialogue
         // never contends. Revert: delete gate + using block.
         private static readonly SemaphoreSlim _catGate = new(4, 4);
+        // B9 saturation (SRE golden signal): waits = entries finding all
+        // 4 slots taken; maxDepth = deepest holders-before-us seen.
+        // Interval snapshot (reset) for the [spend] line. Benign races
+        // only (observability). Revert with the [spend] gate fields.
+        private static long _gateWaits;
+        private static int _gateMaxDepth;
+        public static (long waits, int maxDepth) GateStats()
+        {
+            long w = System.Threading.Interlocked.Exchange(ref _gateWaits, 0);
+            int d = System.Threading.Interlocked.Exchange(ref _gateMaxDepth, 0);
+            return (w, d);
+        }
         // Set on every TranslateAsync. TranslationManager checks these to
         // decide DeepL fallback for just flagged lines.
         public bool LastUnreliable { get; private set; }
@@ -70,6 +82,14 @@ namespace WunderLanguage.Host.Translation
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
             // Gate covers the GPU work only (POST + body read); parsing and
             // bookkeeping below need no slot.
+            try
+            {
+                int holders = 4 - _catGate.CurrentCount;
+                if (holders < 0) holders = 0; if (holders > 4) holders = 4;
+                if (holders >= 4) System.Threading.Interlocked.Increment(ref _gateWaits);
+                if (holders > _gateMaxDepth) _gateMaxDepth = holders;
+            }
+            catch { }
             await _catGate.WaitAsync();
             string json;
             try

@@ -724,6 +724,38 @@ cost-flush as [spend]. Log-only, zero behavior. First [spend]
 sighting waits for a live loop (sim/replay never run the flush).
 Replay parity 0/263. Revert: revert spend-log.
 
+## Bottleneck 9 — panel latency budgeted + measured (SHIPPED)
+Sources (all read, none reupload): stream-latency paper —
+MEDIUM-HIGH (AL/DAL pair, global-delay/stream-level; our
+simLag already stream-fed ✓); re-translation paper (dup of B6 —
+benchmark only: stabilized TL~4.1s/NE~0.1; ours NE already
+there); interactive-latency paper — MEDIUM (throughput≠latency,
+think-vs-wait, 0.1s/2–4s anchors, distributions); SRE
+Monitoring — discipline (percentiles, golden signals,
+test-your-monitoring).
+Shipped: decision-kind capture (12 fire + 3 update kinds,
+additive params) + [panellat] (lag p50/p95/max, DAL-like
+catch-up debt in fire order, per-kind counts@means) + panel
+budget (p50≤10, p95≤30, max≤60, NE≤0.5 — regression
+tripwires w/ headroom, exit stays 0) + CAT-gate saturation
+(waits/maxdepth into [spend]; live-visible later, sim always
+0/0 — no CAT in sim).
+Measured (both FFVI corpora): p50=2, p95=8–9, max=18–21,
+NE 0.35/0.18, BUDGET-OK. Per-kind: publishnew @1, pageturn
+@2–3, flushes @1–6; weak-hold NEVER fired in either corpus
+(the feared 12–18 path didn't trigger once). CORRECTION to
+the B6 entry: simLag means 30.6/15.9 were first-seen artifacts
+(repeated JA across scenes, max=704); run-based definition
+gives ~2 loops. B6 NE numbers stand.
+Mash verdict (user's fear): typical dialogue posts ~1s after
+appearing (p50=2 loops); worst measured ~10s (max 21);
+catch-up flushes (dwell/flash/pageturn) exist for exactly the
+autoscroll case. New batches added ~zero (parity-proven).
+Remaining latency work is live-only: wall-clock conversion
+(stamped corpora banking), CAT-gate sighting, weak-machine
+scaling (no hardware). Replay parity 0/263 throughout.
+Revert: revert b9-panellat.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
