@@ -49,6 +49,13 @@ namespace WunderLanguage.Host.Translation
             long h = Interlocked.Exchange(ref _cacheHits, 0);
             return (r, h);
         }
+        // Hygiene logging: cache size visibility (point-in-time, not reset).
+        // Revert with the [spend] log line.
+        public (int entries, long bytes) CacheSize()
+        {
+            try { return (_cache.EntryCount, _cache.FileBytes); }
+            catch { return (-1, -1); }
+        }
 
         public TranslationManager(
             TranslationProviderPreference preference,
