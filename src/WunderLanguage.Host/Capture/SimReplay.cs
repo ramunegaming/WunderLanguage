@@ -266,7 +266,7 @@ namespace WunderLanguage.Host.Capture
                 // aspirations. Exit stays 0 (observe, SRE-style).
                 bool bOk = lagP50 <= 10 && lagP95 <= 30 && lagMax <= 60 && simNE <= 0.5;
                 FileLogger.Log($"[panellat] p50={lagP50} p95={lagP95} max={lagMax} dalDebt={dalDebt} kinds=({kindMean.ToString().Trim()}) BUDGET-{(bOk ? "OK" : "EXCEEDED")}(p50<=10,p95<=30,max<=60,NE<=0.5)");
-                for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
+                for (int i = 0; i < simFireJa.Count; i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
                 // Gap analysis (slice v2 polish): name the misses (recorded
                 // but never sim-fired) and extras (sim-fired but never

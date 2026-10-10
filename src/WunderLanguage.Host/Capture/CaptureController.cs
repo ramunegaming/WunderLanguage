@@ -919,6 +919,51 @@ namespace WunderLanguage.Host.Capture
                         }
                         else if (extractedText.Length > _candidateText.Length)
                         {
+                            // Growth fast-track (user directive 2026-10-10:
+                            // everything posts — cited Zelda intro where
+                            // typewriter/scroll fragments never reach count 3
+                            // and the panel stays empty for whole pages).
+                            // Posts the prefix NOW; completion follows via
+                            // update-in-place (existing road). Fires EXACTLY
+                            // when no other road would post this loop: not
+                            // update-owned (growth of shown), not
+                            // breakthrough-owned (complete + stable). Else
+                            // the same loop would double-post. Continuation
+                            // allowed (prefixes are mid-sentence by nature);
+                            // junk/blend/ellipsis/title/sacrifice still
+                            // blocked (… runs stay silent); dupe/subpart vs
+                            // shown still blocked. Commission risk accepted:
+                            // misread prefixes post, then correct (erasure
+                            // cost, disclosed). Revert: delete this block.
+                            bool updateOwns = _candidateStableCount >= RequiredStableReadings
+                                && !string.IsNullOrEmpty(_lastTranslatedText)
+                                && _candidateText.Length > _lastTranslatedText.Length
+                                && (_candidateText.StartsWith(_lastTranslatedText, StringComparison.Ordinal)
+                                    || _candidateText.Contains(_lastTranslatedText, StringComparison.Ordinal));
+                            bool breakthroughOwns = _candidateStableCount >= RequiredStableReadings
+                                && IsCompleteDialogueLine(_candidateText);
+                            if (!updateOwns && !breakthroughOwns
+                                && StripForOverlap(_candidateText).Length >= 6
+                                && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
+                                && !IsEllipsisOnly(_candidateText) && !IsScrollBlend(_candidateText)
+                                && !IsZeldaTransitionBlend(_candidateText)
+                                && !IsIncompleteSacrifice(_candidateText) && !_frameIsTitle
+                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            {
+                                // Lineage note: sets _lastTranslatedText only
+                                // (update road + dupe gates need it).
+                                // _lastFireLoop/_prevTranslatedText stay
+                                // untouched — a prefix fire must not reset the
+                                // pageturn R2a clock or oscillation memory, or
+                                // real turns within 3 loops read as intruders
+                                // (measured: 6 pageturn misses, 2026-10-10).
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast (prefix posts now, completion via update)");
+                                try { CorpusRecordBubble("dialogue-decision:growth-fast", _candidateText, "", "", iteration); } catch { }
+                                _lastTranslatedText = _candidateText;
+                                string growthText = _candidateText;
+                                _ = PublishDecisionAsync(growthText, iteration, "growth");
+                            }
                             // Flash-post (pair-2): a stable fragment absorbed by
                             // growth was really shown (telepathy flashes). Post
                             // once per lineage on substantial jumps only (no
