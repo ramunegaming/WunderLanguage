@@ -238,6 +238,23 @@ namespace WunderLanguage.Host.Capture
                 foreach (var j in simFireJa) if (rec.TryGetValue(j, out int c) && c > 0) { rec[j] = c - 1; overlap++; }
                 FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} dims={sesW}x{sesH}({dimSrc}) simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
                 FileLogger.Log($"[b6metrics] simNE={simNE:0.00} (updates/fire) simLag={simLag:0.0}loops liveNE={liveNE:0.00} liveLag=n/a(old corpora lack bubble loop stamps)");
+                // B4 teeth: how many sim fires would the live self-dupe
+                // guard withhold (guard itself is live-funnel-only; sim
+                // captures pre-guard by design).
+                try
+                {
+                    int wbd = 0;
+                    foreach (var j in simFireJa)
+                    {
+                        if (CaptureController.IsSelfDuplicated(j))
+                        {
+                            if (wbd < 8) FileLogger.Log($"[selfdup] would-block \"{j}\"");
+                            wbd++;
+                        }
+                    }
+                    FileLogger.Log($"[selfdup] would-block={wbd}/{simFireJa.Count}");
+                }
+                catch { }
                 // B9 panel-latency budget (human-anchored: nominal loop
                 // ~0.5s; 2–4s irritating → p50 in single digits, weak-hold
                 // path 12–18 by explicit design so p95 accommodates ~30;
