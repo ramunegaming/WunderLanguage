@@ -73,7 +73,7 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
-                var fed = new List<(int loop, string raw, int cw, int tw, List<OcrBlock> blocks, string ja)>();
+                var fed = new List<(int loop, string raw, int cw, int tw, int fw, int fh, List<OcrBlock> blocks, string ja)>();
                 var recordedFires = new List<string>();
                 var recordedUpdates = new List<string>();
                 long wtCovered = 0, wtTotal = 0;
@@ -95,8 +95,10 @@ namespace WunderLanguage.Host.Capture
                             int loop = root.TryGetProperty("loop", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt32() : fed.Count;
                             int cw = root.TryGetProperty("cw", out var cwe) ? Num(cwe) : 0;
                             int tw = root.TryGetProperty("tw", out var twe) ? Num(twe) : 0;
+                            int fw = root.TryGetProperty("fw", out var fwe) ? Num(fwe) : 0;
+                            int fh = root.TryGetProperty("fh", out var fhe) ? Num(fhe) : 0;
                             if (root.TryGetProperty("wt", out var w) && w.ValueKind == JsonValueKind.Number) { wtTotal++; if (w.GetInt64() > 0) wtCovered++; }
-                            fed.Add((loop, raw, cw, tw, ParseBlocks(root), ex));
+                            fed.Add((loop, raw, cw, tw, fw, fh, ParseBlocks(root), ex));
                         }
                         else if (t == "bubble")
                         {
@@ -123,7 +125,25 @@ namespace WunderLanguage.Host.Capture
                 catch { }
                 var token = new System.Threading.CancellationToken(false);
                 long blockLines = 0;
-                foreach (var (loop, raw, cw, tw, blocks, ja) in fed)
+                // Slice v4 frame dims: banked per-line fw/fh ONLY (future
+                // corpora). The extents estimator was tried and convicted:
+                // block coords live in detector space (~1522px wide vs a
+                // ~SNES-size bitmap), so max(x+w) is ~2x the true crop and
+                // every /fw /fh ratio halves — overlap REGRESSED 82→74 and
+                // 97→95. Banked-or-unset; unset (0) keeps the v3 behavior
+                // that measured best on old corpora. Live refreshes per loop
+                // off a constant crop, so one value stays faithful.
+                int sesW = 0, sesH = 0;
+                string dimSrc = "none";
+                foreach (var f in fed)
+                {
+                    if (f.fw > sesW) sesW = f.fw;
+                    if (f.fh > sesH) sesH = f.fh;
+                }
+                if (sesW > 0 && sesH > 0) dimSrc = "banked";
+                else { sesW = 0; sesH = 0; }
+                try { ctl.SetFrameDimsForSim(sesW, sesH); } catch { }
+                foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja) in fed)
                 {
                     try
                     {
@@ -147,7 +167,7 @@ namespace WunderLanguage.Host.Capture
                 foreach (var j in recordedFires) rec[j] = rec.TryGetValue(j, out int c) ? c + 1 : 1;
                 int overlap = 0;
                 foreach (var j in simFireJa) if (rec.TryGetValue(j, out int c) && c > 0) { rec[j] = c - 1; overlap++; }
-                FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
+                FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} dims={sesW}x{sesH}({dimSrc}) simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
                 for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
                 // Gap analysis (slice v2 polish): name the misses (recorded

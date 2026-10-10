@@ -630,21 +630,18 @@ rule). Revisit only on evidence:**
   gaps are documented live-only contexts, not move corruption.
   Slice v3 scoped (needs go): feed recorded blocks (corpora carry
   c/n/s/d) + select FFVI pack in sim; dwell/bitmap stays live-only.
-- M7c slice v3 SHIPPED (proof runs): block+pack feed live —
-  blocks parsed 1037/2189 + 1550/2247, pack switch logged (ffvi,
-  restored after); corpus ocr lines bank cw/tw for future density
-  context (additive, replay ignores). Overlap 82/83 + 97/100;
-  extras halved 24→11 / 32→17 (battle rows now route to the battle
-  tracker). Cost: corpus2 −2 hits vs v2 (ハイウェイス fixed, but
-  10月15日/シルバリオガード/ウェッジわかったぜ now held).
-  Hypotheses: geometry-calibrated battle/menu trackers
-  (_battleFrameW/H from live capture, 0 in sim — remaining battle
-  extras like ビックスがレベルアップ point here) + cascade from
-  fewer extras shifting _lastTranslatedText + density context still
-  0 (old corpora predate cw/tw). Seam faithful; v4 scoped (needs
-  go): feed calibrated frame dims + live OCR totals. Replay parity
-  0/263 throughout (live behavior untouched).
-  Revert: revert m7c-slice3 (slice2 seam stays).
+- M7c slice v4 SHIPPED (proof runs): frame-dims + det/rec banking
+  live (fw/fh/det/rec on every corpus ocr line, additive, replay
+  ignores) + SetFrameDimsForSim (banked-only). Estimator tried and
+  CONVICTED: block coords live in detector space (~1522px vs
+  SNES-size bitmap), max(x+w) ≈ 2x true crop, ratios halve, overlap
+  regressed 82→74 / 97→95 — reverted same batch, back to 82/83 +
+  97/100 with dims unset (v3 behavior measures best on old corpora;
+  true dims arrive banked on future recordings). Extras hold at
+  11/17. Replay parity 0/263 throughout. Bottleneck 5 closed:
+  clock ✓ step ✓ block+pack feed ✓ context banking ✓; permanently
+  live-only: bitmaps/OCR, dwell path, CAT, transport.
+  Revert: revert m7c-slice4 (slice2/3 seam stays).
   Revert: revert m7c-slice2.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger

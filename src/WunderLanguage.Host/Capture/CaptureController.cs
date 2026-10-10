@@ -37,6 +37,14 @@ namespace WunderLanguage.Host.Capture
         {
             try { _lastOcrText = raw ?? ""; _lastOcrContent = content; _lastOcrTotal = total; } catch { }
         }
+        // Slice v4: restore the per-loop frame dims the live loop reads off
+        // the OCR bitmap (relative-geometry ratios depend on them; 0 in
+        // sim breaks every /fw and /fh check into raw pixels).
+        // Revert: delete with SimReplay use.
+        internal void SetFrameDimsForSim(int w, int h)
+        {
+            try { if (w > 0) _battleFrameW = w; if (h > 0) _battleFrameH = h; } catch { }
+        }
         // M7c slice v2 sim harness (ticktape "same struct runs in the
         // simulator"): _simMode captures JA publish decisions instead of
         // translating. Live path forwards identically (parity proven by
@@ -2193,7 +2201,14 @@ namespace WunderLanguage.Host.Capture
                 // so sim can restore the density-gate context. Same additive
                 // contract; old lines simply lack cw/tw (sim defaults 0).
                 long wt = 0; try { wt = _clock.GetUtcNow().ToUnixTimeMilliseconds(); } catch { }
-                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, wt = wt, cw = _lastOcrContent, tw = _lastOcrTotal, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
+                // Slice v4: frame dims (session-constant crop size, 1-loop lag —
+                // fields hold the previous loop's bitmap dims; harmless) +
+                // sidecar det/rec ms (future min-spec-faithful sim). Same
+                // additive contract; old lines lack fw/fh/det/rec (sim
+                // estimates dims from block extents, det/rec default 0).
+                int fw0 = 0, fh0 = 0; double det0 = 0, rec0 = 0;
+                try { fw0 = _battleFrameW; fh0 = _battleFrameH; det0 = System.Math.Round(_ocrClient.LastDetMs); rec0 = System.Math.Round(_ocrClient.LastRecMs); } catch { }
+                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, wt = wt, cw = _lastOcrContent, tw = _lastOcrTotal, fw = fw0, fh = fh0, det = det0, rec = rec0, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
             }
             catch { }
         }
