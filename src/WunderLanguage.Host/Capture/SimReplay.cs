@@ -9,22 +9,71 @@ namespace WunderLanguage.Host.Capture
     // M7c slice v2 feed: (loop, extracted) from a recorded corpus through
     // the REAL ProcessOcrObservationAsync, collecting _simPublished. No
     // emulator, no sidecar, no CAT (translation stubbed by _simMode).
+    // Slice v3: recorded blocks (t/x/y/w/h/c/n/s/d) ride along, so
+    // FrameSuspectDiv sees real div and the menu/battle trackers see real
+    // geometry; the pack is selected from the filename (FFVI/Zelda, else
+    // replay-default) so battle rows route like live. OCR context (cw/tw)
+    // restores when banked, else 0 (old corpora predate it).
     // Scope honesty: JA-side dialogue decisions only. Dwell path (needs
-    // settle bitmaps) and TITLE/menu path stay live-only; empty blocks mean
-    // FrameSuspectDiv=0 (suspect-hold never engages) and density gate sees
-    // _lastOcrTotal=0 (never suppresses); pack is the replay default
-    // (vocab paths dead — same caveat as M7b). Clock fudge: corpus wt is
-    // banked but the step counts loops, so feed order = recorded loop order.
+    // settle bitmaps) stays live-only; wt is banked but the step counts
+    // loops, so feed order = recorded loop order.
     // Observability only (exit 0): the report measures how much of live
-    // behavior text-feed replay explains; gaps drive the next slice.
+    // behavior text+block feed replay explains; gaps drive the next slice.
     // Revert: delete this file + the --simreplay block in App.xaml.cs.
     internal static class SimReplay
     {
+        private static int Num(JsonElement e)
+        {
+            try
+            {
+                if (e.ValueKind == JsonValueKind.Number) { try { return e.GetInt32(); } catch { return (int)e.GetDouble(); } }
+                if (e.ValueKind == JsonValueKind.String && int.TryParse(e.GetString(), out int v)) return v;
+            }
+            catch { }
+            return 0;
+        }
+        private static double NumD(JsonElement e)
+        {
+            try
+            {
+                if (e.ValueKind == JsonValueKind.Number) return e.GetDouble();
+                if (e.ValueKind == JsonValueKind.String && double.TryParse(e.GetString(), out double v)) return v;
+            }
+            catch { }
+            return 0.0;
+        }
+        private static List<OcrBlock> ParseBlocks(JsonElement root)
+        {
+            var out_ = new List<OcrBlock>();
+            try
+            {
+                if (!root.TryGetProperty("blocks", out var bs) || bs.ValueKind != JsonValueKind.Array) return out_;
+                foreach (var b in bs.EnumerateArray())
+                {
+                    try
+                    {
+                        string t = b.TryGetProperty("t", out var te) ? (te.GetString() ?? "") : "";
+                        int x = b.TryGetProperty("x", out var xe) ? Num(xe) : 0;
+                        int y = b.TryGetProperty("y", out var ye) ? Num(ye) : 0;
+                        int w = b.TryGetProperty("w", out var we) ? Num(we) : 0;
+                        int h = b.TryGetProperty("h", out var he) ? Num(he) : 0;
+                        double c = b.TryGetProperty("c", out var ce) ? NumD(ce) : 1.0;
+                        int n = b.TryGetProperty("n", out var ne) ? Num(ne) : 1;
+                        string s = b.TryGetProperty("s", out var se) ? (se.GetString() ?? "detector") : "detector";
+                        double d = b.TryGetProperty("d", out var de) ? NumD(de) : 0.0;
+                        out_.Add(new OcrBlock(t, x, y, w, h, (double)w * h, c, n, s, d));
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return out_;
+        }
         public static int Run(string path)
         {
             try
             {
-                var fed = new List<(int loop, string ja)>();
+                var fed = new List<(int loop, string raw, int cw, int tw, List<OcrBlock> blocks, string ja)>();
                 var recordedFires = new List<string>();
                 var recordedUpdates = new List<string>();
                 long wtCovered = 0, wtTotal = 0;
@@ -42,9 +91,12 @@ namespace WunderLanguage.Host.Capture
                         if (t == "ocr")
                         {
                             string ex = root.TryGetProperty("extracted", out var e) ? (e.GetString() ?? "") : "";
+                            string raw = root.TryGetProperty("raw", out var r2) ? (r2.GetString() ?? "") : "";
                             int loop = root.TryGetProperty("loop", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt32() : fed.Count;
+                            int cw = root.TryGetProperty("cw", out var cwe) ? Num(cwe) : 0;
+                            int tw = root.TryGetProperty("tw", out var twe) ? Num(twe) : 0;
                             if (root.TryGetProperty("wt", out var w) && w.ValueKind == JsonValueKind.Number) { wtTotal++; if (w.GetInt64() > 0) wtCovered++; }
-                            fed.Add((loop, ex));
+                            fed.Add((loop, raw, cw, tw, ParseBlocks(root), ex));
                         }
                         else if (t == "bubble")
                         {
@@ -56,13 +108,32 @@ namespace WunderLanguage.Host.Capture
                     }
                 }
                 var ctl = new CaptureController { _simMode = true };
-                var blocks = new List<OcrBlock>();
-                var token = new System.Threading.CancellationToken(false);
-                foreach (var (loop, ja) in fed)
+                // Slice v3 pack select (filename-driven, same Resolve the
+                // session hook uses; restored after — process exits anyway).
+                // FFVI corpora then route battle rows to the battle tracker
+                // exactly like live instead of leaking into dialogue.
+                var prevPack = Packs.PackRegistry.Current;
+                string packUsed = prevPack.GameId;
+                try
                 {
-                    try { ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult(); }
+                    string u = (path ?? "").ToUpperInvariant();
+                    if (u.Contains("FFVI") || u.Contains("FANTASY_VI")) { Packs.PackRegistry.SetCurrent(Packs.FFVI.FfviPackInstance.Shared); packUsed = "ffvi"; }
+                    else if (u.Contains("ZELDA") || u.Contains("DENSETSU")) { Packs.PackRegistry.SetCurrent(Packs.Zelda.ZeldaPackInstance.Shared); packUsed = "zelda"; }
+                }
+                catch { }
+                var token = new System.Threading.CancellationToken(false);
+                long blockLines = 0;
+                foreach (var (loop, raw, cw, tw, blocks, ja) in fed)
+                {
+                    try
+                    {
+                        if (blocks.Count > 0) blockLines++;
+                        ctl.SetOcrContextForSim(raw, cw, tw);
+                        ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
+                    }
                     catch (Exception ex) { FileLogger.Log($"[simreplay] loop {loop} ERROR: {ex.Message}"); break; }
                 }
+                try { Packs.PackRegistry.SetCurrent(prevPack); } catch { }
                 int simFires = 0, simUpdates = 0;
                 var simFireJa = new List<string>();
                 foreach (var s in ctl._simPublished)
@@ -76,7 +147,7 @@ namespace WunderLanguage.Host.Capture
                 foreach (var j in recordedFires) rec[j] = rec.TryGetValue(j, out int c) ? c + 1 : 1;
                 int overlap = 0;
                 foreach (var j in simFireJa) if (rec.TryGetValue(j, out int c) && c > 0) { rec[j] = c - 1; overlap++; }
-                FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
+                FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
                 for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
                 // Gap analysis (slice v2 polish): name the misses (recorded
