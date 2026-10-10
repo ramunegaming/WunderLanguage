@@ -149,6 +149,7 @@ namespace WunderLanguage.Host.Capture
                     {
                         if (blocks.Count > 0) blockLines++;
                         ctl.SetOcrContextForSim(raw, cw, tw);
+                        ctl._simLoop = loop;
                         ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
                     }
                     catch (Exception ex) { FileLogger.Log($"[simreplay] loop {loop} ERROR: {ex.Message}"); break; }
@@ -156,11 +157,34 @@ namespace WunderLanguage.Host.Capture
                 try { Packs.PackRegistry.SetCurrent(prevPack); } catch { }
                 int simFires = 0, simUpdates = 0;
                 var simFireJa = new List<string>();
+                // B6 erasure/lag (re-translation paper §3, adapted: bubbles
+                // for sentences, loops for seconds). Entries are
+                // kind:loop:ja (ja may contain colons — split max 3 parts).
+                var simFireLoops = new List<int>();
                 foreach (var s in ctl._simPublished)
                 {
-                    if (s.StartsWith("fire:", StringComparison.Ordinal)) { simFires++; simFireJa.Add(s.Substring(5)); }
+                    int c1 = s.IndexOf(':');
+                    int c2 = c1 >= 0 ? s.IndexOf(':', c1 + 1) : -1;
+                    string kind = c1 > 0 ? s.Substring(0, c1) : s;
+                    int lp = (c1 >= 0 && c2 > c1 && int.TryParse(s.Substring(c1 + 1, c2 - c1 - 1), out int v)) ? v : -1;
+                    string j = c2 >= 0 ? s.Substring(c2 + 1) : s;
+                    if (kind == "fire") { simFires++; simFireJa.Add(j); simFireLoops.Add(lp); }
                     else simUpdates++;
                 }
+                // Sim lag: fire loop minus first-fed loop showing that JA.
+                // Sim erasure (NE analogue): updates per sim fire.
+                var firstSeen = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var f in fed)
+                    if (!firstSeen.ContainsKey(f.ja)) firstSeen[f.ja] = f.loop;
+                long lagSum = 0; int lagN = 0;
+                for (int i = 0; i < simFireJa.Count; i++)
+                    if (firstSeen.TryGetValue(simFireJa[i], out int fl) && simFireLoops[i] >= fl) { lagSum += simFireLoops[i] - fl; lagN++; }
+                double simLag = lagN > 0 ? (double)lagSum / lagN : -1;
+                double simNE = simFires > 0 ? (double)simUpdates / simFires : -1;
+                // Live erasure on the recorded corpus (updates per decision
+                // fire). Live lag needs loop-stamped bubbles (banked going
+                // forward; old corpora lack it → reported n/a).
+                double liveNE = recordedFires.Count > 0 ? (double)recordedUpdates.Count / recordedFires.Count : -1;
                 // Multiset overlap (order-insensitive): how many sim decisions
                 // reproduce a recorded decision line.
                 var rec = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -168,6 +192,7 @@ namespace WunderLanguage.Host.Capture
                 int overlap = 0;
                 foreach (var j in simFireJa) if (rec.TryGetValue(j, out int c) && c > 0) { rec[j] = c - 1; overlap++; }
                 FileLogger.Log($"[simreplay] done fed={fed.Count} wt={wtCovered}/{wtTotal} blocks={blockLines}/{fed.Count} pack={packUsed} dims={sesW}x{sesH}({dimSrc}) simFires={simFires} simUpdates={simUpdates} recordedFires={recordedFires.Count} recordedUpdates={recordedUpdates.Count} fireOverlap={overlap}");
+                FileLogger.Log($"[b6metrics] simNE={simNE:0.00} (updates/fire) simLag={simLag:0.0}loops liveNE={liveNE:0.00} liveLag=n/a(old corpora lack bubble loop stamps)");
                 for (int i = 0; i < Math.Min(5, simFireJa.Count); i++)
                     FileLogger.Log($"[simreplay] simfire[{i}]=\"{simFireJa[i]}\"");
                 // Gap analysis (slice v2 polish): name the misses (recorded

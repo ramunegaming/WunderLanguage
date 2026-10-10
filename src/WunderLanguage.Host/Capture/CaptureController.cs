@@ -54,6 +54,7 @@ namespace WunderLanguage.Host.Capture
         // Revert: delete fields/ctor/wrappers + --simreplay block, restore
         // TranslateAndPublish/Update names at the call sites.
         internal bool _simMode = false;
+        internal int _simLoop = -1;
         internal readonly System.Collections.Generic.List<string> _simPublished = new();
         internal CaptureController()
         {
@@ -64,15 +65,15 @@ namespace WunderLanguage.Host.Capture
             _gameId = "sim";
             try { _costFlushAt = _clock.GetUtcNow(); } catch { }
         }
-        private System.Threading.Tasks.Task PublishDecisionAsync(string ja)
+        private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1)
         {
-            if (_simMode) { try { _simPublished.Add("fire:" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             return TranslateAndPublishAsync(ja);
         }
-        private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja)
+        private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja, int loop = -1)
         {
-            if (_simMode) { try { _simPublished.Add("update:" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
-            return TranslateAndUpdateAsync(prev, ja);
+            if (_simMode) { try { _simPublished.Add("update:" + _simLoop + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            return TranslateAndUpdateAsync(prev, ja, loop);
         }
         private readonly string _id = Guid.NewGuid().ToString("N")[..6];
         private volatile bool _stopped;
@@ -955,7 +956,7 @@ namespace WunderLanguage.Host.Capture
                             && (iteration - _lastFireLoop >= 3))
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-pageturn (publishing turned page)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, ""); } catch { }
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, "", "", iteration); } catch { }
                             _prevTranslatedText = _lastTranslatedText;
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
@@ -1004,7 +1005,7 @@ namespace WunderLanguage.Host.Capture
                                 && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-weak-hold (held line survived churn)");
-                                try { CorpusRecordBubble("dialogue-decision:publish-weak-hold", _candidateText, ""); } catch { }
+                                try { CorpusRecordBubble("dialogue-decision:publish-weak-hold", _candidateText, "", "", iteration); } catch { }
                                 _prevTranslatedText = _lastTranslatedText;
                                 _lastTranslatedText = _candidateText;
                                 _lastFireLoop = iteration;
@@ -1030,7 +1031,7 @@ namespace WunderLanguage.Host.Capture
                             && HasJapanese(_candidateText))
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-scroll (publishing scrolled line)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-scroll", _candidateText, ""); } catch { }
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-scroll", _candidateText, "", "", iteration); } catch { }
                             _prevTranslatedText = _lastTranslatedText;
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
@@ -1063,7 +1064,7 @@ namespace WunderLanguage.Host.Capture
                             && StripForOverlap(_candidateText).Length >= 15)
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-turned-page (publishing unterminated scrolled page)");
-                            try { CorpusRecordBubble("dialogue-decision:flush-on-turned-page", _candidateText, ""); } catch { }
+                            try { CorpusRecordBubble("dialogue-decision:flush-on-turned-page", _candidateText, "", "", iteration); } catch { }
                             _prevTranslatedText = _lastTranslatedText;
                             _lastTranslatedText = _candidateText;
                             _lastFireLoop = iteration;
@@ -1221,7 +1222,7 @@ namespace WunderLanguage.Host.Capture
                             else
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=breakthrough-publish");
-                                try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, ""); } catch { }
+                                try { CorpusRecordBubble("dialogue-decision:breakthrough-publish", breakthroughText, "", "", iteration); } catch { }
                                 _lastTranslatedText = breakthroughText;
                                 string breakthroughFire = breakthroughText;
                                 _ = PublishDecisionAsync(breakthroughFire);
@@ -1284,7 +1285,7 @@ namespace WunderLanguage.Host.Capture
                             _lastTranslatedText = _candidateText;
 
                             string textToTranslate = _candidateText;
-                            _ = PublishUpdateAsync(prev, textToTranslate);
+                            _ = PublishUpdateAsync(prev, textToTranslate, iteration);
                         }
                         else if (isOverlapContinuation)
                         {
@@ -1307,7 +1308,7 @@ namespace WunderLanguage.Host.Capture
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
                             _lastTranslatedText = _candidateText;
                             string textToTranslate = _candidateText;
-                            _ = PublishUpdateAsync(prev, textToTranslate);
+                            _ = PublishUpdateAsync(prev, textToTranslate, iteration);
                         }
                         else if (!isNearDuplicate)
                         {
@@ -1342,7 +1343,7 @@ namespace WunderLanguage.Host.Capture
                                 _prevTranslatedText = _lastTranslatedText;
                                 _lastTranslatedText = _candidateText;
                                 string textToTranslate = _candidateText;
-                                _ = PublishUpdateAsync(prev, textToTranslate);
+                                _ = PublishUpdateAsync(prev, textToTranslate, iteration);
                             }
                             else if (IsUnterminatedComposite(_candidateText))
                             {
@@ -1352,7 +1353,7 @@ namespace WunderLanguage.Host.Capture
                             else
                             {
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=publish-new (similarity to last shown: {similarity:F2})");
-                                try { CorpusRecordBubble("dialogue-decision:publish-new", _candidateText, ""); } catch { }
+                                try { CorpusRecordBubble("dialogue-decision:publish-new", _candidateText, "", "", iteration); } catch { }
                                 _prevTranslatedText = _lastTranslatedText;
                                 _lastTranslatedText = _candidateText;
                                 _lastFireLoop = iteration;
@@ -1917,7 +1918,7 @@ namespace WunderLanguage.Host.Capture
             }
         }
 
-        private async Task TranslateAndUpdateAsync(string expectedOldJa, string text)
+        private async Task TranslateAndUpdateAsync(string expectedOldJa, string text, int loop = -1)
         {
             try
             {
@@ -1973,7 +1974,7 @@ namespace WunderLanguage.Host.Capture
                     return;
                 }
                 FileLogger.Log($"[translate-update] \"{text}\" -> \"{translated}\"");
-                try { CorpusRecordBubble("dialogue-update", text, translated, expectedOldJa); } catch { }
+                try { CorpusRecordBubble("dialogue-update", text, translated, expectedOldJa, loop); } catch { }
                 TextUpdated?.Invoke(expectedOldJa, text, translated);
             }
             catch (Exception ex)
@@ -2212,12 +2213,16 @@ namespace WunderLanguage.Host.Capture
             }
             catch { }
         }
-        private void CorpusRecordBubble(string kind, string ja, string en, string old = "")
+        private void CorpusRecordBubble(string kind, string ja, string en, string old = "", int loop = -1)
         {
             try
             {
                 if (!RecordCorpus) return;
-                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "bubble", kind = kind, old = old, ja = ja, en = en }));
+                // B6 erasure/lag banking: loop stamp on bubbles (additive;
+                // old lines lack it — live lag unmeasurable there, sim lag
+                // covers). Omitted when unknown (menu/title paths).
+                if (loop >= 0) CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "bubble", kind = kind, old = old, ja = ja, en = en, loop = loop }));
+                else CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "bubble", kind = kind, old = old, ja = ja, en = en }));
             }
             catch { }
         }

@@ -642,6 +642,30 @@ rule). Revisit only on evidence:**
   clock ✓ step ✓ block+pack feed ✓ context banking ✓; permanently
   live-only: bitmaps/OCR, dwell path, CAT, transport.
   Revert: revert m7c-slice4 (slice2/3 seam stays).
+
+## Bottleneck 6 — papers graded + measured (no behavior change)
+Sources (all read, none reupload): K8s probes (startup/liveness/
+readiness) — HIGH confirmatory; re-translation paper (erasure/lag,
+mask-k, bias) — MEDIUM metrics-only (mechanisms need model
+internals/streaming CAT: banned/absent); Google blog — LOW
+(same paper, product story); SimulST survey (110) — LOW-MEDIUM
+(cascade+re-translation validates us 9/13; buffer-trim = our
+candidate state; aware/unaware latency).
+Shipped measurement: bubble loop stamps (additive; decision +
+update sites pass iteration; menu/title omit) + [b6metrics]:
+corpus1 simNE=0.35 simLag=30.6loops liveNE=0.39; corpus2
+simNE=0.18 simLag=15.9loops liveNE=0.19 (overlap 82/97).
+Sim reproduces live revision behavior quantitatively; lag scale
+(6–12s) matches the paper's seconds-scale TL. Live lag n/a on
+old corpora (no stamps — banked going forward).
+Probe audit (verified in code): startup = warmup+min-spec+CAT
+defer120s+catwatch (gates liveness/readiness ✓); liveness = job
+TreeDied→restart budget 3/5s-then-down (bounded, no cascade;
+no slow-kill probe — passes the K8s caution ✓); readiness =
+honest health+503 detail+quiet hold+fallback chain+lowmem/CPU
+(degrades, never kills ✓); consecutive thresholds where they
+matter (window-death 5). Killer still unconvicted, no recurrence
+→ NO behavior change. Revert: revert b6metrics.
   Revert: revert m7c-slice2.
 
 ## Session state — 2026-10-10 pre-compaction resume ledger
