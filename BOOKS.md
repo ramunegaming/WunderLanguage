@@ -806,6 +806,20 @@ recorded ("ただか"→"たたかう" d=2). Slot-vs-shot correctness
 needs next play. Build +0/0; replay 0/263-identical.
 Revert: revert b2-madou.
 
+## B3 fuzzy-name handling (SHIPPED, live-triage batch 3)
+Cited (live 2026-10-10, loops 2393/2151): ログ「×3 + ＤＶＤの「×1
+in Locke speaker slots — ログ/ＤＶＤ never legit in FFVI
+dialogue. Fix (FFVI OcrFixups, speaker-anchored, idempotent):
+ログ「→ロック「, ＤＶＤの「→ロック「. MaskNames stays
+exact-only (fuzzy-name masking deferred: short-name collision
+risk unmeasured; cited instances covered by fixups).
+qmask LIVE PROOF (first, from new FFVI corpus): Ｐ？？？２？？
+がしベルアップ → "P???2?? Level Up" ([3,2]→[3,2]) and
+うけ「？？？ → EN keeps ？？？ ([3]→[3], speaker+quotes
+intact). Old corpora lack both targets → replay 0/263 holds.
+Live Locke-slot proof needs next play. Build +0/0.
+Revert: revert b3-lockefix.
+
 ## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
