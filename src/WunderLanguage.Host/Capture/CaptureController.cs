@@ -29,6 +29,14 @@ namespace WunderLanguage.Host.Capture
         // setter, restore DateTime.UtcNow / Task.Delay(ms, token).
         private TimeProvider _clock = TimeProvider.System;
         internal void SetClock(TimeProvider clock) { try { _clock = clock ?? TimeProvider.System; } catch { } }
+        // Slice v3: restore the OCR context the live loop sets from the
+        // sidecar (raw text + content/total word counts) so the density
+        // gate sees what live saw. Old corpora lack cw/tw → caller passes 0
+        // (same as the pre-v3 default). Revert: delete with SimReplay use.
+        internal void SetOcrContextForSim(string raw, int content, int total)
+        {
+            try { _lastOcrText = raw ?? ""; _lastOcrContent = content; _lastOcrTotal = total; } catch { }
+        }
         // M7c slice v2 sim harness (ticktape "same struct runs in the
         // simulator"): _simMode captures JA publish decisions instead of
         // translating. Live path forwards identically (parity proven by
@@ -2181,8 +2189,11 @@ namespace WunderLanguage.Host.Capture
                 // M7c time-data (ticktape "time is data" + event-sourcing
                 // ordering): wall ms banked per ocr line, additive forward-only
                 // (replay ignores unknown fields — parity proven per batch).
+                // Slice v3: OCR context (content/total words) banked alongside
+                // so sim can restore the density-gate context. Same additive
+                // contract; old lines simply lack cw/tw (sim defaults 0).
                 long wt = 0; try { wt = _clock.GetUtcNow().ToUnixTimeMilliseconds(); } catch { }
-                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, wt = wt, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
+                CorpusLine(JsonSerializer.Serialize(new { v = 1, type = "ocr", loop = loop, wt = wt, cw = _lastOcrContent, tw = _lastOcrTotal, raw = raw, blocks = bs, extracted = extracted, mined = mined }));
             }
             catch { }
         }
