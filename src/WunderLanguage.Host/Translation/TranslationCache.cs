@@ -24,6 +24,10 @@ namespace WunderLanguage.Host.Translation
         {
             return _cache.TryGetValue(MakeKey(sourceText, targetLang), out translated!);
         }
+        // Hygiene logging: size visibility for the unbounded-growth audit.
+        // Revert with the [spend] log line.
+        public int EntryCount { get { try { return _cache.Count; } catch { return -1; } } }
+        public long FileBytes { get { try { return new FileInfo(_filePath).Length; } catch { return -1; } } }
 
         public void Set(string sourceText, string targetLang, string translated)
         {

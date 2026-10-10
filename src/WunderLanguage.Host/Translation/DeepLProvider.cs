@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace WunderLanguage.Host.Translation
 {
@@ -17,6 +18,17 @@ namespace WunderLanguage.Host.Translation
 
     public class DeepLProvider : ITranslationProvider
     {
+        // Hygiene logging (bottleneck-8 follow-up): session spend counters.
+        // Interval snapshot (resets) for the 60s cost-flush line. Counts
+        // API attempts (chars sent = quota exposure) regardless of outcome.
+        // Revert: delete fields/method + the [spend] log line.
+        private static long _spendCalls, _spendChars;
+        public static (long calls, long chars) SpendStats()
+        {
+            long c = Interlocked.Exchange(ref _spendCalls, 0);
+            long ch = Interlocked.Exchange(ref _spendChars, 0);
+            return (c, ch);
+        }
         private readonly HttpClient _http;
         private readonly string _apiKey;
         private readonly string _baseUrl;
@@ -78,6 +90,7 @@ namespace WunderLanguage.Host.Translation
                 form.Add(new("context", context));
             request.Content = new FormUrlEncodedContent(form);
 
+            try { Interlocked.Increment(ref _spendCalls); Interlocked.Add(ref _spendChars, text.Length); } catch { }
             var response = await _http.SendAsync(request);
 
             if ((int)response.StatusCode == 456)

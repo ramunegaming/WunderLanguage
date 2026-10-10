@@ -188,6 +188,17 @@ namespace WunderLanguage.Host.Capture
                 long im = Interlocked.Exchange(ref _costSimMiss, 0);
                 static string Rate(long h, long m) => (h + m) == 0 ? "-/-" : $"{h}/{h + m} ({100.0 * h / (h + m):F0}%)";
                 FileLogger.Log($"[cache-hit] game={_gameId} tcache={Rate(tcHit, tcReq - tcHit)} sticky={Rate(sh, sm)} prefetch={Rate(ph, pm)} sim={Rate(ih, im)}");
+                // Hygiene logging (bottleneck-8 follow-up): DeepL spend per
+                // interval + cache size point-in-time. Log-only, no behavior.
+                // Revert: delete block + DeepLProvider.SpendStats +
+                // TranslationCache.EntryCount/FileBytes + CacheSize.
+                try
+                {
+                    var (dlCalls, dlChars) = DeepLProvider.SpendStats();
+                    var (tcEntries, tcBytes) = _translationManager.CacheSize();
+                    FileLogger.Log($"[spend] game={_gameId} deepl={dlCalls}calls/{dlChars}chars tcache={tcEntries}entries/{tcBytes}B");
+                }
+                catch { }
             }
             catch { }
         }

@@ -717,6 +717,13 @@ monster/item vocabs (splitters + fuzzy) 5. BattleGlossary
 publish requires). Replay parity 0/263 (override is sim-only).
 Revert: revert b8-coldstart.
 
+## Hygiene logging (bottleneck-8 follow-up, SHIPPED)
+DeepL spend counters (calls/chars on API attempts, interval
+snapshot) + cache size (entries/bytes point-in-time) on the 60s
+cost-flush as [spend]. Log-only, zero behavior. First [spend]
+sighting waits for a live loop (sim/replay never run the flush).
+Replay parity 0/263. Revert: revert spend-log.
+
 ## Session state — 2026-10-10 pre-compaction resume ledger
 Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
 - sentdedup (exact doubles) → revert sentdedup
