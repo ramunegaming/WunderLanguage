@@ -663,7 +663,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
   prov-stab observability (trailing window, log-only),
   M7c slice v1 (injectable clock, corpus wt, simcheck PASS),
   M7c slice v2 (decision seam + simreplay: 81/83 + 99/100 overlap),
-   M7c slice v3 (block+pack feed: extras halved, 82/83 + 97/100).
+   M7c slice v3 (block+pack feed: extras halved, 82/83 + 97/100),
+   M7c slice v4 (banking kept, estimator convicted+reverted).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
