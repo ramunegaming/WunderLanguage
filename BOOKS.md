@@ -747,7 +747,8 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    M7c slice v4 (banking kept, estimator convicted+reverted),
    Bottleneck 6 measured (erasure/lag agree sim/live; probe audit PASS; no behavior change),
    Bottleneck 7 measured (recall proxies healthy; frame audit queued for play; no behavior change),
-   Bottleneck 8 priced (JA-fire delta zero; price is menu/CAT-side; checklist shipped).
+   Bottleneck 8 priced (JA-fire delta zero; price is menu/CAT-side; checklist shipped),
+   Hygiene logging shipped (spend/cache lines, first sighting needs live loop).
 Pending live proof (need play with real CAT output): profanity-hold
 line, qmask round-trip, namemask round-trip, suspect-hold on misread,
 A1 averaging dialogue verdict, fuzzy-halves/[fuzzy-w] in the wild,
