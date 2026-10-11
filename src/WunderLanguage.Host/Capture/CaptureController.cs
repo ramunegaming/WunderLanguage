@@ -435,14 +435,38 @@ namespace WunderLanguage.Host.Capture
         }
 
         private Dictionary<string, string> _minedCorrections = new();
+        private Dictionary<string, string> _globalCorrections = new();
 
         // M8 miner-as-pack-data: corrections/<gameId>.json is pack data (per-game, never core).
-        // Dedupe: entries the current pipeline already reproduces are dropped at load
-        // (universals absorb the rows — file preserved, effective map shrinks).
+        // Loop 1 compounding (approved 2026-10-11): pairs mined IDENTICALLY
+        // (same raw -> same fixed) in >=2 distinct game files promote to
+        // corrections/_global.json, loaded for every game. Per-game wins on
+        // lookup (pack-scoped precedence); conflicts (same raw, different
+        // fixed) never promote and stay per-game. Exact-match discipline
+        // throughout — same rule as mined. Day-1 expectation: zero behavior
+        // change (every promotable pair already lives in the per-game files
+        // of the games that use it); the strengthening accrues when new
+        // games share pairs. Revert: delete PromoteGlobalCorrections call
+        // + global lookup (per-game path untouched).
         private void LoadMinedCorrections()
         {
             try
             {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corrections");
+                try { PromoteGlobalCorrections(dir); } catch { }
+                try
+                {
+                    string gpath = Path.Combine(dir, "_global.json");
+                    if (File.Exists(gpath))
+                        _globalCorrections = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(gpath)) ?? new Dictionary<string, string>();
+                    int gbefore = _globalCorrections.Count;
+                    _globalCorrections = _globalCorrections
+                        .Where(kv => ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(kv.Key))) != kv.Value)
+                        .ToDictionary(kv => kv.Key, kv => kv.Value);
+                    if (_globalCorrections.Count != gbefore)
+                        FileLogger.Log($"[miner] deduped {gbefore - _globalCorrections.Count}/{gbefore} redundant global rows (pipeline absorbs them)");
+                }
+                catch { }
                 string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "corrections", _gameId + ".json");
                 if (File.Exists(path))
                     _minedCorrections = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? new Dictionary<string, string>();
@@ -455,12 +479,76 @@ namespace WunderLanguage.Host.Capture
             }
             catch { }
         }
+        private void PromoteGlobalCorrections(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) return;
+                var votes = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+                var games = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var file in Directory.GetFiles(dir, "*.json"))
+                {
+                    string name = Path.GetFileName(file);
+                    if (name.StartsWith("_global", StringComparison.OrdinalIgnoreCase)) continue;
+                    Dictionary<string, string>? map;
+                    try { map = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)); }
+                    catch { continue; }
+                    if (map == null) continue;
+                    foreach (var kv in map)
+                    {
+                        // Each file holds each raw at most once, so one visit
+                        // = one distinct game voting for this raw.
+                        if (!votes.TryGetValue(kv.Key, out var byFixed))
+                        {
+                            byFixed = new Dictionary<string, int>(StringComparer.Ordinal);
+                            votes[kv.Key] = byFixed;
+                            games[kv.Key] = 0;
+                        }
+                        games[kv.Key]++;
+                        byFixed[kv.Value] = byFixed.TryGetValue(kv.Value, out int n) ? n + 1 : 1;
+                    }
+                }
+                var global = new Dictionary<string, string>(StringComparer.Ordinal);
+                int conflicts = 0;
+                foreach (var kv in votes)
+                {
+                    if (games[kv.Key] >= 2 && kv.Value.Count == 1)
+                        global[kv.Key] = new List<string>(kv.Value.Keys)[0];
+                    else if (games[kv.Key] >= 2)
+                        conflicts++;
+                }
+                string gpath = Path.Combine(dir, "_global.json");
+                Dictionary<string, string>? existing = null;
+                try
+                {
+                    if (File.Exists(gpath))
+                        existing = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(gpath));
+                }
+                catch { }
+                bool same = existing != null && existing.Count == global.Count;
+                if (same)
+                {
+                    foreach (var kv in global)
+                    {
+                        if (!existing!.TryGetValue(kv.Key, out string? v) || v != kv.Value) { same = false; break; }
+                    }
+                }
+                if (!same)
+                {
+                    File.WriteAllText(gpath, JsonSerializer.Serialize(global, new JsonSerializerOptions { WriteIndented = true }));
+                    FileLogger.Log($"[miner] global promoted {global.Count} agreed pairs, {conflicts} conflicts held per-game");
+                }
+            }
+            catch { }
+        }
         private string? LookupMined(string raw)
         {
             try
             {
                 if (_minedCorrections.TryGetValue(raw, out string? f))
                     return f;
+                if (_globalCorrections.TryGetValue(raw, out string? g))
+                    return g;
             }
             catch { }
             return null;

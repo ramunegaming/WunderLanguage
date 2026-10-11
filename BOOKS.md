@@ -923,6 +923,24 @@ Residue for LM-fluency stage: true no-support singles
 B10 narrowed, not resolved.
 Revert: revert tier2-anchored.
 
+## Loop 1 global fixup tier (SHIPPED 2026-10-11, compounding)
+Pairs mined IDENTICALLY (same raw->same fixed) in >=2 game
+files promote to corrections/_global.json at startup; per-game
+wins on lookup, conflicts (same raw/different fixed) never
+promote, exact-match discipline throughout. Measured: 70 agreed
+pairs qualify (Zelda x Snes9x-session files), 44 conflicts held
+per-game, FFVI shares 0 with anyone. Simreplay delta ZERO all
+corpora (FFVI-old 117/76/7/41 identical) — expected Day-1 nil:
+every promotable pair already lives in its games' per-game
+files. Promotion branch is live-path-only (sim/replay never call
+Start); vote math verified by replica + inspection, first live
+play must show `[miner] global promoted …` in app.log (confirm
+then). Caveat: Snes9x_1.60 gameId may be Zelda-misidentified —
+harmless either way (gate judges safety, not provenance).
+Strengthening accrues when Paper Mario shares pairs.
+Replay drift 0; build +0/0.
+Revert: revert loop1-global.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
