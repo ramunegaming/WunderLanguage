@@ -68,7 +68,63 @@ namespace WunderLanguage.Host.Capture
         private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire")
         {
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            // Loop 4 compounding (approved 2026-10-11): stable fired JA
+            // proposes itself to the pack-vocab review queue
+            // (vocab-proposals/<pack>.json, counts + kinds). Write-only
+            // sidecar — never read back except by reviewer promotion, so
+            // zero behavior change by construction; sim returns above, so
+            // sim/replay never touch it. Whole short terms only (fired
+            // lines stay corpus evidence for manual term-mining).
+            // Promotion bar (documented): count>=3 or demonstrated vocab
+            // gap + corpus evidence. Revert: delete ProposeVocab call.
+            try { ProposeVocab(ja, kind); } catch { }
             return TranslateAndPublishAsync(ja);
+        }
+        private void ProposeVocab(string ja, string kind)
+        {
+            try
+            {
+                string pack = Packs.PackRegistry.Current.GameId;
+                if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
+                string t = (ja ?? "").Trim();
+                int len = StripForOverlap(t).Length;
+                if (len < 2 || len > 12) return;
+                if (!HasJapanese(t) || IsJunkOcr(t) || IsEllipsisOnly(t)) return;
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "vocab-proposals");
+                Directory.CreateDirectory(dir);
+                string path = Path.Combine(dir, pack + ".json");
+                lock (_mineLock)
+                {
+                    Dictionary<string, Dictionary<string, object>> q;
+                    try
+                    {
+                        q = File.Exists(path)
+                            ? JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, object>>>(File.ReadAllText(path)) ?? new()
+                            : new();
+                    }
+                    catch { q = new(); }
+                    if (!q.TryGetValue(t, out var e))
+                    {
+                        if (q.Count >= 500) return;
+                        e = new Dictionary<string, object> { ["count"] = 0, ["kinds"] = new List<string>() };
+                        q[t] = e;
+                    }
+                    e["count"] = (e.TryGetValue("count", out var c) && c is JsonElement je && je.TryGetInt32(out int n) ? n : 0) + 1;
+                    try
+                    {
+                        var ks = new List<string>();
+                        if (e.TryGetValue("kinds", out var k) && k is JsonElement ke && ke.ValueKind == JsonValueKind.Array)
+                            foreach (var x in ke.EnumerateArray())
+                                ks.Add(x.GetString() ?? "");
+                        if (!ks.Contains(kind)) ks.Add(kind);
+                        while (ks.Count > 5) ks.RemoveAt(0);
+                        e["kinds"] = ks;
+                    }
+                    catch { }
+                    File.WriteAllText(path, JsonSerializer.Serialize(q));
+                }
+            }
+            catch { }
         }
         private System.Threading.Tasks.Task PublishUpdateAsync(string prev, string ja, int loop = -1, string kind = "update")
         {
