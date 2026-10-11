@@ -405,7 +405,8 @@ namespace WunderLanguage.Host.Capture
         // R2a shown-age: loop index of the last new-bubble fire (-100 = none yet, first fire immediate).
         // A held page flushing moments after a fire (corpus loops 457-458) is flicker, not a page turn.
         private int _lastFireLoop = -100;
-        private const int RequiredStableReadings = 3;
+        private const int RequiredStableReadings_Default = 3;
+        private static int RequiredStableReadings => ThresholdProfiles.GetInt("stableReadings", RequiredStableReadings_Default, 2, 4);
         private const int GrowthBreakthroughPolls = 10;
         private const int MinCandidateContentLength = 2;
         // Suspect-hold (bottleneck-3 A1): beam-diverse reads are wrong 82%
@@ -992,7 +993,7 @@ namespace WunderLanguage.Host.Capture
                     if (!string.IsNullOrWhiteSpace(extractedText))
                     {
                         bool lineageActive = !string.IsNullOrEmpty(_candidateText)
-                            && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
+                            && (ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.LineageSim
                                 || extractedText.Contains(_candidateText, StringComparison.Ordinal)
                                 || _candidateText.Contains(extractedText, StringComparison.Ordinal)
                                 || HasCommonPrefix(extractedText, _candidateText, 10)
@@ -1068,7 +1069,7 @@ namespace WunderLanguage.Host.Capture
                         _flashFired = false;
                     }
                     else if (!string.IsNullOrEmpty(_candidateText)
-                        && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
+                        && (ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.LineageSim
                             || extractedText.Contains(_candidateText, StringComparison.Ordinal)
                             || _candidateText.Contains(extractedText, StringComparison.Ordinal)
                             || HasCommonPrefix(extractedText, _candidateText, 10)
@@ -1220,7 +1221,7 @@ namespace WunderLanguage.Host.Capture
                             }
                             _candidateGrewThisRead = false;
                         }
-                        else if (ComputeSimilarity(extractedText, _candidateText) >= 0.85
+                        else if (ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.FuzzyAdoptSim
                             && !IsJunkOcr(extractedText) && !IsEllipsisOnly(extractedText)
                             && !IsScrollBlend(extractedText) && !IsZeldaTransitionBlend(extractedText)
                             && HasJapanese(extractedText))
@@ -1244,23 +1245,23 @@ namespace WunderLanguage.Host.Capture
                             bool extComplete = IsCompleteDialogueLine(extractedText);
                             if (candComplete && !extComplete)
                             {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim>=0.85 holding complete line)");
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim={ThresholdProfiles.FuzzyAdoptSim:0.00} holding complete line)");
                             }
                             else if (!candComplete && extComplete)
                             {
                                 _candidateText = extractedText;
                             _suspectStainedText = string.Empty;
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim>=0.85 taking complete variant)");
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim={ThresholdProfiles.FuzzyAdoptSim:0.00} taking complete variant)");
                             }
                             else if (StripForOverlap(extractedText).Length > StripForOverlap(_candidateText).Length)
                             {
                                 _candidateText = extractedText;
                             _suspectStainedText = string.Empty;
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim>=0.85 taking longer variant)");
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-adopt (sim={ThresholdProfiles.FuzzyAdoptSim:0.00} taking longer variant)");
                             }
                             else
                             {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim>=0.85 holding)");
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=fuzzy-window-keep (sim={ThresholdProfiles.FuzzyAdoptSim:0.00} holding)");
                             }
                             // Successor rescue preserved (measured 2026-10-11:
                             // clearing successor here held stale variants and
@@ -3000,7 +3001,78 @@ namespace WunderLanguage.Host.Capture
             return false;
         }
 
-        private const double NearDuplicateSimilarityThreshold = 0.90;
+        private const double NearDuplicateSimilarityThreshold_Default = 0.90;
+        private static double NearDuplicateSimilarityThreshold => ThresholdProfiles.GetDouble("nearDupe", NearDuplicateSimilarityThreshold_Default, 0.85, 0.95);
+
+        // Loop 5 compounding (approved 2026-10-11): stability-commit knobs
+        // read per-pack overrides from profiles/<pack>.json (validated
+        // ranges, defaults otherwise) instead of frozen consts, so a new
+        // game's simreplay calibration can tune ITS profile without moving
+        // any other game's behavior. Whitelist is deliberately narrow
+        // (stableReadings 2..4, nearDupe 0.85..0.95, lineageSim 0.55..0.75,
+        // fuzzyAdopt 0.80..0.90); out-of-range/missing -> default + one
+        // warn line. No profiles dir today -> defaults everywhere, zero
+        // delta by construction. Tuning procedure: simreplay lag/NE per
+        // corpus at review, write profile, re-gate all corpora.
+        // Revert: delete class + restore consts (see _Default consts).
+        private static class ThresholdProfiles
+        {
+            private static string _pack = "";
+            private static Dictionary<string, double> _vals = new();
+            private static readonly HashSet<string> _warned = new();
+            private static void Ensure()
+            {
+                try
+                {
+                    string pack = Packs.PackRegistry.Current.GameId;
+                    if (pack == _pack) return;
+                    _pack = pack;
+                    _vals = new Dictionary<string, double>();
+                    _warned.Clear();
+                    if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
+                    string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "profiles", pack + ".json");
+                    if (!File.Exists(path)) return;
+                    using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                    foreach (var kv in doc.RootElement.EnumerateObject())
+                    {
+                        if (kv.Value.ValueKind == JsonValueKind.Number) _vals[kv.Name] = kv.Value.GetDouble();
+                    }
+                    FileLogger.Log($"[profile] loaded {_vals.Count} overrides for {pack}");
+                }
+                catch { }
+            }
+            public static int GetInt(string key, int def, int lo, int hi)
+            {
+                try
+                {
+                    Ensure();
+                    if (_vals.TryGetValue(key, out double v))
+                    {
+                        int i = (int)Math.Round(v);
+                        if (i >= lo && i <= hi) return i;
+                        if (_warned.Add(key)) FileLogger.Log($"[profile] {key}={v} out of range [{lo},{hi}], default {def}");
+                    }
+                }
+                catch { }
+                return def;
+            }
+            public static double GetDouble(string key, double def, double lo, double hi)
+            {
+                try
+                {
+                    Ensure();
+                    if (_vals.TryGetValue(key, out double v))
+                    {
+                        if (v >= lo && v <= hi) return v;
+                        if (_warned.Add(key)) FileLogger.Log($"[profile] {key}={v} out of range [{lo},{hi}], default {def}");
+                    }
+                }
+                catch { }
+                return def;
+            }
+            public static double LineageSim => GetDouble("lineageSim", 0.65, 0.55, 0.75);
+            public static double FuzzyAdoptSim => GetDouble("fuzzyAdopt", 0.85, 0.80, 0.90);
+        }
 
         internal static bool IsSelfDuplicated(string text)
         {

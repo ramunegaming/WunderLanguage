@@ -989,6 +989,22 @@ queue; reviewer promotes per new game (same review discipline
 as loop 2).
 Revert: revert loop4-vocab.
 
+## Loop 5 per-game profiles (SHIPPED 2026-10-11, compounding)
+Stability-commit knobs (stableReadings 2..4, nearDupe 0.85..0.95,
+lineageSim 0.55..0.75, fuzzyAdopt 0.80..0.90) read per-pack
+overrides from profiles/<pack>.json (validated, defaults + warn
+otherwise) instead of frozen consts — same names at call sites,
+self-dup 0.65 and geometry correctly untouched. No profiles dir
+today -> defaults, zero delta (sim 117/76/7/41, replay drift 0,
+build +0/0). Mechanism PROVEN both directions with a throwaway
+probe (stableReadings=2: fires 117->145 BUT overlap 76->71,
+missed 7->12, extra 41->74 — lower bar fires more and teaches
+worse; probe deleted, defaults restored exactly). That IS the
+loop's premise priced: knobs matter per game, tuning happens at
+review with all-corpora re-gate, never by feel. Procedure:
+simreplay lag/NE per corpus -> write profile -> re-gate all.
+Revert: revert loop5-profiles.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
