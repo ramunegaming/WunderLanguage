@@ -1005,6 +1005,19 @@ review with all-corpora re-gate, never by feel. Procedure:
 simreplay lag/NE per corpus -> write profile -> re-gate all.
 Revert: revert loop5-profiles.
 
+## Step 1 truth eval set v1 (SHIPPED 2026-10-11, milestone path)
+eval/truth.jsonl: 40 rows from 36 banked shots, game pane read
+directly (never OCR as ground truth). Dev 28 (17/18h, tuning
+allowed) / heldout 12 (22/23h, verification only). Verdicts:
+17 miss-complete, 6 false-pub, 4 fidelity-error, 5 withheld-
+partial/TN (correct-silence controls), 2 hits, + stale/dup/menu
+cases. Contexts: dialogue, typewriter partials, crawl pages,
+signs, 2 decision-box misses, game-over/menu, JA+Latin titles,
+prompt-leak garbage, ?-junk, blends, dups. Partials labeled by
+visible text. Initial set only — no Paper Mario yet, not
+cross-game proof. Data-only batch (no code).
+Revert: revert truth-set.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
