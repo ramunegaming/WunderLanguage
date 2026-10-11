@@ -901,6 +901,28 @@ no-change elsewhere. B10 NOT resolved — singleton-complete
 lines untouched (FFVI 7 + Zelda-long 10 + intro 3 residue).
 Revert: revert fuzzy-window.
 
+## Tier 2 anchored-singleton rescue (SHIPPED 2026-10-11, B10)
+Fire-all-singletons priced ~40% garbage — not shippable. Ships
+instead two shape-anchored families auditing ~100% genuine:
+button prompts (ボタン) + speaker-start (NAME「 at pos 0),
+terminal 。/！/？, no leading …/「, stripped 6–30, max one 「,
+no ASCII runs, all existing blocks + dupe/subpart + R2a.
+Precision fix mid-batch excluded 4 double-anchor blends.
+Per corpus vs best baseline: FFVI-old 117=117 (0 fires);
+FFVI-new 101->104, overlap 46=46, missed 4=4, extra 55->58,
+JA diff +2 distinct genuine (ウェッジ「わかったぜ！,
+ガード「いたぞ」！) -0 removed; Zelda-long 71->72, overlap
+50=50 (+1 genuine カンテラ tutorial, +1 borderline scroll-shape
+468 disclosed); intro 4=4 (0 fires, long-garbled pool excluded).
+NE flat all corpora; budgets OK (Zelda-long EXCEEDED
+pre-existing, identical baseline); replay drift 0; build +0/0.
+9/11 FFVI-new singleton fires duplicate JA Tier1 fired anyway
+(pool exact-match mislabeled fuzzy siblings — validates Tier 1).
+Residue for LM-fluency stage: true no-support singles
+(心配…, distress-call cleans), 4 excluded blends, intro 3.
+B10 narrowed, not resolved.
+Revert: revert tier2-anchored.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.

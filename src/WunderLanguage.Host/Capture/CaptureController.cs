@@ -830,6 +830,81 @@ namespace WunderLanguage.Host.Capture
                     }
                     catch { }
 
+                    // Tier 2 anchored-singleton rescue (B10, approved
+                    // 2026-10-11): a complete genuine line seen ONCE never
+                    // forms a candidate under any counting rule (Tier 1
+                    // included). Fire-all-singletons priced ~40% garbage, so
+                    // this rescues only two shape-anchored families that
+                    // audited ~100% genuine in evidence: (a) button prompts
+                    // (every game has tutorials), (b) speaker-start lines
+                    // (NAME「 at position 0 — mid-read anchors stay out).
+                    // Fires only reads the normal road would orphan (no
+                    // active lineage), sets _lastTranslatedText ONLY (R2a
+                    // clock + oscillation memory untouched, same discipline
+                    // as growth-fast), verbatim-only, once per exact text
+                    // via the dupe gate. Normal flow continues below so the
+                    // read still seeds a candidate (no double-post: dupe
+                    // gate blocks refire). Revert: delete this block.
+                    if (!string.IsNullOrWhiteSpace(extractedText))
+                    {
+                        bool lineageActive = !string.IsNullOrEmpty(_candidateText)
+                            && (ComputeSimilarity(extractedText, _candidateText) >= 0.65
+                                || extractedText.Contains(_candidateText, StringComparison.Ordinal)
+                                || _candidateText.Contains(extractedText, StringComparison.Ordinal)
+                                || HasCommonPrefix(extractedText, _candidateText, 10)
+                                || HasCommonPrefix(StripForOverlap(extractedText), StripForOverlap(_candidateText), 6));
+                        int strippedLen = StripForOverlap(extractedText).Length;
+                        bool terminal = extractedText.EndsWith("。", StringComparison.Ordinal)
+                            || extractedText.EndsWith("！", StringComparison.Ordinal)
+                            || extractedText.EndsWith("？", StringComparison.Ordinal)
+                            || extractedText.EndsWith("!", StringComparison.Ordinal)
+                            || extractedText.EndsWith("?", StringComparison.Ordinal);
+                        bool startsClean = !extractedText.StartsWith("…", StringComparison.Ordinal)
+                            && !extractedText.StartsWith("...", StringComparison.Ordinal)
+                            && !extractedText.StartsWith("「", StringComparison.Ordinal);
+                        int qi = extractedText.IndexOf('「');
+                        bool speakerStart = qi >= 1 && qi <= 8;
+                        bool buttonPrompt = extractedText.Contains("ボタン", StringComparison.Ordinal);
+                        // Precision fix (measured 2026-10-11): blended reads
+                        // carry two speaker anchors (ガッド「…ガード「よし！)
+                        // or stray ASCII splinters (…ｍｏ…「モーグリ…).
+                        // At most one 「 and no ASCII letter/digit runs —
+                        // full-width bonus text (Ｙボタン, ＭＡＰ) unaffected.
+                        // Costs 3 borderline genuine-family blends (disclosed
+                        // in verdict); the clean halves stay in the residue
+                        // pool for the LM-fluency stage, not dropped.
+                        int anchorCount = 0;
+                        for (int ai = 0; ai < extractedText.Length; ai++)
+                            if (extractedText[ai] == '「') anchorCount++;
+                        bool hasAsciiRun = false;
+                        for (int ai = 0; ai + 1 < extractedText.Length; ai++)
+                        {
+                            char c0 = extractedText[ai], c1 = extractedText[ai + 1];
+                            bool a0 = (c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z') || (c0 >= '0' && c0 <= '9');
+                            bool a1 = (c1 >= 'A' && c1 <= 'Z') || (c1 >= 'a' && c1 <= 'z') || (c1 >= '0' && c1 <= '9');
+                            if (a0 && a1) { hasAsciiRun = true; break; }
+                        }
+                        bool anchored = (buttonPrompt || speakerStart) && terminal && startsClean
+                            && strippedLen >= 6 && strippedLen <= 30
+                            && anchorCount <= 1 && !hasAsciiRun;
+                        if (anchored && !lineageActive && _candidateStableCount < RequiredStableReadings
+                            && HasJapanese(extractedText) && !IsJunkOcr(extractedText) && !IsEllipsisOnly(extractedText)
+                            && !IsScrollBlend(extractedText) && !IsZeldaTransitionBlend(extractedText)
+                            && !IsIncompleteSacrifice(extractedText) && !IsGameOverText(extractedText)
+                            && !_frameIsTitle && string.IsNullOrEmpty(_menuSignature)
+                            && extractedText != _lastTranslatedText
+                            && ComputeSimilarity(extractedText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(extractedText, StringComparison.Ordinal))
+                            && (iteration - _lastFireLoop >= 3))
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=singleton-anchored (one-glimpse rescue posts now)");
+                            try { CorpusRecordBubble("dialogue-decision:singleton-anchored", extractedText, "", "", iteration); } catch { }
+                            _lastTranslatedText = extractedText;
+                            string singletonText = extractedText;
+                            _ = PublishDecisionAsync(singletonText, iteration, "singleton");
+                        }
+                    }
+
                     if (string.IsNullOrWhiteSpace(extractedText))
                     {
                         if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText) && !_frameIsTitle
