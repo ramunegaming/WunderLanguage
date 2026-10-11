@@ -1030,6 +1030,13 @@ restart, host half compatible both ways). Enables Step 3.
 Revert: revert beam-banking (remove beams line + be field +
 parse block).
 
+## Capture-settings policy (AGREED 2026-10-11)
+Paper Mario baseline = Dolphin DEFAULT settings (most users never
+touch graphics options). Resolution/AA variance testing deferred
+until after onboarding — unpredictable customer setups are out of
+scope for the baseline. Bank actual dims per session regardless.
+Revert: n/a (policy note).
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
