@@ -975,6 +975,20 @@ Strengthens with use: second session opens warm (fewer fresh
 translations, consistent EN).
 Revert: revert loop3-memo.
 
+## Loop 4 vocab self-proposal (SHIPPED 2026-10-11, compounding)
+Stable fired JA proposes itself to vocab-proposals/<pack>.json
+(term -> count + kinds, whole short terms 2–12ch, junk/ellipsis
+out, cap 500, universal skipped). Hooked on the live publish
+path AFTER the sim early-return: write-only sidecar, never read
+back except by reviewer promotion — zero behavior change by
+construction. Promotion bar: count>=3 or demonstrated vocab gap
++ corpus evidence, then hand-add to pack source. Measured:
+replay drift 0, sim identical (117/76/7/41), no proposal dir
+created by sim (live-gating proven). First live play seeds the
+queue; reviewer promotes per new game (same review discipline
+as loop 2).
+Revert: revert loop4-vocab.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
