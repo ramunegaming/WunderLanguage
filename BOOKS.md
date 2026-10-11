@@ -941,6 +941,23 @@ Strengthening accrues when Paper Mario shares pairs.
 Replay drift 0; build +0/0.
 Revert: revert loop1-global.
 
+## Loop 2 confusion re-mine (SHIPPED 2026-10-11, compounding)
+tools/mine-confusion.py mines char-substitution candidates from
+corrections/*.json per corpus (difflib alignment, counts+games;
+rerun per new game, review, append). First re-mine: 91 candidates
+at count>=3; 29 appended (games>=2 genuine visual confusions:
+エ/工, ニ/三, 封-family x4, voicing て/で・せ/ぜ・ほ/ぼ,
+ニ/二, シ/ン, ゾ/ツ, カ/力, テ/ラ, ダ/メ, 童/達, etc).
+Excluded by rule: punct-normalizer pairs (pipeline territory),
+single-line clusters (counts from one garbled line), garble-family
+artifacts. Blast radius: weighted pass runs ONLY on integer-pass
+abstentions. Measured: ZERO new [fuzzy-w] mappings on all 4
+corpora, simreplay identical everywhere (117/104/72/4),
+replay drift 0, build +0/0. Day-1 nil by design — pairs arm
+future abstentions (Paper Mario item menus) instead of changing
+today. Loop procedure = rerun script + review + gate.
+Revert: revert loop2-remine.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
