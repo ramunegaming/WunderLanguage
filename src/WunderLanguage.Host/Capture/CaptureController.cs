@@ -3823,7 +3823,23 @@ namespace WunderLanguage.Host.Capture
                 var fresh = new List<(string ja, System.Func<System.Threading.Tasks.Task<string>> tx)>();
                 lock (_prefetchLock)
                 {
-                    if (_prefetchPack != pack) { _prefetch.Clear(); _battleNameMemo.Clear(); _prefetchPack = pack; }
+                    // Loop 3 compounding (approved 2026-10-11): the battle-name
+                    // memo persists per pack (memo/<pack>.json) instead of dying
+                    // on every pack switch — the program remembers a game's
+                    // names between sessions. Save-before-clear under the OLD
+                    // pack, load-after-clear for the new one. Skipped for the
+                    // universal pack (unknown game — never bank guesses).
+                    // Provider-stamped: EN from another provider never loads.
+                    // Within a session nothing changes; replay/sim never hit
+                    // this path (no pack switch), so gates stay green by
+                    // construction — first live play must show [memo] lines.
+                    // Revert: delete Save/Load calls (Clear stays).
+                    if (_prefetchPack != pack)
+                    {
+                        try { SaveBattleMemo(_prefetchPack); } catch { }
+                        _prefetch.Clear(); _battleNameMemo.Clear(); _prefetchPack = pack;
+                        try { LoadBattleMemo(pack); } catch { }
+                    }
                     if (!string.IsNullOrWhiteSpace(slots.Top) && !_prefetch.ContainsKey(slots.Top))
                     {
                         string t = slots.Top;
@@ -4067,9 +4083,54 @@ namespace WunderLanguage.Host.Capture
         // hallucinated ability EN faster is faster-wrong, not better).
         private readonly Dictionary<string, string> _battleNameMemo = new();
         private const double BattleSimThreshold = 0.7;
-        private void MemoizeBattleName(string ja, string en)
+        private void SaveBattleMemo(string pack)
         {
             try
+            {
+                if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
+                if (_battleNameMemo.Count == 0) return;
+                var snap = new Dictionary<string, string>(_battleNameMemo);
+                while (snap.Count > 200) snap.Remove(new List<string>(snap.Keys)[0]);
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "memo");
+                Directory.CreateDirectory(dir);
+                string provider = "";
+                try { provider = _translationManager.ActiveProviderName ?? ""; } catch { }
+                File.WriteAllText(Path.Combine(dir, pack + ".json"),
+                    JsonSerializer.Serialize(new { provider, pairs = snap }));
+                FileLogger.Log($"[memo] saved {snap.Count} names for {pack} (provider={provider})");
+            }
+            catch { }
+        }
+        private void LoadBattleMemo(string pack)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
+                string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "memo", pack + ".json");
+                if (!File.Exists(path)) return;
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                string provider = "";
+                try { provider = _translationManager.ActiveProviderName ?? ""; } catch { }
+                string fileProvider = doc.RootElement.TryGetProperty("provider", out var pp) ? pp.GetString() ?? "" : "";
+                if (fileProvider != provider)
+                {
+                    FileLogger.Log($"[memo] skipped {pack} (provider {fileProvider} != {provider})");
+                    return;
+                }
+                int n = 0;
+                foreach (var kv in doc.RootElement.GetProperty("pairs").EnumerateObject())
+                {
+                    int before = _battleNameMemo.Count;
+                    try { MemoizeBattleName(kv.Name, kv.Value.GetString() ?? ""); } catch { }
+                    if (_battleNameMemo.Count > before) n++;
+                    if (_battleNameMemo.Count >= 200) break;
+                }
+                FileLogger.Log($"[memo] loaded {n} names for {pack}");
+            }
+            catch { }
+        }
+        private void MemoizeBattleName(string ja, string en)
+        {            try
             {
                 if (string.IsNullOrWhiteSpace(ja) || string.IsNullOrWhiteSpace(en) || IsUnpublishable(en)) return;
                 // Soup self-lock guard (cited 2026-10-01: 10-char

@@ -958,6 +958,23 @@ future abstentions (Paper Mario item menus) instead of changing
 today. Loop procedure = rerun script + review + gate.
 Revert: revert loop2-remine.
 
+## Loop 3 memo persist (SHIPPED 2026-10-11, compounding)
+Battle-name memo (JA<=8 -> EN, guarded: no refusals/echoes/
+unpublishable, no action rows, soup self-lock) now persists per
+pack (memo/<pack>.json, capped 200) instead of dying on every
+pack switch: save-before-clear under old pack, load-after-clear
+for new. Universal pack never banks; provider-stamped (EN from
+another provider never loads — no stale-teaching across
+provider changes); loaded entries re-pass Memoize guards.
+Deliberately NO seeded files (memo must only ever contain
+provider-produced EN). Measured: replay drift 0, simreplay
+identical (117/76/7/41 — sim never pack-switches, by
+construction). Live-path-only like loop 1: first live play must
+show `[memo] saved/loaded N names` (confirm in triage).
+Strengthens with use: second session opens warm (fewer fresh
+translations, consistent EN).
+Revert: revert loop3-memo.
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
