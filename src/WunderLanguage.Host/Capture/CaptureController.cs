@@ -3040,7 +3040,11 @@ namespace WunderLanguage.Host.Capture
         // 2741 live fixup pairs) cost 0.4 instead of 1. Insert/delete stay
         // 1. Symmetric (both directions). Used ONLY by the NormItemKey
         // second pass — the shared integer function above is untouched.
-        // Revert: delete this function + the second pass.
+        // Loop 2 compounding (2026-10-11): tools/mine-confusion.py re-mines
+        // corrections/*.json per new corpus; v2 adds 29 pairs (games>=2,
+        // genuine visual confusions; punct-normalizer pairs and single-line
+        // clusters excluded by rule). Rerun script per new game, review,
+        // append. Revert: delete this function + the second pass.
         private static readonly System.Collections.Generic.HashSet<(char, char)> ConfusionPairs = new()
         {
             ('入','人'), ('賢','腎'), ('む','も'), ('賢','貿'), ('王','エ'),
@@ -3051,6 +3055,12 @@ namespace WunderLanguage.Host.Capture
             ('開','聞'), ('賢','覧'), ('す','ず'), ('さ','き'), ('城','姉'),
             ('む','な'), ('ゾ','ジ'), ('司','同'), ('封','批'), ('７','Ｐ'),
             ('Ａ','自'), ('ブ','プ'), ('カ','ガ'), ('Ｂ','自'),
+            ('エ','工'), ('ニ','三'), ('げ','ば'), ('封','社'), ('て','で'),
+            ('ニ','二'), ('盾','首'), ('テ','ラ'), ('せ','ぜ'), ('ほ','ぼ'),
+            ('セ','ゼ'), ('カ','力'), ('お','な'), ('Ｈ','Ｕ'), ('ッ','ー'),
+            ('ー','一'), ('が','げ'), ('ダ','メ'), ('封','計'), ('仰','印'),
+            ('封','朝'), ('祭','禁'), ('童','達'), ('封','納'), ('ゾ','ツ'),
+            ('シ','ン'), ('全','金'), ('責','黄'), ('捕','揃'),
         };
         private static double WeightedLevenshtein(string a, string b)
         {
