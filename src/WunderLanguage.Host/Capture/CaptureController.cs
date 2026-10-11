@@ -2582,7 +2582,10 @@ namespace WunderLanguage.Host.Capture
                 // replay reads lenient properties and ignores them — parity
                 // proven per batch. Old files simply lack c/n/s.).
                 // Revert: drop c/n/s from the anonymous type.
-                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src, d = Math.Round(b.Div, 3) });
+                // Step 2 beam banking (forward-only additive; replay/sim read
+                // lenient properties and ignore it — parity proven per batch).
+                // Revert: drop be from the anonymous type.
+                foreach (var b in blocks) bs.Add(new { t = b.Text, x = b.X, y = b.Y, w = b.Width, h = b.Height, c = b.Conf, n = b.NMerge, s = b.Src, d = Math.Round(b.Div, 3), be = b.Beams ?? new List<string>() });
                 // M7c time-data (ticktape "time is data" + event-sourcing
                 // ordering): wall ms banked per ocr line, additive forward-only
                 // (replay ignores unknown fields — parity proven per batch).

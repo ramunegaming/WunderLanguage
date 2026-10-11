@@ -1018,6 +1018,18 @@ visible text. Initial set only — no Paper Mario yet, not
 cross-game proof. Data-only batch (no code).
 Revert: revert truth-set.
 
+## Step 2 beam banking (SHIPPED 2026-10-11, milestone path)
+Top-4 beam strings now ride each OCR block (sidecar `beams`,
+host parse + corpus `be` field) for the offline dictionary
+experiment. Strictly additive: all readers lenient (unknown
+fields ignored), old frames lack it (-> empty, never blocks).
+Measured: replay drift 0, sim identical (117/76/7/41), build
++0/0, main.py syntax ok. Live proof owed (no live frames since
+change; running sidecar unaffected — edit activates on its next
+restart, host half compatible both ways). Enables Step 3.
+Revert: revert beam-banking (remove beams line + be field +
+parse block).
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
