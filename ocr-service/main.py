@@ -384,6 +384,12 @@ def detect_and_ocr(pil_image: Image.Image):
             "nmerge": int(_nmerge),
             "src": _src,
             "div": round(max(0.0, min(1.0, float(_crop_div))), 3),
+            # Step 2 beam banking (milestone path, approved 2026-10-11):
+            # top-beam strings ride along for the offline dictionary
+            # experiment. Observe-only: nothing reads them yet.
+            # Absent in old frames -> [] -> never blocks.
+            # Revert: delete the beams line.
+            "beams": [str(s)[:120] for s in (list(_beams) if _beams else [])[:4]],
         })
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:
