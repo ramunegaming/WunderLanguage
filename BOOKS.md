@@ -1050,6 +1050,24 @@ Dolphin session. Known orphan: one PM session's miner file under
 the old versioned id (negligible, left in place).
 Revert: revert rom-id.
 
+## Title hardening (SHIPPED 2026-10-11, Step 4)
+Three parts: (1) gameplay veto — TITLE refused within 60 loops
+of any stability fire (single choke in PublishDecisionAsync;
+sword-scene class: quiet streak + hint right after gameplay);
+session-start safe (clocks default ancient), FFVI path included
+and re-gated. (2) TITLE-grace prompt — within 15 loops of TITLE,
+a button/start prompt fires as in-game text without needing a
+terminal (スタートボタンをおしてください ends い); same
+guards otherwise, dupe-gated single-fire. (3) credits audit:
+~1000+ dialogue bubbles across ~200 corpora, ZERO Latin-only
+JA ever published — credits suppression verified empirically,
+no code needed. Sim/replay never exercise the quiet path, so
+gates identical by construction (117/76/7/41, drift 0, +0/0);
+live proof owed on next title screens (veto silence mid-game,
+TITLE-then-prompt on PM). One corrupt tail gzip noted (crash-
+truncated session, not blocking).
+Revert: revert title-harden.
+
 ## Paper Mario baseline triage (2026-10-12, first session)
 Session: 1528 loops, ocr=343, skipped=128, holds=651, 26 decision
 fires (ALL loops 55–467 = intro movie x2, growth-fast carried it).
