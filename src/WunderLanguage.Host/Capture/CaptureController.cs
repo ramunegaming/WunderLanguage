@@ -488,7 +488,7 @@ namespace WunderLanguage.Host.Capture
                                 string tail = t;
                                 int bar = t.LastIndexOf("___", StringComparison.Ordinal);
                                 if (bar >= 0 && bar + 3 < t.Length) tail = t.Substring(bar + 3).Trim('_');
-                                tail = Regex.Replace(tail, @"\(" + m.Groups[1].Value + @"$", "");
+                                tail = Regex.Replace(tail, @"\(" + m.Groups[1].Value + @"\)?$", "");
                                 tail = tail.Trim('_');
                                 if (tail.Length > 40) tail = tail.Substring(0, 40);
                                 string stable = string.IsNullOrWhiteSpace(tail) ? m.Groups[1].Value : tail + "_" + m.Groups[1].Value;
