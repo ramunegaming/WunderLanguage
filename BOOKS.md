@@ -1068,6 +1068,16 @@ TITLE-then-prompt on PM). One corrupt tail gzip noted (crash-
 truncated session, not blocking).
 Revert: revert title-harden.
 
+## Engine-death panel notice (SHIPPED 2026-10-13)
+PM clean run: sidecar died 4x, budget spent, 30 silent minutes
+mistaken for policy. Now budget exhaustion raises EngineDown ->
+in-panel system row (no popup/focus steal, one-shot, never in
+_history, bypasses corpus entirely). Silent restarts unchanged.
+Gates green (drift 0, sim identical); path itself needs a real
+4-death session for live proof (owed). Does NOT diagnose the
+deaths — instrumentation is the next batch.
+Revert: revert engine-notice.
+
 ## Paper Mario baseline triage (2026-10-12, first session)
 Session: 1528 loops, ocr=343, skipped=128, holds=651, 26 decision
 fires (ALL loops 55–467 = intro movie x2, growth-fast carried it).

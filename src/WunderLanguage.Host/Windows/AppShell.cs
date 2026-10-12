@@ -183,6 +183,14 @@ namespace WunderLanguage.Host.Windows
             controller.BattleFramePublished += (topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn, itemJa, itemEn, weaponJa, weaponEn) => _sidePanel.ShowOrUpdateBattleFrame(topJa, topEn, monJa, monEn, actJa, actEn, rightJa, rightEn, itemJa, itemEn, weaponJa, weaponEn);
             controller.TextUpdated += (oldJa, ja, en) => _sidePanel.UpdateLastTranslationIfMatches(oldJa, ja, en);
             controller.WindowLost += OnCaptureWindowLost;
+            // Terminal-state notice (2026-10-13): engine restarts stay
+            // silent, but a SPENT budget must show on the panel — 30 min
+            // of silent nothing reads as policy failure. In-panel row
+            // (no popup, no focus steal); never translation data.
+            // Revert: delete subscription.
+            Sidecar.SidecarProcessManager.EngineDown += () =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    _sidePanel.ShowNotice("OCR engine stopped after repeated failures — relaunch the program to resume. Your game is unaffected."));
             return controller;
         }
 

@@ -660,8 +660,44 @@ namespace WunderLanguage.Host.Windows
             });
         }
 
+        // Terminal-state notice (2026-10-13): engine-dead panel line.
+        // System row, never translation data: not added to _history,
+        // so updates/clears/replay treat it as chrome, and corpus miner
+        // never sees it (event path bypasses CorpusRecord entirely).
+        // One-shot per session; no focus steal (no popup mid-game).
+        // Revert: delete method + subscription.
+        private bool _noticeShown;
+        public void ShowNotice(string text)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    if (_noticeShown) return;
+                    _noticeShown = true;
+                    if (_placeholderShown)
+                    {
+                        HistoryPanel.Children.Clear();
+                        _placeholderShown = false;
+                    }
+                    HistoryPanel.Children.Add(new TextBlock
+                    {
+                        TextWrapping = System.Windows.TextWrapping.Wrap,
+                        FontSize = 13,
+                        FontStyle = System.Windows.FontStyles.Italic,
+                        Foreground = (Brush)FindResource("TextBrush"),
+                        Margin = new Thickness(0, 6, 0, 6),
+                        Text = "⚠ " + text
+                    });
+                    HistoryScroller.ScrollToEnd();
+                }
+                catch { }
+            });
+        }
+
         public void ClearHistory()
         {
+            _noticeShown = false;
             Dispatcher.Invoke(() =>
             {
                 HistoryPanel.Children.Clear();
