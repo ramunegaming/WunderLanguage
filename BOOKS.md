@@ -1037,6 +1037,19 @@ until after onboarding — unpredictable customer setups are out of
 scope for the baseline. Bank actual dims per session regardless.
 Revert: n/a (policy note).
 
+## Version-proof game identity (SHIPPED 2026-10-11)
+ResolveGameId normalizes emulator titles carrying a ROM id:
+Dolphin_2609a___...ペーパーマリオRPG_(G8MJ01 ->
+ペーパーマリオRPG_G8MJ01 regardless of emulator version or
+settings segments. No ROM id -> legacy full-title path, so all
+existing per-game files keep working (verified: Zelda/FFVI/
+Snes9x ids byte-identical; two Dolphin versions converge).
+Replica-proven + replay drift 0 + sim identical (117/76/7/41) +
+build +0/0. Live proof owed: `[pack] game id normalized` on next
+Dolphin session. Known orphan: one PM session's miner file under
+the old versioned id (negligible, left in place).
+Revert: revert rom-id.
+
 ## Paper Mario baseline triage (2026-10-12, first session)
 Session: 1528 loops, ocr=343, skipped=128, holds=651, 26 decision
 fires (ALL loops 55–467 = intro movie x2, growth-fast carried it).
