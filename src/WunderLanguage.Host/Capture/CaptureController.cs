@@ -455,8 +455,38 @@ namespace WunderLanguage.Host.Capture
                     foreach (char c in Path.GetInvalidFileNameChars())
                         t = t.Replace(c, '_');
                     t = t.Replace(' ', '_');
+                    // Version-proof identity (agreed 2026-10-11): emulator
+                    // window titles embed version + settings
+                    // (Dolphin_2609a___JIT64...), so updating the emulator
+                    // orphans per-game files. When the title carries a ROM
+                    // id like (G8MJ01, key on game + ROM id and drop the
+                    // emulator segments entirely. No ROM id -> legacy full
+                    // title path (existing files keep working). Revert:
+                    // delete the ROM-id branch.
                     if (!string.IsNullOrWhiteSpace(t))
+                    {
+                        try
+                        {
+                            var m = Regex.Match(t, @"\(([A-Z0-9]{4,8})");
+                            if (m.Success)
+                            {
+                                // Emulator segments are joined by ___ (space +
+                                // pipe + space all sanitize to _); the game
+                                // title rides in the last segment.
+                                string tail = t;
+                                int bar = t.LastIndexOf("___", StringComparison.Ordinal);
+                                if (bar >= 0 && bar + 3 < t.Length) tail = t.Substring(bar + 3).Trim('_');
+                                tail = Regex.Replace(tail, @"\(" + m.Groups[1].Value + @"$", "");
+                                tail = tail.Trim('_');
+                                if (tail.Length > 40) tail = tail.Substring(0, 40);
+                                string stable = string.IsNullOrWhiteSpace(tail) ? m.Groups[1].Value : tail + "_" + m.Groups[1].Value;
+                                try { FileLogger.Log($"[pack] game id normalized {t} -> {stable}"); } catch { }
+                                return stable.Length > 60 ? stable.Substring(0, 60) : stable;
+                            }
+                        }
+                        catch { }
                         return t.Length > 60 ? t.Substring(0, 60) : t;
+                    }
                 }
             }
             catch { }
