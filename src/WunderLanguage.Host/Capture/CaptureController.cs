@@ -68,6 +68,12 @@ namespace WunderLanguage.Host.Capture
         private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire")
         {
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
+            // Title-hardening clock (2026-10-11): every stability fire
+            // stamps recency; the quiet-title veto below refuses TITLE
+            // within 60 loops of dialogue (sword-scene mistitle: quiet
+            // streak + hint 10 loops after gameplay). Single choke —
+            // all roads funnel here. Updates excluded (not new dialogue).
+            try { _lastDialogueFireLoop = loop; } catch { }
             // Loop 4 compounding (approved 2026-10-11): stable fired JA
             // proposes itself to the pack-vocab review queue
             // (vocab-proposals/<pack>.json, counts + kinds). Write-only
@@ -405,6 +411,12 @@ namespace WunderLanguage.Host.Capture
         // R2a shown-age: loop index of the last new-bubble fire (-100 = none yet, first fire immediate).
         // A held page flushing moments after a fire (corpus loops 457-458) is flicker, not a page turn.
         private int _lastFireLoop = -100;
+        // Title hardening (2026-10-11): recency of ANY stability fire
+        // (single choke in PublishDecisionAsync) + loop of last TITLE
+        // publish (drives the post-title prompt grace). Defaults ancient
+        // so session-start titles always pass the veto.
+        private int _lastDialogueFireLoop = -1000;
+        private int _titleFireLoop = -1000;
         private const int RequiredStableReadings_Default = 3;
         private static int RequiredStableReadings => ThresholdProfiles.GetInt("stableReadings", RequiredStableReadings_Default, 2, 4);
         private const int GrowthBreakthroughPolls = 10;
@@ -1062,6 +1074,22 @@ namespace WunderLanguage.Host.Capture
                         bool anchored = (buttonPrompt || speakerStart) && terminal && startsClean
                             && strippedLen >= 6 && strippedLen <= 30
                             && anchorCount <= 1 && !hasAsciiRun;
+                        // TITLE-grace prompt (agreed 2026-10-11: TITLE posts,
+                        // then the press-start prompt posts as in-game text
+                        // right after). Within 15 loops of TITLE, a button/
+                        // start prompt fires WITHOUT needing a terminal
+                        // (スタートボタンをおしてください ends い). Same
+                        // guards otherwise (junk/blend/dupe/R2a below);
+                        // single-fire via the dupe gate. Bounded: the window
+                        // closes, and only prompt-shaped reads qualify.
+                        // Revert: delete the grace OR.
+                        bool postTitleGrace = _titleFireLoop >= 0
+                            && iteration - _titleFireLoop >= 1 && iteration - _titleFireLoop <= 15;
+                        bool gracePrompt = postTitleGrace
+                            && (buttonPrompt || extractedText.Contains("スタート", StringComparison.Ordinal))
+                            && startsClean && strippedLen >= 4 && strippedLen <= 40
+                            && anchorCount <= 1 && !hasAsciiRun;
+                        anchored = anchored || gracePrompt;
                         if (anchored && !lineageActive && _candidateStableCount < RequiredStableReadings
                             && HasJapanese(extractedText) && !IsJunkOcr(extractedText) && !IsEllipsisOnly(extractedText)
                             && !IsScrollBlend(extractedText) && !IsZeldaTransitionBlend(extractedText)
@@ -1843,7 +1871,7 @@ namespace WunderLanguage.Host.Capture
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
                         // Same battle guard as the settled path: static cooldown screens
                         // must never mint a TITLE mid-fight (forces a dupe frame).
-                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
+                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
                         // Static dwell confirms a clean held candidate. Menu screens
                         // (sig set) and titles stay out; dupes stay out via guards.
                         if (!string.IsNullOrEmpty(_candidateText)
@@ -2000,7 +2028,7 @@ namespace WunderLanguage.Host.Capture
                         // A live battle owns the screen: the logo/title detector must
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
                         // frame). Battle-grace covers transitions too.
-                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
+                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
                     }
                     catch { }
                     // Battle-frame dialogue guard: bottom-band battle blocks never become
@@ -2981,7 +3009,15 @@ namespace WunderLanguage.Host.Capture
                 }
                 if (_quietCount == titleBar && !string.IsNullOrEmpty(packTitle)
                     && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
-                    && logoGeometry)
+                    && logoGeometry
+                    // Gameplay veto (cited 2026-10-10 sword scene: TITLE 10
+                    // quiet loops after gameplay with hint). Titles happen at
+                    // session start / long silence, never moments after
+                    // dialogue — refuse inside 60 loops of any stability
+                    // fire. Session-start safe (clock defaults ancient).
+                    // FFVI path included (same mistitle class); re-proven
+                    // via gates below. Revert: delete the veto conjunct.
+                    && (iteration - _lastDialogueFireLoop >= 60))
                 {
                     FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint})");
                     return packTitle;
