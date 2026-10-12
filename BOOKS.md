@@ -1037,6 +1037,32 @@ until after onboarding — unpredictable customer setups are out of
 scope for the baseline. Bank actual dims per session regardless.
 Revert: n/a (policy note).
 
+## Paper Mario baseline triage (2026-10-12, first session)
+Session: 1528 loops, ocr=343, skipped=128, holds=651, 26 decision
+fires (ALL loops 55–467 = intro movie x2, growth-fast carried it).
+Gameplay: 17 reads, 0 fires. Pack resolved universal (correct —
+unknown game). Dims banked 792x586 (Dolphin defaults).
+Sim reproduces 26/26 (missed 0, extra 5, NE 0.26, budget OK).
+Gameplay-zero = focus holds (31 hold lines while screenshotting)
++ static-frame skips on menus + fragments + crash at first
+battle — NOT a pipeline refusal. Loop1 LIVE: `[miner] global
+promoted 70 agreed / 44 conflicts held` (matches offline count
+exactly) + 18/70 deduped. memo/vocab dirs absent EXPECTED:
+universal never banks by design — activates with a Paper Mario
+pack. Beams banked 314/343 (Step 2 live end-to-end).
+CONFIRMED BUG: gameId embeds emulator version (Dolphin_2609a…)
+-> updating Dolphin orphans per-game files. Fix: normalize id
+to ROM id (G8MJ01) at ResolveGameId. Scoped, awaiting go.
+Title policy (AGREED 2026-10-12): logo -> TITLE (quiet path);
+press-start prompt -> normal in-game text right after
+(button-prompt family); English credits never post (Latin-only,
+HasJapanese gate already blocks; verify in Step 4).
+Decision-hand sprite (AGREED): pointing hand = same rule as
+Zelda decision arrow — positioned box, hand never posted.
+Banked for sprite build. Intro-as-latency-benchmark (AGREED):
+auto-advance + fast text = panellat stress. Banked.
+Revert: n/a (triage only).
+
 ## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
 User: cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
