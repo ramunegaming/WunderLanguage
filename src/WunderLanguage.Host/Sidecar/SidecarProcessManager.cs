@@ -21,6 +21,12 @@ namespace WunderLanguage.Host.Sidecar
         // mid-game), then the engine stays down until relaunch.
         private bool _stopRequested;
         private int _restarts;
+        // Terminal-state notice (2026-10-13): when the budget is spent
+        // the panel must say the engine died — 30 min of silent nothing
+        // reads as policy failure. Static event (manager instance lives
+        // in App, panel in AppShell); silent restarts unchanged, only
+        // the terminal state notifies, once. Revert: delete event + invoke.
+        public static event Action? EngineDown;
         private bool _restarting;
         private CancellationTokenSource? _restartCts;
 
@@ -37,6 +43,7 @@ namespace WunderLanguage.Host.Sidecar
                 if (_restarts >= 3)
                 {
                     FileLogger.Log("[job] restart budget exhausted — engine stays down until relaunch");
+                    try { EngineDown?.Invoke(); } catch { }
                     // One-shot: don't spam every future death (there are no
                     // future trees, but a second zero can't be ruled out).
                     _restarts++;
