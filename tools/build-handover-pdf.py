@@ -7,6 +7,7 @@ MC = dict(new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 from handover_part1 import SECTIONS as P1
 from handover_part2 import SECTIONS as P2
 from handover_part3 import SECTIONS as P3
+from handover_part4 import SECTIONS as P4
 
 class Doc(FPDF):
     def footer(self):
@@ -28,7 +29,7 @@ pdf.set_text_color(80, 80, 80)
 pdf.multi_cell(0, 6, 'Live Japanese game-text capture that compounds with every onboarded game.\nFull project transfer: mission, rules, architecture, measured history, loops, state, plans.\nDated 2026-10-13. Supersedes chat history; BOOKS.md remains the commit-level ledger.', **MC)
 pdf.ln(4)
 
-for title, blocks in (P1 + P2 + P3):
+for title, blocks in (P1 + P2 + P3 + P4):
     pdf.set_font('Noto', '', 15)
     pdf.set_text_color(140, 30, 30)
     pdf.multi_cell(0, 8, title, **MC)
