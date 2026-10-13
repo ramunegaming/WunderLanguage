@@ -29,6 +29,9 @@ Same-length OCR variants count as one lineage. Done: FFVI-old 115→117 fires wi
 ### B10-T2. Anchored-singleton rescue (revert: revert tier2-anchored)
 Button prompts and speaker-start lines fire on first sight under shape guards. Done: +2 distinct genuine FFVI-new, zero removed (worktree diff). Still needed: live observation.
 
+### B11. Chart-gate punctuation exemption (revert: revert chart-punct)
+Kana-chart gate skips blocks carrying sentence punctuation (full/half-width); bare-kana blobs still suppress. Convicted: hiragana-heavy PM dialogue (zero kanji) ate whole screens with candidate reset. Done: PM 4→7 fires (+3 genuine: kekkou prefix+full, sonnakoto), missed 0; Zelda 16/1/4 identical; FFVI 3/0/14 identical with empty JA-set diffs. Still needed: live observation + old-corpora re-gate.
+
 ### L1. Global fixup tier (revert: revert loop1-global)
 Cross-game agreed pairs promote to shared file. Done: 70 pairs, proven live with exact-count match.
 
