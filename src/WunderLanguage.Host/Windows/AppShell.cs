@@ -127,7 +127,8 @@ namespace WunderLanguage.Host.Windows
             _bottomBar = new BottomBarWindow();
             _bottomBar.PauseToggled += OnPauseToggled;
             _bottomBar.SettingsRequested += OnSettingsRequested;
-            _topBar.ShotRequested += OnShotRequested;
+            _topBar.ShotRequested += () => OnShotRequested(gameOnly: false);
+            _topBar.ShotGameRequested += () => OnShotRequested(gameOnly: true);
             _tracker = new EmulatorWindowTracker(emulatorHandle);
             _tracker.BoundsChanged += OnBoundsChanged;
             _tracker.ForegroundChanged += OnForegroundChanged;
@@ -403,7 +404,7 @@ namespace WunderLanguage.Host.Windows
 
         // TEMP troubleshooting aid: snapshot emulator + panels with timestamps,
         // no alt-tab needed. Remove post-Zelda.
-        private void OnShotRequested()
+        private void OnShotRequested(bool gameOnly)
         {
             // Diagnostics-gated: snapshots are dev artifacts (customers
             // accumulate nothing). Whole handler skipped when off.
@@ -420,13 +421,26 @@ namespace WunderLanguage.Host.Windows
                 string packTag = "unknown";
                 try { packTag = Packs.PackRegistry.Current.GameId ?? "unknown"; } catch { }
                 string stamp = packTag + "_" + DateTime.Now.ToString("HHmmss_fff");
-                // Single stitched shot: bounding box over game region + all panels.
+                // Single stitched shot: bounding box over game region + all panels,
+                // or game region only when gameOnly (Shot game button).
+                // Revert: revert shot-game-button.
                 var rects = new System.Collections.Generic.List<System.Drawing.Rectangle>();
+                System.Drawing.Rectangle gameRect = System.Drawing.Rectangle.Empty;
                 if (WindowCapture.TryGetWindowBounds(_emulatorHandle, out var winBounds))
                 {
                     var rel = _gameRegion.GetScaledCropRect(winBounds);
-                    rects.Add(new System.Drawing.Rectangle(winBounds.Left + rel.Left, winBounds.Top + rel.Top, rel.Width, rel.Height));
+                    gameRect = new System.Drawing.Rectangle(winBounds.Left + rel.Left, winBounds.Top + rel.Top, rel.Width, rel.Height);
+                    rects.Add(gameRect);
                 }
+                string suffix = "_all";
+                if (gameOnly)
+                {
+                    suffix = "_game";
+                    rects.Clear();
+                    if (gameRect != System.Drawing.Rectangle.Empty) rects.Add(gameRect);
+                }
+                else
+                {
                 foreach (var handle in new[] { _topBarHandle, _sidePanelHandle, _bottomBarHandle })
                 {
                     try
@@ -435,6 +449,7 @@ namespace WunderLanguage.Host.Windows
                             rects.Add(new System.Drawing.Rectangle(r.Left, r.Top, r.Width, r.Height));
                     }
                     catch { }
+                }
                 }
                 if (rects.Count > 0)
                 {
@@ -447,7 +462,7 @@ namespace WunderLanguage.Host.Windows
                         if (r.Bottom > b2) b2 = r.Bottom;
                     }
                     using var bmp = WindowCapture.CaptureScreenRegion(new System.Drawing.Rectangle(l, t, r2 - l, b2 - t));
-                    bmp.Save(System.IO.Path.Combine(dir, $"{stamp}_all.png"), System.Drawing.Imaging.ImageFormat.Png);
+                    bmp.Save(System.IO.Path.Combine(dir, $"{stamp}{suffix}.png"), System.Drawing.Imaging.ImageFormat.Png);
                 }
                 try
                 {
