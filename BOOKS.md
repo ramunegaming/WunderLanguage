@@ -1037,6 +1037,23 @@ until after onboarding — unpredictable customer setups are out of
 scope for the baseline. Bank actual dims per session regardless.
 Revert: n/a (policy note).
 
+## Paper Mario pack v1 (SHIPPED 2026-10-13, Step 8)
+Checklist order: signatures (5 evidenced proper nouns) → title
+triple (marker ペーパーマリオ, FullTitle, EN map) → fixups EMPTY
+(miner accrues; loop 1 promotes when shared) → vocabs (1 battle
+command ジャンプ + 4 item tabs, all evidenced) → glossaries
+EMPTY (EN unverified — user confirms) → vision neutral.
+Registry routes ROM id/title/content votes; ScoreContent 3-way
+(ties keep current — strictly fewer switches, safe direction).
+Measured: FFVI sim identical (117/76/7/41); PM same-corpus
+universal≡papermario (28=28 JA-identical, 0/0) — zero delta,
+mirroring B8 (JA-fire price lives in menu/CAT/glossary paths
+sim can't score). Pack value is live-only: TITLE path (FullTitle
+set — universal could never post TITLE), memo/vocab banking by
+pack id, future fixups. Live proof owed: pack session line,
+PM-logo TITLE, banking ids. Sim filename routing added.
+Revert: revert pm-pack.
+
 ## Version-proof game identity (SHIPPED 2026-10-11)
 ResolveGameId normalizes emulator titles carrying a ROM id:
 Dolphin_2609a___...ペーパーマリオRPG_(G8MJ01 ->
