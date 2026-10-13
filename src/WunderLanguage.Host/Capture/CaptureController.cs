@@ -5713,12 +5713,20 @@ namespace WunderLanguage.Host.Capture
 
                 // Merged-blob chart signal: 20+ kana, zero kanji in one block.
         // Normal dialogue always mixes kanji; chart blobs never do.
+        // P2 unpostables fix (2026-10-13, measured): hiragana-heavy
+        // dialogue (Paper Mario etc.) trips this with zero kanji, eating
+        // genuine lines whole (chart-suppressed resets the candidate).
+        // Charts are bare kana cells — dialogue carries sentence
+        // punctuation (。、？！…). Blocks with sentence punctuation
+        // never count toward the chart signal; bare-kana blobs still
+        // suppress exactly as before. Revert: revert chart-punct.
         private static bool IsKanaChartScreen(List<OcrBlock> blocks)
         {
             foreach (var b in blocks)
             {
                 string t = b.Text.Trim();
                 if (t.Length < 20) continue;
+                if (t.IndexOfAny(new char[] { '。', '、', '？', '！', '…', '‥', '．', '，', '：', '；', '「', '」', '『', '』', '（', '）', '・', '〜', '～', '!', '?', ',', '.', ':', ';' }) >= 0) continue;
                 int kana = 0, kanji = 0;
                 foreach (char c in t)
                 {
