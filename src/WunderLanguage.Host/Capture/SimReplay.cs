@@ -128,6 +128,7 @@ namespace WunderLanguage.Host.Capture
                     string u = (path ?? "").ToUpperInvariant();
                     if (u.Contains("FFVI") || u.Contains("FANTASY_VI")) { Packs.PackRegistry.SetCurrent(Packs.FFVI.FfviPackInstance.Shared); packUsed = "ffvi"; }
                     else if (u.Contains("ZELDA") || u.Contains("DENSETSU")) { Packs.PackRegistry.SetCurrent(Packs.Zelda.ZeldaPackInstance.Shared); packUsed = "zelda"; }
+                    else if (u.Contains("PAPERMARIO") || u.Contains("ペーパーマリオ") || u.Contains("G8MJ01")) { Packs.PackRegistry.SetCurrent(Packs.PaperMario.PaperMarioPackInstance.Shared); packUsed = "papermario"; }
                 }
                 catch { }
                 var token = new System.Threading.CancellationToken(false);

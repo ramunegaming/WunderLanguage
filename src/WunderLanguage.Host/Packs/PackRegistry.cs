@@ -4,6 +4,7 @@ namespace WunderLanguage.Host.Packs
     {
         public const string ZeldaGameId = "zelda";
         public const string FfviGameId = "ffvi";
+        public const string PmGameId = "papermario";
         public static string DefaultGameId => ZeldaGameId;
         public static IPack Current { get; private set; } = Zelda.ZeldaPackInstance.Shared;
         public static bool IsKnown(string gameId) => Resolve(gameId) is not UniversalPackInstance;
@@ -14,6 +15,7 @@ namespace WunderLanguage.Host.Packs
             string u = (gameId ?? "").ToUpperInvariant();
             if (u.Contains("ZELDA") || u.Contains("DENSETSU")) return Zelda.ZeldaPackInstance.Shared;
             if (u.Contains("FFVI") || u.Contains("FANTASY_VI")) return FFVI.FfviPackInstance.Shared;
+            if (u.Contains("PAPERMARIO") || u.Contains("ペーパーマリオ") || u.Contains("G8MJ01")) return PaperMario.PaperMarioPackInstance.Shared;
             return UniversalPackInstance.Shared;
         }
         public static void SetSession(string gameId) { Current = Resolve(gameId); try { FileLogger.Log($"[pack] session {gameId} -> {Current.GameId}"); } catch { } }
@@ -25,11 +27,13 @@ namespace WunderLanguage.Host.Packs
             try
             {
                 if (string.IsNullOrEmpty(text)) return null;
-                int z = 0, f = 0;
+                int z = 0, f = 0, p = 0;
                 foreach (var s in Zelda.ZeldaPack.Signatures) if (text.Contains(s, System.StringComparison.Ordinal)) z++;
                 foreach (var s in FFVI.FfviPack.Signatures) if (text.Contains(s, System.StringComparison.Ordinal)) f++;
-                if (f >= 2 && f > z) return FFVI.FfviPackInstance.Shared;
-                if (z >= 2 && z > f) return Zelda.ZeldaPackInstance.Shared;
+                foreach (var s in PaperMario.PaperMarioPack.Signatures) if (text.Contains(s, System.StringComparison.Ordinal)) p++;
+                if (f >= 2 && f > z && f > p) return FFVI.FfviPackInstance.Shared;
+                if (z >= 2 && z > f && z > p) return Zelda.ZeldaPackInstance.Shared;
+                if (p >= 2 && p > z && p > f) return PaperMario.PaperMarioPackInstance.Shared;
                 return null;
             }
             catch { return null; }
