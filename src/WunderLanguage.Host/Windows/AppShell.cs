@@ -412,7 +412,14 @@ namespace WunderLanguage.Host.Windows
             {
                 string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "troubleshoot");
                 System.IO.Directory.CreateDirectory(dir);
-                string stamp = DateTime.Now.ToString("HHmmss_fff");
+                // Session labeling (agreed 2026-10-13): timestamp alone
+                // can't tell sessions apart. Prefix the pack id so bundles
+                // sort by game (ffvi_*, papermario_*, zelda_*); header logs
+                // game+pack too. New files only, old bundles untouched.
+                // Revert: drop the prefix + header line.
+                string packTag = "unknown";
+                try { packTag = Packs.PackRegistry.Current.GameId ?? "unknown"; } catch { }
+                string stamp = packTag + "_" + DateTime.Now.ToString("HHmmss_fff");
                 // Single stitched shot: bounding box over game region + all panels.
                 var rects = new System.Collections.Generic.List<System.Drawing.Rectangle>();
                 if (WindowCapture.TryGetWindowBounds(_emulatorHandle, out var winBounds))
@@ -454,6 +461,7 @@ namespace WunderLanguage.Host.Windows
                     int take = tail.Count > 150 ? 150 : tail.Count;
                     var sb = new System.Text.StringBuilder();
                     sb.AppendLine($"# WunderLanguage troubleshoot {DateTime.Now:yyyy-MM-dd HH:mm:ss} ({stamp})");
+                    try { sb.AppendLine($"# pack={Packs.PackRegistry.Current.GameId}"); } catch { }
                     for (int i = tail.Count - take; i < tail.Count; i++) sb.AppendLine(tail[i]);
                     System.IO.File.WriteAllText(System.IO.Path.Combine(dir, $"{stamp}_log.txt"), sb.ToString());
                 }
