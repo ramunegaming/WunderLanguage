@@ -975,6 +975,17 @@ Strengthens with use: second session opens warm (fewer fresh
 translations, consistent EN).
 Revert: revert loop3-memo.
 
+## Loop-3 closeout: save-on-Stop + sim hermeticity (2026-10-13)
+Caught pre-closeout: memo saved ONLY on pack switch, so single-
+game sessions never persisted (loop 3 dead in the common case).
+SaveBattleMemo now also runs on Stop. Same change exposed the
+reverse leak: sim Stop would write memo files from sim data, and
+sim loads would poison measurements — both Save and Load now
+hard-gated on !_simMode (sim hermeticity proven: no memo dir
+created by sim/replay). Gates green (drift 0, sim identical).
+Next single-game session must show `[memo] saved N names`.
+Revert: revert memo-stop.
+
 ## Loop 4 vocab self-proposal (SHIPPED 2026-10-11, compounding)
 Stable fired JA proposes itself to vocab-proposals/<pack>.json
 (term -> count + kinds, whole short terms 2–12ch, junk/ellipsis
