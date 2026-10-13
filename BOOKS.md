@@ -1078,6 +1078,18 @@ Gates green (drift 0, sim identical); path itself needs a real
 deaths — instrumentation is the next batch.
 Revert: revert engine-notice.
 
+## Death-cause forensics (SHIPPED 2026-10-13)
+PM clean run: 4 mid-session deaths, zero logged cause (keeper
+showed only triton warnings — the log FILTER drops what the
+ring keeps). OnTreeDied now dumps uptime + process exit code +
+last 15 unfiltered ring lines BEFORE any restart clears them
+(same shape as the existing startup early-exit dump). Silent
+restarts unchanged; gates green (drift 0, sim identical, +0/0).
+Live proof owed: next death must carry a `[job] death forensics`
+line (uptime/exit/tail) — that line names the cause class
+(OOM vs segfault vs clean-exit) and scopes the actual fix.
+Revert: revert death-forensics.
+
 ## Paper Mario baseline triage (2026-10-12, first session)
 Session: 1528 loops, ocr=343, skipped=128, holds=651, 26 decision
 fires (ALL loops 55–467 = intro movie x2, growth-fast carried it).
