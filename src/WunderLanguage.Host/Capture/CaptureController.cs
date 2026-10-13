@@ -940,6 +940,10 @@ namespace WunderLanguage.Host.Capture
         {
             FileLogger.Log($"CaptureController.Stop called id={_id}");
             _stopped = true;
+            // Loop-3 closeout (2026-10-13): memo saved on Stop, not only on
+            // pack switch — single-game sessions otherwise never persist.
+            // Same writer/reader/guards as the switch path. Revert: delete.
+            try { SaveBattleMemo(_prefetchPack); } catch { }
             // Session input fingerprint (one line per session — the
             // cross-session/game comparison input for shift detection).
             try
@@ -4284,6 +4288,7 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
+                if (_simMode) return;
                 if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
                 if (_battleNameMemo.Count == 0) return;
                 var snap = new Dictionary<string, string>(_battleNameMemo);
@@ -4302,6 +4307,7 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
+                if (_simMode) return;
                 if (string.IsNullOrWhiteSpace(pack) || pack == "universal") return;
                 string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "memo", pack + ".json");
                 if (!File.Exists(path)) return;
