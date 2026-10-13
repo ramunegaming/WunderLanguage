@@ -35,10 +35,49 @@ namespace WunderLanguage.Host.Sidecar
             _job.TreeDied += OnTreeDied;
         }
 
+        private void LogDeathForensics()
+        {
+            try
+            {
+                string uptime = "?";
+                string code = "?";
+                try
+                {
+                    var p = _process;
+                    if (p is not null)
+                    {
+                        try { uptime = (DateTime.UtcNow - p.StartTime.ToUniversalTime()).ToString(@"hh\:mm\:ss"); } catch { }
+                        try { if (p.HasExited) code = p.ExitCode.ToString(); else code = "still-running"; } catch { }
+                    }
+                    else code = "no-process";
+                }
+                catch { }
+                string tail = "";
+                try
+                {
+                    lock (_recentOutput)
+                    {
+                        int from = Math.Max(0, _recentOutput.Count - 15);
+                        tail = string.Join("\n", _recentOutput.Skip(from));
+                    }
+                }
+                catch { }
+                if (tail.Length > 3000) tail = tail.Substring(tail.Length - 3000);
+                FileLogger.Log($"[job] death forensics restarts={_restarts} uptime={uptime} exit={code} tail:\n{(string.IsNullOrWhiteSpace(tail) ? "(ring empty)" : tail)}");
+            }
+            catch { }
+        }
+
         private void OnTreeDied()
         {
             try
             {
+                // Death forensics (2026-10-13): 4 mid-session deaths with
+                // zero logged cause — the ring holds unfiltered stderr the
+                // keeper never shows. Dump BEFORE any restart clears it.
+                // Same shape as the startup early-exit dump. Revert: delete
+                // the call.
+                try { LogDeathForensics(); } catch { }
                 if (_stopRequested || _restarting) return;
                 if (_restarts >= 3)
                 {
