@@ -1250,6 +1250,13 @@ namespace WunderLanguage.Host.Capture
                                     || _candidateText.Contains(_lastTranslatedText, StringComparison.Ordinal));
                             bool breakthroughOwns = _candidateStableCount >= RequiredStableReadings
                                 && IsCompleteDialogueLine(_candidateText);
+                            // B14 split-post reduction REVERTED 2026-10-14: the
+                            // stall requirement broke the prefix-prime chain
+                            // (update-in-place needs lastTranslated primed by
+                            // an early fire; without it fast-typewriter full
+                            // lines never fire — measured: full ここに lost,
+                            // only the misread prefix posted). Transient
+                            // prefixes are the visible cost of corrections.
                             if (!updateOwns && !breakthroughOwns
                                 && StripForOverlap(_candidateText).Length >= 6
                                 && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
