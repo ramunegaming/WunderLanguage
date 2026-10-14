@@ -642,36 +642,47 @@ namespace WunderLanguage.Host.Windows
                 bool wasAtBottom = HistoryScroller.VerticalOffset >= HistoryScroller.ScrollableHeight - AtBottomThresholdPx;
 
                 string stamp = System.DateTime.Now.ToString("HH:mm:ss");
-                // B16 one-bubble growth (2026-10-14, live: ナジ prefix +
-                // full posted as two bubbles). A fire that strictly extends
-                // the shown plain-dialogue bubble within 4s revises it in
-                // place instead of appending (typewriter burst = one bubble).
-                // Strict stripped containment only (wobble variants still
-                // append — omission risk rejected); battle/menu/last-entry
-                // states excluded; history stays coherent (replace, no dup).
-                // Display-only: capture/translation/sim untouched.
-                // Revert: delete the growth-merge block.
+                // B16b bubble absorption (2026-10-15, supersedes growth-merge:
+                // async translations complete OUT OF ORDER, so arrival-order
+                // merging misses (ここに prefix1+prefix2 posted as two, update
+                // revised only one). Order-independent: fold by CONTENT
+                // against recent plain-dialogue bubbles (ring with element
+                // refs). Fire extends a recent bubble -> revise it. Fire
+                // covered by a recent bubble -> drop it (already shown).
+                // Strict stripped containment +6, 8s window (growth bursts
+                // are fast; distinct turns are not). Display-only: capture,
+                // translation, sim untouched. Revert: delete ring + blocks.
                 try
                 {
-                    if (!_battleIsLast && _lastJapaneseBlock is not null && _lastEnglishBlock is not null && _history.Count > 0)
+                    string incomingStripped = StripOverlapPunct(StripSpaces(japanese));
+                    for (int ri = _bubbleRing.Count - 1; ri >= 0; ri--)
                     {
-                        var prev = _history[^1];
-                        if (!prev.ja.Contains('\n'))
+                        var rb = _bubbleRing[ri];
+                        if (GapSeconds(rb.time, stamp) > 8) continue;
+                        string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
+                        if (shownStripped.Length < 6 || incomingStripped.Length < 6) continue;
+                        if (incomingStripped.Length - shownStripped.Length >= 6
+                            && incomingStripped.StartsWith(shownStripped, System.StringComparison.Ordinal))
                         {
-                            string shownStripped = StripOverlapPunct(StripSpaces(prev.ja));
-                            string newStripped = StripOverlapPunct(StripSpaces(japanese));
-                            if (shownStripped.Length >= 6 && newStripped.Length - shownStripped.Length >= 6
-                                && newStripped.StartsWith(shownStripped, System.StringComparison.Ordinal)
-                                && GapSeconds(prev.time, stamp) <= 4)
-                            {
-                                _lastJapaneseBlock.Text = NormalizeEllipsisForDisplay(japanese);
-                                _lastEnglishBlock.Text = english;
-                                _history[^1] = (stamp, japanese, english);
-                                FileLogger.Log("[panel] growth-merge (burst extends shown bubble, revised in place)");
-                                if (wasAtBottom)
-                                    Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
-                                return;
-                            }
+                            rb.ja.Text = NormalizeEllipsisForDisplay(japanese);
+                            rb.en.Text = english;
+                            ReplaceHistoryRow(rb.time, rb.jaRaw, stamp, japanese, english);
+                            _lastJapaneseBlock = rb.ja;
+                            _lastEnglishBlock = rb.en;
+                            try { _bubbleRing.RemoveAt(ri); } catch { }
+                            try { _bubbleRing.Add((rb.entry, rb.ja, rb.en, stamp, japanese)); } catch { }
+                            TrimBubbleRing();
+                            FileLogger.Log("[panel] absorb-growth (fire extends recent bubble, revised in place)");
+                            if (wasAtBottom)
+                                Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                            return;
+                        }
+                        if (shownStripped.Length - incomingStripped.Length >= 0
+                            && shownStripped.Contains(incomingStripped, System.StringComparison.Ordinal)
+                            && shownStripped.Length > incomingStripped.Length)
+                        {
+                            FileLogger.Log("[panel] absorb-drop (fire already covered by recent bubble)");
+                            return;
                         }
                     }
                 }
@@ -686,6 +697,8 @@ namespace WunderLanguage.Host.Windows
                 _lastMenuAsciiJaHost = null;
                 _lastMenuAsciiEnHost = null;
                 _history.Add((stamp, japanese, english));
+                try { _bubbleRing.Add((entry, jaBlock, enBlock, stamp, japanese)); } catch { }
+                TrimBubbleRing();
 
                 if (wasAtBottom)
                 {
@@ -736,6 +749,7 @@ namespace WunderLanguage.Host.Windows
             {
                 HistoryPanel.Children.Clear();
                 _history.Clear();
+                _bubbleRing.Clear();
                 _placeholderShown = true;
                 _battleIsLast = false;
                 _lastBattleEntry = null;
@@ -788,8 +802,49 @@ namespace WunderLanguage.Host.Windows
                 _lastEnglishBlock.Text = english;
                 if (_history.Count > 0)
                     _history[^1] = (_history[^1].time, japanese, english);
+                AbsorbContained(_lastJapaneseBlock, japanese, System.DateTime.Now.ToString("HH:mm:ss"), wasAtBottom: false);
                 Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
             });
+        }
+
+        // B16b absorption sweep: after a revise, fold any OTHER recent plain
+        // bubble strictly contained in the new text (stale growth prefixes
+        // the primary match did not cover). Order-independent convergence:
+        // whichever lands last folds the earlier. Display-only.
+        private void AbsorbContained(TextBox? keep, string japanese, string stamp, bool wasAtBottom)
+        {
+            try
+            {
+                string incomingStripped = StripOverlapPunct(StripSpaces(japanese));
+                if (incomingStripped.Length < 12) return;
+                var dropIdx = new System.Collections.Generic.List<int>();
+                for (int ri = 0; ri < _bubbleRing.Count; ri++)
+                {
+                    var rb = _bubbleRing[ri];
+                    if (ReferenceEquals(rb.ja, keep)) continue;
+                    if (GapSeconds(rb.time, stamp) > 8) continue;
+                    string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
+                    if (shownStripped.Length < 6) continue;
+                    if (incomingStripped.Length - shownStripped.Length >= 6
+                        && incomingStripped.Contains(shownStripped, System.StringComparison.Ordinal))
+                        dropIdx.Add(ri);
+                }
+                for (int di = dropIdx.Count - 1; di >= 0; di--)
+                {
+                    try
+                    {
+                        var rb = _bubbleRing[dropIdx[di]];
+                        HistoryPanel.Children.Remove(rb.entry);
+                        RemoveHistoryRow(rb.time, rb.jaRaw);
+                        _bubbleRing.RemoveAt(dropIdx[di]);
+                        FileLogger.Log("[panel] absorb-fold (stale prefix folded into revision)");
+                    }
+                    catch { }
+                }
+                if (dropIdx.Count > 0 && wasAtBottom)
+                    Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+            }
+            catch { }
         }
 
                 private static List<string> SplitMenuLines(string s)
@@ -969,6 +1024,45 @@ namespace WunderLanguage.Host.Windows
         {
             text = EllipsisRunPattern.Replace(text, "…");
             return text;
+        }
+
+        private readonly List<(FrameworkElement entry, TextBox ja, TextBox en, string time, string jaRaw)> _bubbleRing = new();
+
+        private void TrimBubbleRing()
+        {
+            try { while (_bubbleRing.Count > 8) _bubbleRing.RemoveAt(0); } catch { }
+        }
+
+        private void ReplaceHistoryRow(string oldTime, string oldJa, string stamp, string japanese, string english)
+        {
+            try
+            {
+                for (int i = _history.Count - 1; i >= 0; i--)
+                {
+                    if (_history[i].time == oldTime && _history[i].ja == oldJa)
+                    {
+                        _history[i] = (stamp, japanese, english);
+                        return;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void RemoveHistoryRow(string oldTime, string oldJa)
+        {
+            try
+            {
+                for (int i = _history.Count - 1; i >= 0; i--)
+                {
+                    if (_history[i].time == oldTime && _history[i].ja == oldJa)
+                    {
+                        _history.RemoveAt(i);
+                        return;
+                    }
+                }
+            }
+            catch { }
         }
 
         private static string StripSpaces(string text)
