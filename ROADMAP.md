@@ -109,6 +109,9 @@ Waits on user shop-play signal. FFVI battle-polish order otherwise intact.
 ### P7. Zelda-long latency exceedance
 Pre-existing (stash-proven, not a regression). Investigate when profiling time comes.
 
+### P8. Display-behavior queue (from ChatGPT taxonomy review, 2026-10-14)
+Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/titles/name-entry/singleton-glimpse (B10-T2, B12, title/menu/battle paths). Queued, unmeasured: fading text, moving/animated text + transient notifications (damage numbers, pickups), per-line replacement, timed-vs-advance-controlled distinction. Each needs a priced miss set before any build.
+
 ## Blocked on user
 
 - Mash policy a/b/c (keep stale / fast-track / expire).
