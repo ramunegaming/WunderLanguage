@@ -3098,6 +3098,25 @@ namespace WunderLanguage.Host.Capture
                         }
                         catch { }
                         if (alive) continue;
+                        // Pack-title guard (B12, live regression 2026-10-14):
+                        // the Zelda logo subtitle fired as dialogue because
+                        // vision missed the frame. Pack title data is
+                        // evidenced per-game knowledge (title triple): text
+                        // the pack claims as its title belongs to the title
+                        // path, never dialogue. Game-blind mechanism.
+                        string packTitle = "";
+                        bool titleParked = false;
+                        try { packTitle = Packs.PackRegistry.Current.FullTitle ?? ""; } catch { }
+                        string bestTrunc = best.Length > 2 ? best.Substring(0, best.Length - 2) : best;
+                        if (!string.IsNullOrEmpty(packTitle)
+                            && (packTitle.Contains(best, System.StringComparison.Ordinal)
+                                || packTitle.Contains(bestTrunc, System.StringComparison.Ordinal)
+                                || ComputeSimilarity(ScrollNorm(best), ScrollNorm(packTitle)) >= 0.85))
+                        {
+                            // Title text: park (title path owns it).
+                            st.Fired = true;
+                            titleParked = true;
+                        }
                         // Sentence-substance (B12, measured): bare single
                         // tokens (battle-name fragments like misread
                         // フェッジビックス) must not fire here — menu/name
@@ -3135,7 +3154,7 @@ namespace WunderLanguage.Host.Capture
                             // Already shown / dupe / contentless: park (normal roads unaffected).
                             st.Fired = true;
                         }
-                        else
+                        else if (!titleParked)
                         {
                             // Scroll growth is an update, not a new fire:
                             // a fuller or variant scrolled form of the shown
