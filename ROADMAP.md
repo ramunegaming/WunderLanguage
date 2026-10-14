@@ -86,8 +86,8 @@ Next bundles must carry pack prefixes and headers.
 
 ## In progress
 
-### W1. Sidecar death root cause
-4 mid-session deaths, cause unlogged; forensics now dump uptime, exit code, ring tail. Still needed: a death WITH forensics, then the actual fix. Revert: revert death-forensics.
+### W1. Sidecar death root cause — CONVICTED + FIXED (revert: revert nocatfb-retry)
+CAT 4-bit quantize load segfaults ~140s after start (2 live deaths + 1 idle repro, 0xC0000005 at shard 0-1, despite 4492MB free — threshold tuning cannot catch it). Explains PM 4-death cadence (restart+120s cycles) and both intro block-10 gaps. Fix: healthy-period death retries OCR-only; startup deaths unchanged; fresh launches always try GPU. Verified by kill-test (nocatfb → healthy, tail intact). Still needed: live soak (a full session with zero 503 gaps).
 
 ### W2. Paper Mario baseline play triage follow-ups
 Intro measured (28/28 sim); battle/menu/decision coverage needs a focused session without focus loss.
