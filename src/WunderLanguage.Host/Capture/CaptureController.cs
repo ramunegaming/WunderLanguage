@@ -1321,7 +1321,8 @@ namespace WunderLanguage.Host.Capture
                             }
                             _candidateGrewThisRead = false;
                         }
-                        else if (ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.FuzzyAdoptSim
+                        else if ((ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.FuzzyAdoptSim
+                            || WeightedSimilarity(extractedText, _candidateText) >= ThresholdProfiles.FuzzyAdoptSim)
                             && !IsJunkOcr(extractedText) && !IsEllipsisOnly(extractedText)
                             && !IsScrollBlend(extractedText) && !IsZeldaTransitionBlend(extractedText)
                             && HasJapanese(extractedText))
@@ -1330,7 +1331,9 @@ namespace WunderLanguage.Host.Capture
                             // same-length OCR variants of one line count together
                             // instead of stalling in successor purgatory (old rule:
                             // adopt only on exact successor repeat, so alternating
-                            // variants never reached count 3). Count was already
+                            // variants never reached count 3). B-counting arm
+                            // (2026-10-14): confusion-weighted similarity joins
+                            // inventoried visual-confusion variants too. Count was already
                             // incremented above; adopt a verbatim winner (never
                             // synthesize): keep a complete held line over an
                             // incomplete incoming (R1), else take complete
@@ -3596,6 +3599,25 @@ namespace WunderLanguage.Host.Capture
                 }
             }
             return dp[a.Length, b.Length];
+        }
+
+        // B-counting (2026-10-14): confusion-weighted similarity ratio for
+        // lineage counting. Variants differing only by inventoried visual
+        // confusions (Ｐ/７, ジ/ゾ, て/で…) score near plain-similar reads
+        // and join the lineage instead of resetting it. Counting only —
+        // firing still needs complete/gates, verbatim winner (R1).
+        // Revert with the fuzzy-window-weighted branch.
+        private static double WeightedSimilarity(string a, string b)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) return 1.0;
+                if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return 0.0;
+                int m = System.Math.Max(a.Length, b.Length);
+                if (m == 0) return 1.0;
+                return 1.0 - WeightedLevenshtein(a, b) / m;
+            }
+            catch { return 0.0; }
         }
 
         // GAME OVER pack: fixed screen (big GAME OVER + 3 セーブ rows, often
