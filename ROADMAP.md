@@ -86,6 +86,9 @@ Next bundles must carry pack prefixes and headers.
 
 ## In progress
 
+### B19. Cross-fire variant consolidation (prerequisite for repetition-evidence)
+A (repetition-as-evidence) was built through 5 iterations and reverted: static-page recovery works (block 4 exact) but pulls misread twins with it (帰がけて/出かけて, きわって/日ボタン — incorrect lines = regressions by the book), and every guard tried (dominance, twin-veto, net-displacement) either missed the twins or ate clean lines. Conviction: variant consolidation must come FIRST (merge variant doubles into single bubbles), repetition-evidence second. Still needed: design consolidation with evidence, then re-attempt A behind it.
+
 ### B18. Confusion-tolerant counting (revert: revert fuzzy-weighted)
 Tier1 lineage counting accepts confusion-weighted similarity (inventoried pairs join instead of resetting). Counting only. Done: 48 genuine joins measured offline, empty JA diffs on all 6 corpora. Still needed: live observation (a churned line stabilizing faster).
 
