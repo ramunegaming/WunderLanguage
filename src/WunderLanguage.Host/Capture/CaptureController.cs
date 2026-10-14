@@ -3563,7 +3563,20 @@ namespace WunderLanguage.Host.Capture
             ('ー','一'), ('が','げ'), ('ダ','メ'), ('封','計'), ('仰','印'),
             ('封','朝'), ('祭','禁'), ('童','達'), ('封','納'), ('ゾ','ツ'),
             ('シ','ン'), ('全','金'), ('責','黄'), ('捕','揃'),
+            ('も','ゼ'), ('盾','眉'), ('土','王'), ('女','方'), ('知','部'),
+            ('結','能'), ('シ','ジ'),
         };
+        // Loop 2 re-mine 2026-10-14, part 1 (7 pairs): も/ゼ (ゼルダ),
+        // 盾/眉 (sword), 土/王 + 女/方 (王女), 知/部 (全部/全知),
+        // 結/能 (全能), シ/ジ (voicing). All games>=2, genuine visual,
+        // non-punct. Zero delta everywhere measured.
+        // HELD for part 2 (button family A/H, ボ/T/分/本, タ/ダ): real blast
+        // radius on Zelda-old (+1 genuine tutorial recovery, but doubles +
+        // variant swaps). Needs double-suppression pairing first (sentdedup
+        // follow-up). Excluded per rule: punct/space (normalizer territory),
+        // games=1 (pack-fixup candidates), garbage-alignment artifacts.
+        // Blast radius: weighted pass runs only on integer-pass abstentions.
+        // Revert: revert loop2-remine2.
         private static double WeightedLevenshtein(string a, string b)
         {
             var dp = new double[a.Length + 1, b.Length + 1];
