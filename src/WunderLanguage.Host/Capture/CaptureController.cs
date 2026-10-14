@@ -2966,6 +2966,32 @@ namespace WunderLanguage.Host.Capture
             try { return (t ?? "").Replace(" ", "").Replace("　", ""); } catch { return t ?? ""; }
         }
 
+        private static string Unvoice(string t)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(t)) return t ?? "";
+                var m = new System.Collections.Generic.Dictionary<char, char>
+                {
+                    ['が'] = 'か', ['ぎ'] = 'き', ['ぐ'] = 'く', ['げ'] = 'け', ['ご'] = 'こ',
+                    ['ざ'] = 'さ', ['じ'] = 'し', ['ず'] = 'す', ['ぜ'] = 'せ', ['ぞ'] = 'そ',
+                    ['だ'] = 'た', ['ぢ'] = 'ち', ['づ'] = 'つ', ['で'] = 'て', ['ど'] = 'と',
+                    ['ば'] = 'は', ['び'] = 'ひ', ['ぶ'] = 'ふ', ['べ'] = 'へ', ['ぼ'] = 'ほ',
+                    ['ぱ'] = 'は', ['ぴ'] = 'ひ', ['ぷ'] = 'ふ', ['ぺ'] = 'へ', ['ぽ'] = 'ほ',
+                    ['ガ'] = 'カ', ['ギ'] = 'キ', ['グ'] = 'ク', ['ゲ'] = 'ケ', ['ゴ'] = 'コ',
+                    ['ザ'] = 'サ', ['ジ'] = 'シ', ['ズ'] = 'ス', ['ゼ'] = 'セ', ['ゾ'] = 'ソ',
+                    ['ダ'] = 'タ', ['ヂ'] = 'チ', ['ヅ'] = 'ツ', ['デ'] = 'テ', ['ド'] = 'ト',
+                    ['バ'] = 'ハ', ['ビ'] = 'ヒ', ['ブ'] = 'フ', ['ベ'] = 'ヘ', ['ボ'] = 'ホ',
+                    ['パ'] = 'ハ', ['ピ'] = 'ヒ', ['プ'] = 'フ', ['ペ'] = 'ヘ', ['ポ'] = 'ホ',
+                    ['ヴ'] = 'ウ', ['ゞ'] = 'ヽ',
+                };
+                var sb = new System.Text.StringBuilder(t.Length);
+                foreach (char c in t) sb.Append(m.TryGetValue(c, out char u) ? u : c);
+                return sb.ToString();
+            }
+            catch { return t ?? ""; }
+        }
+
         // Trailing dot-family fold (B13): ・/．．/．/… runs are the same
         // printed dots read variously (ellipsis vs 。。 confusion is
         // visual, not textual). Folded for tracker identity AND published
@@ -3123,9 +3149,20 @@ namespace WunderLanguage.Host.Capture
                         bool titleParked = false;
                         try { packTitle = Packs.PackRegistry.Current.FullTitle ?? ""; } catch { }
                         string bestTrunc = best.Length > 2 ? best.Substring(0, best.Length - 2) : best;
+                        // B13b voicing-tolerant title match (2026-10-15, live:
+                        // ドライフォース wobble beat exact/trunc/sim checks).
+                        // Unvoice both sides (ド→ト etc., kana phonetics,
+                        // game-blind): misread titles still match; dialogue
+                        // merely quoting title words stays distinct (longer).
+                        // Revert: delete Unvoice + the uv clauses.
+                        string bestUV = Unvoice(best);
+                        string truncUV = Unvoice(bestTrunc);
+                        string titleUV = Unvoice(packTitle);
                         if (!string.IsNullOrEmpty(packTitle)
                             && (packTitle.Contains(best, System.StringComparison.Ordinal)
                                 || packTitle.Contains(bestTrunc, System.StringComparison.Ordinal)
+                                || (!string.IsNullOrEmpty(bestUV) && titleUV.Contains(bestUV, System.StringComparison.Ordinal))
+                                || (!string.IsNullOrEmpty(truncUV) && titleUV.Contains(truncUV, System.StringComparison.Ordinal))
                                 || ComputeSimilarity(ScrollNorm(best), ScrollNorm(packTitle)) >= 0.85))
                         {
                             // Title text: park (title path owns it).
