@@ -416,8 +416,10 @@ namespace WunderLanguage.Host.Capture
         private sealed class ScrollLineState
         {
             public string BestText = string.Empty;
+            public string LastText = string.Empty;
             public int LastY;
             public int Sightings;
+            public int ConsecSame;
             public int Shifts;
             public bool Fired;
             public int LastLoop;
@@ -2949,6 +2951,29 @@ namespace WunderLanguage.Host.Capture
             try { return (t ?? "").Replace(" ", "").Replace("　", ""); } catch { return t ?? ""; }
         }
 
+        // Trailing dot-family fold (B13): ・/．．/．/… runs are the same
+        // printed dots read variously (ellipsis vs 。。 confusion is
+        // visual, not textual). Folded for tracker identity AND published
+        // text. ！！ never folded (genuine excitement exists). Verbatim
+        // otherwise. Revert with the static-page road (revert page-road).
+        private static string FoldTrailingDots(string t)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(t)) return t;
+                int e = t.Length;
+                while (e > 0)
+                {
+                    char c = t[e - 1];
+                    if (c == '・' || c == '．' || c == '.' || c == '…' || c == '‥') e--;
+                    else break;
+                }
+                if (e < t.Length && t.Length - e >= 1) return t.Substring(0, e) + "…";
+                return t;
+            }
+            catch { return t; }
+        }
+
         private void TrackScrollLines(int iteration, System.Collections.Generic.List<OcrBlock> blocks)
         {
             try
@@ -2958,7 +2983,7 @@ namespace WunderLanguage.Host.Capture
                 {
                     try
                     {
-                        string t = (b.Text ?? "").Trim();
+                        string t = FoldTrailingDots((b.Text ?? "").Trim());
                         if (t.Length < 6 || !HasJapanese(t)) continue;
                         string key = ScrollNorm(t);
                         if (key.Length < 6) continue;
@@ -2981,7 +3006,7 @@ namespace WunderLanguage.Host.Capture
                         }
                         if (st == null)
                         {
-                            st = new ScrollLineState { BestText = t, LastY = b.Y, Sightings = 1, Shifts = 0, Fired = false, LastLoop = iteration };
+                            st = new ScrollLineState { BestText = t, LastText = t, LastY = b.Y, Sightings = 1, ConsecSame = 1, Shifts = 0, Fired = false, LastLoop = iteration };
                             _scrollLines[key] = st;
                             if (_scrollLines.Count > 300)
                             {
@@ -2997,6 +3022,13 @@ namespace WunderLanguage.Host.Capture
                         }
                         st.Sightings++;
                         st.LastLoop = iteration;
+                        try
+                        {
+                            if (t == st.LastText) st.ConsecSame++;
+                            else st.ConsecSame = 1;
+                        }
+                        catch { }
+                        st.LastText = t;
                         try
                         {
                             if (System.Math.Abs(b.Y - st.LastY) > 8) st.Shifts++;
@@ -3032,9 +3064,25 @@ namespace WunderLanguage.Host.Capture
                         // た and no 。); continuation endings (、/particles)
                         // still hold — those are mid-box rows, not lines.
                         // Static lines never shift (normal roads own them).
-                        if (st.Fired || st.Shifts < 1 || st.Sightings < 2
+                        // Scroll-out fire: shifted lines (genuine movement,
+                        // not a blink), OR static pages (byte-stable 6+,
+                        // stable at the end — B13 page road for crawl pages
+                        // that sit then cut: normal roads demand terminal
+                        // punctuation these Zelda た-lines lack; typewriter
+                        // mid-growth is excluded by ConsecSame>=3).
+                        // Fires on disappearance (gone 2+ loops).
+                        // Battle/menu frames excluded (their paths own
+                        // static rows). Static lines normal roads already
+                        // publish are dupe-parked below.
+                        bool pageStable = st.Shifts == 0 && st.Sightings >= 6 && st.ConsecSame >= 3;
+                        if (st.Fired || !(st.Shifts >= 1 || pageStable) || st.Sightings < 2
                             || iteration - st.LastLoop < 2)
                             continue;
+                        bool battleFrame = false;
+                        try { battleFrame = BattleFrame.IsBattle(blocks, _battleFrameW, _battleFrameH, HasJapanese, Packs.PackRegistry.Current.WeaponLabels, _itemBoxOpen); } catch { }
+                        bool menuActive = false;
+                        try { menuActive = !string.IsNullOrEmpty(_menuSignature); } catch { }
+                        if (battleFrame || menuActive) { continue; }
                         string best = st.BestText;
                         // Re-verify liveness: a matching block this loop
                         // means the sweep raced the matcher — skip.
@@ -3113,7 +3161,7 @@ namespace WunderLanguage.Host.Capture
                             }
                             else
                             {
-                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=scroll-line (shift-confirmed line posts)");
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=scroll-line (shift/page-stable line posts)");
                                 try { CorpusRecordBubble("dialogue-decision:scroll-line", best, "", "", iteration); } catch { }
                                 _lastTranslatedText = best;
                                 string scrollText = best;
