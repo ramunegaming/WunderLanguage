@@ -3587,7 +3587,7 @@ namespace WunderLanguage.Host.Capture
         // genuine visual confusions; punct-normalizer pairs and single-line
         // clusters excluded by rule). Rerun script per new game, review,
         // append. Revert: delete this function + the second pass.
-        private static readonly System.Collections.Generic.HashSet<(char, char)> ConfusionPairs = new()
+        internal static readonly System.Collections.Generic.HashSet<(char, char)> ConfusionPairs = new()
         {
             ('入','人'), ('賢','腎'), ('む','も'), ('賢','貿'), ('王','エ'),
             ('ニ','ー'), ('運','選'), ('封','射'), ('げ','け'), ('祭','宗'),
