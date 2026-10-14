@@ -99,7 +99,10 @@ CAT 4-bit quantize load segfaults ~140s after start (2 live deaths + 1 idle repr
 Intro measured (28/28 sim); battle/menu/decision coverage needs a focused session without focus loss.
 
 ### B16. One-bubble growth merge (revert: revert growth-merge)
-ShowTranslation revises the shown bubble when a fire strictly extends it within 4s (display-only; capture/translation/sim untouched). Wobbly completions arrive via the exact-match update path. Still needed: live screenshot proof (single revised bubble on typewriter + [panel] growth-merge line).
+ShowTranslation revises the shown bubble when a fire strictly extends it within 4s (display-only; capture/translation/sim untouched). Superseded by B16b below (arrival-order merging proven insufficient against async races — same revert covers both).
+
+### B16b. Order-independent bubble absorption (revert: revert absorb-ring)
+Ring of recent plain bubbles with element refs: extending fires revise, covered fires drop, updates fold other contained bubbles. Strict containment +6, 8s window, battle/menu excluded. Still needed: live screenshot proof (single bubble on typewriter, absorb-* lines in log).
 
 ## Planned
 
