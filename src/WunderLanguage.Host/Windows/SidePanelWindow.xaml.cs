@@ -642,6 +642,40 @@ namespace WunderLanguage.Host.Windows
                 bool wasAtBottom = HistoryScroller.VerticalOffset >= HistoryScroller.ScrollableHeight - AtBottomThresholdPx;
 
                 string stamp = System.DateTime.Now.ToString("HH:mm:ss");
+                // B16 one-bubble growth (2026-10-14, live: ナジ prefix +
+                // full posted as two bubbles). A fire that strictly extends
+                // the shown plain-dialogue bubble within 4s revises it in
+                // place instead of appending (typewriter burst = one bubble).
+                // Strict stripped containment only (wobble variants still
+                // append — omission risk rejected); battle/menu/last-entry
+                // states excluded; history stays coherent (replace, no dup).
+                // Display-only: capture/translation/sim untouched.
+                // Revert: delete the growth-merge block.
+                try
+                {
+                    if (!_battleIsLast && _lastJapaneseBlock is not null && _lastEnglishBlock is not null && _history.Count > 0)
+                    {
+                        var prev = _history[^1];
+                        if (!prev.ja.Contains('\n'))
+                        {
+                            string shownStripped = StripOverlapPunct(StripSpaces(prev.ja));
+                            string newStripped = StripOverlapPunct(StripSpaces(japanese));
+                            if (shownStripped.Length >= 6 && newStripped.Length - shownStripped.Length >= 6
+                                && newStripped.StartsWith(shownStripped, System.StringComparison.Ordinal)
+                                && GapSeconds(prev.time, stamp) <= 4)
+                            {
+                                _lastJapaneseBlock.Text = NormalizeEllipsisForDisplay(japanese);
+                                _lastEnglishBlock.Text = english;
+                                _history[^1] = (stamp, japanese, english);
+                                FileLogger.Log("[panel] growth-merge (burst extends shown bubble, revised in place)");
+                                if (wasAtBottom)
+                                    Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch { }
                 _battleIsLast = false;
                 var (entry, jaBlock, enBlock) = BuildEntry(stamp, japanese, english);
                 HistoryPanel.Children.Add(entry);
@@ -935,6 +969,36 @@ namespace WunderLanguage.Host.Windows
         {
             text = EllipsisRunPattern.Replace(text, "…");
             return text;
+        }
+
+        private static string StripSpaces(string text)
+        {
+            try { return (text ?? "").Replace(" ", "").Replace("　", ""); } catch { return text ?? ""; }
+        }
+
+        private static string StripOverlapPunct(string text)
+        {
+            try
+            {
+                return (text ?? "").Replace("。", "").Replace("、", "").Replace(",", "").Replace("，", "")
+                    .Replace("…", "").Replace("．", "").Replace(".", "");
+            }
+            catch { return text ?? ""; }
+        }
+
+        private static int GapSeconds(string before, string after)
+        {
+            try
+            {
+                var a = before.Split(':');
+                var b = after.Split(':');
+                int sa = int.Parse(a[0]) * 3600 + int.Parse(a[1]) * 60 + int.Parse(a[2]);
+                int sb = int.Parse(b[0]) * 3600 + int.Parse(b[1]) * 60 + int.Parse(b[2]);
+                int d = sb - sa;
+                if (d < 0) d += 86400;
+                return d;
+            }
+            catch { return 999; }
         }
     }
 }
