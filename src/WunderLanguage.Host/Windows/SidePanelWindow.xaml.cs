@@ -649,8 +649,9 @@ namespace WunderLanguage.Host.Windows
                 // against recent plain-dialogue bubbles (ring with element
                 // refs). Fire extends a recent bubble -> revise it. Fire
                 // covered by a recent bubble -> drop it (already shown).
-                // Strict stripped containment +6, 8s window (growth bursts
-                // are fast; distinct turns are not). Display-only: capture,
+                // Strict stripped containment +6, 15s window (growth bursts
+                // are fast; translation variance delays matches ~9s live;
+                // distinct turns are slower). Display-only: capture,
                 // translation, sim untouched. Revert: delete ring + blocks.
                 try
                 {
@@ -658,7 +659,7 @@ namespace WunderLanguage.Host.Windows
                     for (int ri = _bubbleRing.Count - 1; ri >= 0; ri--)
                     {
                         var rb = _bubbleRing[ri];
-                        if (GapSeconds(rb.time, stamp) > 8) continue;
+                        if (GapSeconds(rb.time, stamp) > 15) continue;
                         string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
                         if (shownStripped.Length < 6 || incomingStripped.Length < 6) continue;
                         if (incomingStripped.Length - shownStripped.Length >= 6
@@ -822,7 +823,7 @@ namespace WunderLanguage.Host.Windows
                 {
                     var rb = _bubbleRing[ri];
                     if (ReferenceEquals(rb.ja, keep)) continue;
-                    if (GapSeconds(rb.time, stamp) > 8) continue;
+                    if (GapSeconds(rb.time, stamp) > 15) continue;
                     string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
                     if (shownStripped.Length < 6) continue;
                     if (incomingStripped.Length - shownStripped.Length >= 6
