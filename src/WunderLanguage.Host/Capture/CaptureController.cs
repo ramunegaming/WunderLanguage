@@ -1156,6 +1156,11 @@ namespace WunderLanguage.Host.Capture
                         _candidateGrewThisRead = false;
                         _flashFired = false;
                     }
+                    // B17 blank-lineage grace REVERTED 2026-10-14: measured
+                    // +1 borderline fragment (こちらのサイトで via weak-hold)
+                    // with zero demonstrated recoveries — outage-length gaps
+                    // (the real ここに killer) exceed any safe grace, and
+                    // fade-hiccups remain unconvicted. Outage answer stays W1.
                     else if (!string.IsNullOrEmpty(_candidateText)
                         && (ComputeSimilarity(extractedText, _candidateText) >= ThresholdProfiles.LineageSim
                             || extractedText.Contains(_candidateText, StringComparison.Ordinal)
