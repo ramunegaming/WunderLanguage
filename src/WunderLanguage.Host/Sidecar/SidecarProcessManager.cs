@@ -29,6 +29,16 @@ namespace WunderLanguage.Host.Sidecar
         public static event Action? EngineDown;
         private bool _restarting;
         private CancellationTokenSource? _restartCts;
+        // W1 root cause (2026-10-14, convicted): CAT 4-bit weight load
+        // segfaults ~140s after start (deferred +120s thread) on 6GB VRAM
+        // even with 4492MB free — threshold tuning cannot catch it. A
+        // healthy-period death is therefore proof the spike will recur, so
+        // the retry relaunches OCR-only (nocatfb). Startup-time deaths keep
+        // the existing behavior (GPU first, one fallback). Fresh host
+        // processes always try GPU first (no stale flags across launches).
+        // Revert: revert nocatfb-retry.
+        private bool _wasHealthy;
+        private bool _noCatAfterCrash;
 
         public SidecarProcessManager()
         {
@@ -89,6 +99,13 @@ namespace WunderLanguage.Host.Sidecar
                     return;
                 }
                 _restarting = true;
+                bool nocatRetry = false;
+                try { nocatRetry = _wasHealthy; } catch { }
+                if (nocatRetry)
+                {
+                    try { _noCatAfterCrash = true; } catch { }
+                    try { FileLogger.Log("[job] healthy-period death: retrying OCR-only (nocatfb, CAT spike convicted)"); } catch { }
+                }
                 _restartCts = new CancellationTokenSource();
                 var token = _restartCts.Token;
                 _ = Task.Run(async () =>
@@ -193,7 +210,7 @@ namespace WunderLanguage.Host.Sidecar
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
-                if (cpuFallback)
+                if (cpuFallback || _noCatAfterCrash)
                     psi.Environment["WUNDER_NO_CAT"] = "1";
 
                 _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -246,12 +263,13 @@ namespace WunderLanguage.Host.Sidecar
 
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
-                FileLogger.Log($"Sidecar process started, PID: {_process.Id} (OCR-only fallback: {cpuFallback})");
+                FileLogger.Log($"Sidecar process started, PID: {_process.Id} (OCR-only fallback: {cpuFallback || _noCatAfterCrash})");
 
                 try
                 {
                     await WaitForHealthyAsync(statusProgress);
                     FileLogger.Log($"[startup] stage=sidecar-spawn-healthy ms={spawnSw.ElapsedMilliseconds} fallback={cpuFallback}");
+                    try { _wasHealthy = true; } catch { }
                     StartCatWatcher();
                     return;
                 }
