@@ -404,6 +404,25 @@ namespace WunderLanguage.Host.Capture
         // the publish-weak-hold conjunct.
         private string _suspectStainedText = string.Empty;
         private string _lastTranslatedText = string.Empty;
+        // Scroll-line tracker (Zelda intro unpostables, 2026-10-14):
+        // line-granular scroll (typewriter rows scroll up whole) never
+        // repeats one string 3x, so count-based roads starve. Track lines
+        // by text across Y-shifts; a line seen shifted (2+ sightings) is
+        // genuine whole-line evidence — fire once on shift-confirm.
+        // Static cut-in lines never shift (normal roads own them).
+        // Verbatim only (best = complete/longest seen, never synthesized).
+        // Game-blind: geometry + text match, no per-game rules.
+        // Revert: delete fields + TrackScrollLines + its call-site.
+        private sealed class ScrollLineState
+        {
+            public string BestText = string.Empty;
+            public int LastY;
+            public int Sightings;
+            public int Shifts;
+            public bool Fired;
+            public int LastLoop;
+        }
+        private readonly System.Collections.Generic.Dictionary<string, ScrollLineState> _scrollLines = new(System.StringComparer.Ordinal);
         // R1 oscillation memory: previously shown line (one slot). A stable candidate matching _prev
         // while another line is shown = same-box A-B-A flicker; the middle fire was the intruder.
         // Updated on every new-bubble path below; update-in-place paths keep lineage (untouched).
@@ -995,6 +1014,11 @@ namespace WunderLanguage.Host.Capture
                         return false;
                     }
                     // Phase 1b: menu/title tracker. Dialogue path below frozen.
+                    // Scroll-line road (B12): shift-confirmed lines post
+                    // independent of count-based roads; never touches
+                    // candidate state (read-only except its own tracker +
+                    // _lastTranslatedText chaining shared with all roads).
+                    try { TrackScrollLines(iteration, ocrBlocks); } catch (Exception sx) { FileLogger.Log($"[scroll] tracker error: {sx.Message}"); }
                     try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
                     // Zelda repair: the battle tracker (publishes BATTLE frames,
                     // owns _battleFiredSig/cooldown/stickies) runs on FFVI packs
@@ -2918,6 +2942,204 @@ namespace WunderLanguage.Host.Capture
             if (StartsHeadlessFragment(text)) return false;
             if (!EndsCompleteSentence(text)) return false;
             return true;
+        }
+
+        private static string ScrollNorm(string t)
+        {
+            try { return (t ?? "").Replace(" ", "").Replace("　", ""); } catch { return t ?? ""; }
+        }
+
+        private void TrackScrollLines(int iteration, System.Collections.Generic.List<OcrBlock> blocks)
+        {
+            try
+            {
+                if (blocks == null || blocks.Count == 0) return;
+                foreach (var b in blocks)
+                {
+                    try
+                    {
+                        string t = (b.Text ?? "").Trim();
+                        if (t.Length < 6 || !HasJapanese(t)) continue;
+                        string key = ScrollNorm(t);
+                        if (key.Length < 6) continue;
+                        ScrollLineState? st = null;
+                        if (!_scrollLines.TryGetValue(key, out st))
+                        {
+                            foreach (var kv in _scrollLines)
+                            {
+                                try
+                                {
+                                    // Growth-tolerant lineage (typewriter rows
+                                    // lengthen while scrolling): containment
+                                    // either way, else same-length fuzzy.
+                                    if (kv.Key.Contains(key, System.StringComparison.Ordinal)
+                                        || key.Contains(kv.Key, System.StringComparison.Ordinal)
+                                        || (kv.Key.Length == key.Length && ComputeSimilarity(key, kv.Key) >= ThresholdProfiles.FuzzyAdoptSim)) { st = kv.Value; key = kv.Key; break; }
+                                }
+                                catch { }
+                            }
+                        }
+                        if (st == null)
+                        {
+                            st = new ScrollLineState { BestText = t, LastY = b.Y, Sightings = 1, Shifts = 0, Fired = false, LastLoop = iteration };
+                            _scrollLines[key] = st;
+                            if (_scrollLines.Count > 300)
+                            {
+                                string? drop = null;
+                                int oldest = int.MaxValue;
+                                foreach (var kv in _scrollLines)
+                                {
+                                    if (kv.Value.Fired && kv.Value.LastLoop < oldest) { oldest = kv.Value.LastLoop; drop = kv.Key; }
+                                }
+                                if (drop != null) _scrollLines.Remove(drop);
+                            }
+                            continue;
+                        }
+                        st.Sightings++;
+                        st.LastLoop = iteration;
+                        try
+                        {
+                            if (System.Math.Abs(b.Y - st.LastY) > 8) st.Shifts++;
+                        }
+                        catch { }
+                        st.LastY = b.Y;
+                        // Best-text (verbatim only): prefer complete sentences,
+                        // else longest stripped; tie keeps earliest.
+                        bool newComplete = EndsCompleteSentence(t.TrimEnd());
+                        bool oldComplete = EndsCompleteSentence(st.BestText.TrimEnd());
+                        if ((newComplete && !oldComplete)
+                            || StripForOverlap(t).Length > StripForOverlap(st.BestText).Length)
+                        {
+                            st.BestText = t;
+                        }
+                    }
+                    catch { }
+                }
+                // Scroll-out sweep: lines are gone (no block matched them
+                // this loop), so evaluate disappearance HERE — matched
+                // entries above can never be gone by construction.
+                foreach (var kv in _scrollLines)
+                {
+                    try
+                    {
+                        ScrollLineState st = kv.Value;
+                        // Scroll-out fire: the line shifted while visible
+                        // (genuine movement, not a blink) and has been gone
+                        // 2+ loops (page turned / scrolled past). Fires the
+                        // longest complete-ish form seen. Terminal
+                        // punctuation NOT required: movement is the
+                        // completeness evidence (Zelda crawl lines end with
+                        // た and no 。); continuation endings (、/particles)
+                        // still hold — those are mid-box rows, not lines.
+                        // Static lines never shift (normal roads own them).
+                        if (st.Fired || st.Shifts < 1 || st.Sightings < 2
+                            || iteration - st.LastLoop < 2)
+                            continue;
+                        string best = st.BestText;
+                        // Re-verify liveness: a matching block this loop
+                        // means the sweep raced the matcher — skip.
+                        bool alive = false;
+                        try
+                        {
+                            foreach (var b in blocks)
+                            {
+                                string bt = ScrollNorm((b.Text ?? "").Trim());
+                                if (bt.Length >= 6 && (bt == kv.Key || bt.Contains(kv.Key, System.StringComparison.Ordinal) || kv.Key.Contains(bt, System.StringComparison.Ordinal)
+                                    || (bt.Length == kv.Key.Length && ComputeSimilarity(bt, kv.Key) >= ThresholdProfiles.FuzzyAdoptSim))) { alive = true; break; }
+                            }
+                        }
+                        catch { }
+                        if (alive) continue;
+                        // Sentence-substance (B12, measured): bare single
+                        // tokens (battle-name fragments like misread
+                        // フェッジビックス) must not fire here — menu/name
+                        // paths own them. Require a particle or terminal
+                        // punctuation: all genuine recoveries carry them.
+                        bool hasSentenceShape = false;
+                        try
+                        {
+                            foreach (char pc in best)
+                            {
+                                if (pc == 'は' || pc == 'が' || pc == 'を' || pc == 'に' || pc == 'へ' || pc == 'と' || pc == 'も' || pc == 'で' || pc == 'の'
+                                    || pc == '。' || pc == '、' || pc == '？' || pc == '！' || pc == '…' || pc == '．' || pc == '，' || pc == '！' || pc == '？'
+                                    || pc == '!' || pc == '?' || pc == ',' || pc == '.') { hasSentenceShape = true; break; }
+                            }
+                        }
+                        catch { hasSentenceShape = true; }
+                        if (!IsSubstantialLine(best) || StartsHeadlessFragment(best) || EndsWithContinuation(best) || !hasSentenceShape)
+                        {
+                            // Fragment row: park (normal roads unaffected).
+                            st.Fired = true;
+                        }
+                        else if (IsJunkOcr(best) || IsEllipsisOnly(best)
+                            || IsScrollBlend(best) || IsZeldaTransitionBlend(best) || IsIncompleteSacrifice(best) || _frameIsTitle)
+                        {
+                            // Excluded shape: park (normal roads unaffected).
+                            st.Fired = true;
+                        }
+                        else if (!string.IsNullOrEmpty(_lastTranslatedText)
+                            && (_lastTranslatedText.Contains(best, System.StringComparison.Ordinal)
+                                || ComputeSimilarity(best, _lastTranslatedText) >= NearDuplicateSimilarityThreshold
+                                || (_lastOcrTotal >= 4 && _lastOcrContent == 0
+                                    && !string.IsNullOrEmpty(_lastOcrText)
+                                    && ComputeSimilarity(_lastOcrText, best) >= 0.80)))
+                        {
+                            // Already shown / dupe / contentless: park (normal roads unaffected).
+                            st.Fired = true;
+                        }
+                        else
+                        {
+                            // Scroll growth is an update, not a new fire:
+                            // a fuller or variant scrolled form of the shown
+                            // line revises it in place (same shape as the
+                            // update-in-place / update-neardupe roads).
+                            // Genuinely new lines fire fresh.
+                            bool scrollGrowth = !string.IsNullOrEmpty(_lastTranslatedText)
+                                && ((best.Length > _lastTranslatedText.Length
+                                    && (best.StartsWith(_lastTranslatedText, System.StringComparison.Ordinal)
+                                        || best.Contains(_lastTranslatedText, System.StringComparison.Ordinal)))
+                                || (ComputeSimilarity(best, _lastTranslatedText) >= 0.70
+                                    && (HasCommonPrefix(best, _lastTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(best, _lastTranslatedText, 6)
+                                        || StartsWithSuffixOfStrip(_lastTranslatedText, best, 6))));
+                            if (scrollGrowth)
+                            {
+                                string prev = _lastTranslatedText;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=scroll-update (fuller scrolled form revises)");
+                                try { CorpusRecordBubble("dialogue-update", best, "", prev, iteration); } catch { }
+                                _lastTranslatedText = best;
+                                string scrollUpd = best;
+                                _ = PublishUpdateAsync(prev, scrollUpd, iteration, "upd-scroll");
+                            }
+                            else
+                            {
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=scroll-line (shift-confirmed line posts)");
+                                try { CorpusRecordBubble("dialogue-decision:scroll-line", best, "", "", iteration); } catch { }
+                                _lastTranslatedText = best;
+                                string scrollText = best;
+                                _ = PublishDecisionAsync(scrollText, iteration, "scroll");
+                            }
+                            st.Fired = true;
+                        }
+                    }
+                    catch { }
+                }
+                try
+                {
+                    if (_scrollLines.Count > 60)
+                    {
+                        var drop = new System.Collections.Generic.List<string>();
+                        foreach (var kv in _scrollLines)
+                        {
+                            if (iteration - kv.Value.LastLoop > 300) drop.Add(kv.Key);
+                            if (drop.Count >= _scrollLines.Count - 60) break;
+                        }
+                        foreach (var k in drop) _scrollLines.Remove(k);
+                    }
+                }
+                catch { }
+            }
+            catch { }
         }
 
         private static bool IsIncompleteSacrifice(string text)
