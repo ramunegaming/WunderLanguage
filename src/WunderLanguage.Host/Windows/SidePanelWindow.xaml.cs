@@ -655,12 +655,12 @@ namespace WunderLanguage.Host.Windows
                 // translation, sim untouched. Revert: delete ring + blocks.
                 try
                 {
-                    string incomingStripped = StripOverlapPunct(StripSpaces(japanese));
+                    string incomingStripped = ConFold(StripOverlapPunct(StripSpaces(japanese)));
                     for (int ri = _bubbleRing.Count - 1; ri >= 0; ri--)
                     {
                         var rb = _bubbleRing[ri];
                         if (GapSeconds(rb.time, stamp) > 15) continue;
-                        string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
+                        string shownStripped = ConFold(StripOverlapPunct(StripSpaces(rb.jaRaw)));
                         if (shownStripped.Length < 6 || incomingStripped.Length < 6) continue;
                         if (incomingStripped.Length - shownStripped.Length >= 6
                             && incomingStripped.StartsWith(shownStripped, System.StringComparison.Ordinal))
@@ -816,7 +816,7 @@ namespace WunderLanguage.Host.Windows
         {
             try
             {
-                string incomingStripped = StripOverlapPunct(StripSpaces(japanese));
+                string incomingStripped = ConFold(StripOverlapPunct(StripSpaces(japanese)));
                 if (incomingStripped.Length < 12) return;
                 var dropIdx = new System.Collections.Generic.List<int>();
                 for (int ri = 0; ri < _bubbleRing.Count; ri++)
@@ -824,7 +824,7 @@ namespace WunderLanguage.Host.Windows
                     var rb = _bubbleRing[ri];
                     if (ReferenceEquals(rb.ja, keep)) continue;
                     if (GapSeconds(rb.time, stamp) > 15) continue;
-                    string shownStripped = StripOverlapPunct(StripSpaces(rb.jaRaw));
+                    string shownStripped = ConFold(StripOverlapPunct(StripSpaces(rb.jaRaw)));
                     if (shownStripped.Length < 6) continue;
                     if (incomingStripped.Length - shownStripped.Length >= 6
                         && incomingStripped.Contains(shownStripped, System.StringComparison.Ordinal))
@@ -1079,6 +1079,42 @@ namespace WunderLanguage.Host.Windows
                     .Replace("…", "").Replace("．", "").Replace(".", "");
             }
             catch { return text ?? ""; }
+        }
+
+        private static System.Collections.Generic.Dictionary<char, char>? _conFold;
+        private static string ConFold(string text)
+        {
+            // Confusion-fold for MATCHING only (display/history stay raw):
+            // map inventoried visual-confusion pairs to one canonical side
+            // so wobble variants (ナジ/ナゾ, ささば/ささげ) compare equal.
+            // Uses the live Loop2 inventory (game-blind, evidenced); never
+            // rewrites text. Falls back to input on any failure.
+            try
+            {
+                _conFold ??= BuildConFold();
+                if (_conFold.Count == 0) return text ?? "";
+                var sb = new System.Text.StringBuilder((text ?? "").Length);
+                foreach (char c in text ?? "")
+                    sb.Append(_conFold.TryGetValue(c, out char u) ? u : c);
+                return sb.ToString();
+            }
+            catch { return text ?? ""; }
+        }
+
+        private static System.Collections.Generic.Dictionary<char, char> BuildConFold()
+        {
+            var d = new System.Collections.Generic.Dictionary<char, char>();
+            try
+            {
+                foreach (var (a, b) in Capture.CaptureController.ConfusionPairs)
+                {
+                    char canon = a < b ? a : b;
+                    if (!d.ContainsKey(a)) d[a] = canon;
+                    if (!d.ContainsKey(b)) d[b] = canon;
+                }
+            }
+            catch { }
+            return d;
         }
 
         private static int GapSeconds(string before, string after)
