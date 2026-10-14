@@ -102,7 +102,7 @@ Intro measured (28/28 sim); battle/menu/decision coverage needs a focused sessio
 ShowTranslation revises the shown bubble when a fire strictly extends it within 4s (display-only; capture/translation/sim untouched). Superseded by B16b below (arrival-order merging proven insufficient against async races — same revert covers both).
 
 ### B16b. Order-independent bubble absorption (revert: revert absorb-ring)
-Ring of recent plain bubbles with element refs: extending fires revise, covered fires drop, updates fold other contained bubbles. Strict containment +6, 15s window (translation variance measured ~9s live), battle/menu excluded. Still needed: live screenshot proof (single bubble on typewriter, absorb-* lines in log).
+Ring of recent plain bubbles with element refs: extending fires revise, covered fires drop, updates fold other contained bubbles. Strict containment +6, 15s window (translation variance measured ~9s live), battle/menu excluded. Follow-up confold (revert: revert confold-match): comparisons fold Loop2 confusion pairs (wobble-tolerant absorption; display stays raw). Still needed: live screenshot proof (single bubble on typewriter, absorb-* lines in log).
 
 ## Planned
 
