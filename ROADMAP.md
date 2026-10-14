@@ -92,6 +92,9 @@ CAT 4-bit quantize load segfaults ~140s after start (2 live deaths + 1 idle repr
 ### W2. Paper Mario baseline play triage follow-ups
 Intro measured (28/28 sim); battle/menu/decision coverage needs a focused session without focus loss.
 
+### B16. One-bubble growth merge (revert: revert growth-merge)
+ShowTranslation revises the shown bubble when a fire strictly extends it within 4s (display-only; capture/translation/sim untouched). Wobbly completions arrive via the exact-match update path. Still needed: live screenshot proof (single revised bubble on typewriter + [panel] growth-merge line).
+
 ## Planned
 
 ### P2. Dictionary experiment (Step 3)
