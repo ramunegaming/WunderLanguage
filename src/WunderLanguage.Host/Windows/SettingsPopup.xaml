@@ -1,0 +1,58 @@
+<Window x:Class="WunderLanguage.Host.Windows.SettingsPopup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="340" Width="380"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Topmost="True"
+        Background="{StaticResource BackgroundBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Translation Settings" FontSize="18" FontWeight="Bold"
+                   Foreground="{StaticResource TextBrush}" Margin="0,0,0,16"/>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <RadioButton x:Name="DeepLRadio" Grid.Column="0" GroupName="Provider" VerticalAlignment="Center" Checked="ProviderChanged"
+                             Content="DeepL (higher accuracy, needs your own free API key)"
+                             Foreground="{StaticResource TextBrush}"/>
+                <Button x:Name="RemoveKeyButton" Grid.Column="1" Content="✕" Padding="8,2" Margin="8,0,0,0"
+                        Click="RemoveKey_Click" ToolTip="Remove saved API key and enter a new one"
+                        Visibility="Collapsed"/>
+            </Grid>
+            <TextBlock x:Name="KeySavedText" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8"
+                       Text="API key saved ✓" Visibility="Collapsed"/>
+            <RadioButton x:Name="OfflineRadio" GroupName="Provider" Checked="ProviderChanged"
+                         Content="CAT-Translate 3.3b (offline, no signup, lower accuracy)"
+                         Foreground="{StaticResource TextBrush}"/>
+            <TextBlock Text="Menu display" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Margin="0,12,0,4"/>
+            <RadioButton x:Name="MenuTextRadio" GroupName="MenuDisplay" Content="Text list (accurate)"
+                         Foreground="{StaticResource TextBrush}"/>
+            <RadioButton x:Name="MenuAsciiRadio" GroupName="MenuDisplay" Content="ASCII box (same positions as game, high risk of errors)"
+                         Foreground="{StaticResource TextBrush}"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" x:Name="DeepLKeyPanel" Margin="0,0,0,12">
+            <TextBlock Text="DeepL API Key" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4"/>
+            <PasswordBox x:Name="ApiKeyBox" Padding="8"/>
+            <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource SubtleTextBrush}" Margin="0,4,0,0"
+                       Text="Get a free key at deepl.com/pro-api (500,000 chars/month free)"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Recalibrate" Padding="14,8" Margin="0,0,8,0" Click="Recalibrate_Click"/>
+            <Button Content="Cancel" Padding="14,8" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button Content="Save" Padding="18,8" Background="{StaticResource AccentBrush}"
+                    Foreground="White" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
