@@ -1,6 +1,15 @@
 venv/
+ocr-service/venv/
 __pycache__/
 bin/
 obj/
 .vs/
 *.user
+*.bat
+translation_cache.json
+*.log
+troubleshoot/
+dumps/
+*.pyc
+.vscode/
+.idea/
