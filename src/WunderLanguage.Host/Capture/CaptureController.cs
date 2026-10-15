@@ -65,8 +65,24 @@ namespace WunderLanguage.Host.Capture
             _gameId = "sim";
             try { _costFlushAt = _clock.GetUtcNow(); } catch { }
         }
-        private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire")
+        private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire", int ev = 0)
         {
+            // B19 fire-history (revert: revert fire-hist): cross-road
+            // double-fires (weak-hold 105 + scroll 106 posting identical
+            // そこで 1s apart) die here, pre-translate, in sim AND live
+            // (single choke — all roads funnel here; updates excluded).
+            // Ordering-safe: recorded synchronously, so same-loop twins
+            // meet regardless of translation completion order.
+            try
+            {
+                if (FireHistoryCovers(ja, loop))
+                {
+                    FileLogger.Log($"[publish] history-parked for \"{Truncate(ja)}\" (covered by recent fire)");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch { }
+            try { RecordFire(ja, ev, loop); } catch { }
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             // Title-hardening clock (2026-10-11): every stability fire
             // stamps recency; the quiet-title veto below refuses TITLE
@@ -425,6 +441,23 @@ namespace WunderLanguage.Host.Capture
             public int LastLoop;
         }
         private readonly System.Collections.Generic.Dictionary<string, ScrollLineState> _scrollLines = new(System.StringComparer.Ordinal);
+        // B19 variant consolidation (2026-10-16, live: 900/封印は twins both
+        // posted, そこで cross-road double-post, イグニュー ghost flushed,
+        // 164-full never fired while truncated did). Four shared mechanisms:
+        // (1) fire-history ring: identical/folded-identical/containment vs
+        // recent fires (loop window, not wall — sim runs without wall waits)
+        // parks cross-road double-fires no single-slot gate can see;
+        // (2) sweep twin-park: same-batch twins keep max-evidence only;
+        // (3) freshest-extension: growth fires the extraction when it
+        // folded-extends the candidate (one-loop lag killed 164-full);
+        // (4) blank-flush corroboration: uncorroborated held lines don't
+        // publish (omission over misteaching). Reverts: revert fire-hist,
+        // revert twin-sweep, revert fresh-ext, revert blank-corrob.
+        private readonly System.Collections.Generic.List<(string text, int ev, int loop)> _recentFires = new();
+        private const int FireHistoryLoopWindow = 10;
+        private const int FireHistoryCap = 8;
+        private readonly System.Collections.Generic.List<(string text, int loop)> _recentExtracted = new();
+        private const int ExtractedRingCap = 25;
         // R1 oscillation memory: previously shown line (one slot). A stable candidate matching _prev
         // while another line is shown = same-box A-B-A flicker; the middle fire was the intruder.
         // Updated on every new-bubble path below; update-in-place paths keep lineage (untouched).
@@ -1143,7 +1176,8 @@ namespace WunderLanguage.Host.Capture
                         if (_candidateStableCount >= RequiredStableReadings && !string.IsNullOrEmpty(_candidateText) && !_frameIsTitle
                             && _candidateText != _lastTranslatedText
                             && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText) && !IsScrollBlend(_candidateText) && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText))
+                            && !IsEllipsisOnly(_candidateText) && !IsJunkOcr(_candidateText) && !IsScrollBlend(_candidateText) && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
+                            && Corroborated(_candidateText, iteration))
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-blank (publishing held line)");
                             _lastTranslatedText = _candidateText;
@@ -1255,6 +1289,23 @@ namespace WunderLanguage.Host.Capture
                                     || _candidateText.Contains(_lastTranslatedText, StringComparison.Ordinal));
                             bool breakthroughOwns = _candidateStableCount >= RequiredStableReadings
                                 && IsCompleteDialogueLine(_candidateText);
+                            // B19 fresh-ext (revert: revert fresh-ext): pick
+                            // the fired text BEFORE gating — a folded strict
+                            // extension is the same line grown (164-full
+                            // extends 163-もう modulo ささば/ささげ confold),
+                            // not a competitor. Gating on the stale
+                            // candidate instead self-suppresses (fired もう
+                            // blocks full at 1.0). Fire the growth, lag zero.
+                            string growthFire = _candidateText;
+                            try
+                            {
+                                if (FoldedExtends(extractedText, _candidateText))
+                                {
+                                    growthFire = extractedText;
+                                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast-fresh (firing grown extraction, not lagged candidate)");
+                                }
+                            }
+                            catch { growthFire = _candidateText; }
                             // B14 split-post reduction REVERTED 2026-10-14: the
                             // stall requirement broke the prefix-prime chain
                             // (update-in-place needs lastTranslated primed by
@@ -1263,13 +1314,13 @@ namespace WunderLanguage.Host.Capture
                             // only the misread prefix posted). Transient
                             // prefixes are the visible cost of corrections.
                             if (!updateOwns && !breakthroughOwns
-                                && StripForOverlap(_candidateText).Length >= 6
-                                && HasJapanese(_candidateText) && !IsJunkOcr(_candidateText)
-                                && !IsEllipsisOnly(_candidateText) && !IsScrollBlend(_candidateText)
-                                && !IsZeldaTransitionBlend(_candidateText)
-                                && !IsIncompleteSacrifice(_candidateText) && !_frameIsTitle
-                                && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                                && StripForOverlap(growthFire).Length >= 6
+                                && HasJapanese(growthFire) && !IsJunkOcr(growthFire)
+                                && !IsEllipsisOnly(growthFire) && !IsScrollBlend(growthFire)
+                                && !IsZeldaTransitionBlend(growthFire)
+                                && !IsIncompleteSacrifice(growthFire) && !_frameIsTitle
+                                && ComputeSimilarity(growthFire, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(growthFire, StringComparison.Ordinal)))
                             {
                                 // Lineage note: sets _lastTranslatedText only
                                 // (update road + dupe gates need it).
@@ -1279,10 +1330,9 @@ namespace WunderLanguage.Host.Capture
                                 // real turns within 3 loops read as intruders
                                 // (measured: 6 pageturn misses, 2026-10-10).
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast (prefix posts now, completion via update)");
-                                try { CorpusRecordBubble("dialogue-decision:growth-fast", _candidateText, "", "", iteration); } catch { }
-                                _lastTranslatedText = _candidateText;
-                                string growthText = _candidateText;
-                                _ = PublishDecisionAsync(growthText, iteration, "growth");
+                                try { CorpusRecordBubble("dialogue-decision:growth-fast", growthFire, "", "", iteration); } catch { }
+                                _lastTranslatedText = growthFire;
+                                _ = PublishDecisionAsync(growthFire, iteration, "growth");
                             }
                             // Flash-post (pair-2): a stable fragment absorbed by
                             // growth was really shown (telepathy flashes). Post
@@ -2046,6 +2096,15 @@ namespace WunderLanguage.Host.Capture
                     if (extractedText.Length > 150)
                         FileLogger.Log($"[loop {iteration}] [longbox] len={extractedText.Length} \"{Truncate(extractedText, 60)}\"");
                     try { MineCorrection(rawTrim, extractedText); } catch { }
+                    // B19 blank-corrob trailing ring (revert: revert blank-corrob):
+                    // every loop's finalized extraction, for flush corroboration.
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(extractedText))
+                            _recentExtracted.Add((extractedText, iteration));
+                        while (_recentExtracted.Count > ExtractedRingCap) _recentExtracted.RemoveAt(0);
+                    }
+                    catch { }
                     try { CorpusRecordOcr(iteration, rawTrim, ocrBlocks, extractedText, remembered != null); } catch { }
                     // Phase 1a probe only: shape signal for menus/titles, dialogue path below unchanged.
                     try
@@ -3039,7 +3098,18 @@ namespace WunderLanguage.Host.Capture
                         ScrollLineState? st = null;
                         if (!_scrollLines.TryGetValue(key, out st))
                         {
-                            foreach (var kv in _scrollLines)
+                            // B19 determinism (revert: revert twin-sweep):
+                            // lineage first-match must not depend on
+                            // Dictionary (hash-randomized per process)
+                            // iteration order — sort snapshot by key.
+                            System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, ScrollLineState>>? matchOrder = null;
+                            try
+                            {
+                                matchOrder = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, ScrollLineState>>(_scrollLines);
+                                matchOrder.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+                            }
+                            catch { matchOrder = null; }
+                            foreach (var kv in matchOrder ?? (System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, ScrollLineState>>)_scrollLines)
                             {
                                 try
                                 {
@@ -3059,11 +3129,17 @@ namespace WunderLanguage.Host.Capture
                             _scrollLines[key] = st;
                             if (_scrollLines.Count > 300)
                             {
+                                // Deterministic eviction (B19 twin-sweep
+                                // revert): oldest fired, key-tiebreak — raw
+                                // Dictionary order is hash-randomized.
                                 string? drop = null;
                                 int oldest = int.MaxValue;
+                                string oldestKey = "";
                                 foreach (var kv in _scrollLines)
                                 {
-                                    if (kv.Value.Fired && kv.Value.LastLoop < oldest) { oldest = kv.Value.LastLoop; drop = kv.Key; }
+                                    if (kv.Value.Fired && (kv.Value.LastLoop < oldest
+                                        || (kv.Value.LastLoop == oldest && string.CompareOrdinal(kv.Key, oldestKey) < 0)))
+                                    { oldest = kv.Value.LastLoop; oldestKey = kv.Key; drop = kv.Key; }
                                 }
                                 if (drop != null) _scrollLines.Remove(drop);
                             }
@@ -3099,7 +3175,25 @@ namespace WunderLanguage.Host.Capture
                 // Scroll-out sweep: lines are gone (no block matched them
                 // this loop), so evaluate disappearance HERE — matched
                 // entries above can never be gone by construction.
-                foreach (var kv in _scrollLines)
+                // B19 twin-sweep (revert: revert twin-sweep): evaluate in
+                // evidence order (Sightings desc) so same-batch twins
+                // (900-garbage ev~2 vs 封印は-correct ev~7) meet
+                // best-evidenced-first; the twin-park clause below then
+                // keeps max evidence. Ties break deterministic (key).
+                var sweepOrder = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, ScrollLineState>>(_scrollLines);
+                try
+                {
+                    sweepOrder.Sort((a, b) =>
+                    {
+                        int c = b.Value.Sightings.CompareTo(a.Value.Sightings);
+                        if (c != 0) return c;
+                        c = b.Value.ConsecSame.CompareTo(a.Value.ConsecSame);
+                        if (c != 0) return c;
+                        return string.CompareOrdinal(a.Key, b.Key);
+                    });
+                }
+                catch { }
+                foreach (var kv in sweepOrder)
                 {
                     try
                     {
@@ -3206,12 +3300,20 @@ namespace WunderLanguage.Host.Capture
                         }
                         else if (!string.IsNullOrEmpty(_lastTranslatedText)
                             && (_lastTranslatedText.Contains(best, System.StringComparison.Ordinal)
+                                || FireHistoryCovers(best, iteration)
                                 || ComputeSimilarity(best, _lastTranslatedText) >= NearDuplicateSimilarityThreshold
                                 || (_lastOcrTotal >= 4 && _lastOcrContent == 0
                                     && !string.IsNullOrEmpty(_lastOcrText)
                                     && ComputeSimilarity(_lastOcrText, best) >= 0.80)))
                         {
                             // Already shown / dupe / contentless: park (normal roads unaffected).
+                            st.Fired = true;
+                        }
+                        else if (TwinParked(best, st.Sightings, iteration))
+                        {
+                            // B19 same-batch twin (revert: revert twin-sweep):
+                            // a better-evidenced twin already fired — keep it.
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=twin-parked (less-evidenced twin holds)");
                             st.Fired = true;
                         }
                         else if (!titleParked)
@@ -3244,7 +3346,7 @@ namespace WunderLanguage.Host.Capture
                                 try { CorpusRecordBubble("dialogue-decision:scroll-line", best, "", "", iteration); } catch { }
                                 _lastTranslatedText = best;
                                 string scrollText = best;
-                                _ = PublishDecisionAsync(scrollText, iteration, "scroll");
+                                _ = PublishDecisionAsync(scrollText, iteration, "scroll", st.Sightings);
                             }
                             st.Fired = true;
                         }
@@ -3255,13 +3357,21 @@ namespace WunderLanguage.Host.Capture
                 {
                     if (_scrollLines.Count > 60)
                     {
-                        var drop = new System.Collections.Generic.List<string>();
+                        // Deterministic trim (B19 twin-sweep revert): stale
+                        // entries by (LastLoop, key) — raw Dictionary order
+                        // is hash-randomized per process.
+                        var stale = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, ScrollLineState>>();
                         foreach (var kv in _scrollLines)
                         {
-                            if (iteration - kv.Value.LastLoop > 300) drop.Add(kv.Key);
-                            if (drop.Count >= _scrollLines.Count - 60) break;
+                            if (iteration - kv.Value.LastLoop > 300) stale.Add(kv);
                         }
-                        foreach (var k in drop) _scrollLines.Remove(k);
+                        int over = _scrollLines.Count - 60;
+                        if (over > 0 && stale.Count > 0)
+                        {
+                            try { stale.Sort((a, b) => { int c = a.Value.LastLoop.CompareTo(b.Value.LastLoop); return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key); }); } catch { }
+                            for (int di = 0; di < over && di < stale.Count; di++)
+                            { try { _scrollLines.Remove(stale[di].Key); } catch { } }
+                        }
                     }
                 }
                 catch { }
@@ -3669,7 +3779,44 @@ namespace WunderLanguage.Host.Capture
         // published text): map inventoried visual-confusion pairs to one
         // canonical side so wobble variants compare equal. Shared by the
         // panel (internal consumers) — one source of truth for the Loop2
-        // inventory. Revert with its callers.
+        // inventory. DETERMINISM (B19, 2026-10-16, convicted by sim: chars
+        // in multiple pairs — げ×3, 賢×3, 封×7, Ｂ×4 — folded by
+        // first-HashSet-hit, so ささげ vs ささば compared unequal or equal
+        // depending on process HashSet order; 164-full's extension misfired
+        // in sim). Canonical = min over the full connected set (closure),
+        // built once, sorted — identical in every process. Revert with
+        // its callers.
+        private static readonly System.Collections.Generic.Dictionary<char, char> _conFoldMap = BuildConFoldMap();
+        private static System.Collections.Generic.Dictionary<char, char> BuildConFoldMap()
+        {
+            var parent = new System.Collections.Generic.Dictionary<char, char>();
+            char Find(char c)
+            {
+                if (!parent.TryGetValue(c, out char p)) { parent[c] = c; return c; }
+                if (p == c) return c;
+                char r = Find(p);
+                parent[c] = r;
+                return r;
+            }
+            void Union(char a, char b)
+            {
+                char ra = Find(a), rb = Find(b);
+                if (ra == rb) return;
+                if (ra < rb) parent[rb] = ra; else parent[ra] = rb;
+            }
+            var ordered = new System.Collections.Generic.List<(char, char)>(ConfusionPairs);
+            try { ordered.Sort((x, y) => x.Item1 != y.Item1 ? x.Item1.CompareTo(y.Item1) : x.Item2.CompareTo(y.Item2)); } catch { }
+            foreach (var (a, b) in ordered) { try { Union(a, b); } catch { } }
+            var canon = new System.Collections.Generic.Dictionary<char, char>();
+            try
+            {
+                var groups = new System.Collections.Generic.Dictionary<char, char>();
+                foreach (var kv in parent) groups[kv.Key] = Find(kv.Key);
+                foreach (var kv in groups) canon[kv.Key] = kv.Value;
+            }
+            catch { }
+            return canon;
+        }
         internal static string ConFoldText(string t)
         {
             try
@@ -3677,18 +3824,116 @@ namespace WunderLanguage.Host.Capture
                 if (string.IsNullOrEmpty(t)) return t ?? "";
                 var sb = new System.Text.StringBuilder(t.Length);
                 foreach (char c in t)
-                {
-                    char u = c;
-                    foreach (var (a, b) in ConfusionPairs)
-                    {
-                        if (c == a) { u = a < b ? a : b; break; }
-                        if (c == b) { u = a < b ? a : b; break; }
-                    }
-                    sb.Append(u);
-                }
+                    sb.Append(_conFoldMap.TryGetValue(c, out char u) ? u : c);
                 return sb.ToString();
             }
             catch { return t ?? ""; }
+        }
+
+        // B19 history-ring helpers (revert: revert fire-hist).
+        // RecordFire is the single choke: every PublishDecisionAsync call
+        // records synchronously pre-translate, so same-loop double-fires
+        // (weak-hold + scroll firing identical そこで 1s apart) see each
+        // other regardless of translation completion order. Updates never
+        // record (revisions must flow). Loop window (not wall): sim loops
+        // execute back-to-back, so wall time would cover a whole sim run.
+        private void RecordFire(string text, int ev, int loop)
+        {
+            try
+            {
+                _recentFires.Add((text ?? "", ev, loop));
+                while (_recentFires.Count > FireHistoryCap) _recentFires.RemoveAt(0);
+            }
+            catch { }
+        }
+        // Identical (exact or folded) or contained-in-history: this fire
+        // adds nothing over a recent post. Direction matters: incoming
+        // CONTAINED in shown parks (late prefix); incoming CONTAINING shown
+        // is growth and must fire (typewriter completion).
+        private bool FireHistoryCovers(string text, int loop)
+        {
+            try
+            {
+                string inc = StripForOverlap(text ?? "");
+                if (inc.Length < 6) return false;
+                string incFold = ConFoldText(inc);
+                foreach (var (ft, fev, fl) in _recentFires)
+                {
+                    if (loop - fl > FireHistoryLoopWindow) continue;
+                    string shown = StripForOverlap(ft ?? "");
+                    if (shown.Length < 6) continue;
+                    if (shown == inc || ConFoldText(shown) == incFold) return true;
+                    if (shown.Contains(inc, System.StringComparison.Ordinal)) return true;
+                    if (ConFoldText(shown).Contains(incFold, System.StringComparison.Ordinal)) return true;
+                    // Near-dupe of an older (not just last) fire: same line
+                    // re-firing through another road (FFVI-tested 0.85 bar,
+                    // same as the scroll gate; battle composites never reach
+                    // here — battleFrame-excluded in the sweep).
+                    if (ComputeSimilarity(text ?? "", ft ?? "") >= NearDuplicateSimilarityThreshold) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        // Twin-park (revert: revert twin-sweep): same-batch OCR twins
+        // (900-garbage vs 封印は-correct, wsim 0.58) keep max evidence.
+        // Bar 0.55 weighted: catches P1 0.58 / P2 0.69 / P6 0.68, misses
+        // N9 overlap-competitors 0.48 and all distinct pairs (≤0.15
+        // intro, ≤0.45 PM; FFVI battle composites are sweep-excluded by
+        // the battleFrame gate). STRICTLY-less-than: ties and
+        // better-evidenced incoming always fire (never suppress the
+        // better reading; worst case is a double post, never a kill).
+        private bool TwinParked(string text, int ev, int loop)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(text)) return false;
+                foreach (var (ft, fev, fl) in _recentFires)
+                {
+                    if (loop - fl > FireHistoryLoopWindow) continue;
+                    if (string.IsNullOrEmpty(ft) || ft == text) continue;
+                    if (WeightedSimilarity(text, ft) >= 0.55 && ev < fev) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        // Freshest-extension (revert: revert fresh-ext): a folded strict
+        // extension is the same line grown (164-full extends 163-もう
+        // modulo ささば/ささげ confold), not a competitor — fire it, don't
+        // lag one loop behind.
+        private static bool FoldedExtends(string longer, string shorter)
+        {
+            try
+            {
+                string l = ConFoldText(StripForOverlap(longer ?? ""));
+                string s = ConFoldText(StripForOverlap(shorter ?? ""));
+                return l.Length > s.Length && s.Length >= 6
+                    && l.StartsWith(s, System.StringComparison.Ordinal);
+            }
+            catch { return false; }
+        }
+        // Blank-flush corroboration (revert: revert blank-corrob): a held
+        // line nobody re-read (173-ghost, sighted once) doesn't publish on
+        // blank (omission over misteaching). Form bar = FuzzyAdoptSim
+        // (adopt-level similarity = same form). Zero legit blank-flushes
+        // in banked corpora to break; live misses revert this.
+        private bool Corroborated(string text, int loop)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(text)) return false;
+                int n = 0;
+                foreach (var (et, el) in _recentExtracted)
+                {
+                    if (loop - el > 20) continue;
+                    if (string.IsNullOrEmpty(et)) continue;
+                    if (WeightedSimilarity(et, text) >= ThresholdProfiles.FuzzyAdoptSim) n++;
+                    if (n >= 2) return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         // GAME OVER pack: fixed screen (big GAME OVER + 3 セーブ rows, often
