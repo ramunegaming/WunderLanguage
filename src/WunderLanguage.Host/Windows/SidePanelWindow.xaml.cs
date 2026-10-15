@@ -1082,40 +1082,12 @@ namespace WunderLanguage.Host.Windows
             catch { return text ?? ""; }
         }
 
-        private static System.Collections.Generic.Dictionary<char, char>? _conFold;
         private static string ConFold(string text)
         {
-            // Confusion-fold for MATCHING only (display/history stay raw):
-            // map inventoried visual-confusion pairs to one canonical side
-            // so wobble variants (ナジ/ナゾ, ささば/ささげ) compare equal.
-            // Uses the live Loop2 inventory (game-blind, evidenced); never
-            // rewrites text. Falls back to input on any failure.
-            try
-            {
-                _conFold ??= BuildConFold();
-                if (_conFold.Count == 0) return text ?? "";
-                var sb = new System.Text.StringBuilder((text ?? "").Length);
-                foreach (char c in text ?? "")
-                    sb.Append(_conFold.TryGetValue(c, out char u) ? u : c);
-                return sb.ToString();
-            }
+            // Single source of truth lives on the controller (Loop2
+            // inventory); this wrapper keeps call sites unchanged.
+            try { return Capture.CaptureController.ConFoldText(text ?? ""); }
             catch { return text ?? ""; }
-        }
-
-        private static System.Collections.Generic.Dictionary<char, char> BuildConFold()
-        {
-            var d = new System.Collections.Generic.Dictionary<char, char>();
-            try
-            {
-                foreach (var (a, b) in Capture.CaptureController.ConfusionPairs)
-                {
-                    char canon = a < b ? a : b;
-                    if (!d.ContainsKey(a)) d[a] = canon;
-                    if (!d.ContainsKey(b)) d[b] = canon;
-                }
-            }
-            catch { }
-            return d;
         }
 
         private static int GapSeconds(string before, string after)
