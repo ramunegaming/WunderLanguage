@@ -12,7 +12,7 @@ Project-wide disciplines that came out of the reading:
 - Panel proof over compile proof; new drift needs cited truth (log/panel/screenshot).
 - Corpora under `%AppData%\WunderLanguage\corpus\` are never rewritten.
 - One thing at a time; every batch ships a revert phrase.
-- Governing principles (user, 2026-10-08 — gate every change):
+- Governing principles (gate every change):
   1. Scalability: untested future games playable with zero personal
      intervention. Pack-scoped or game-blind work only.
   2. Reliability: accurate reads, accurate translations, posts landing
@@ -223,8 +223,7 @@ rule). Revisit only on evidence:**
   0 errors. Attribution join lost (replay wiped app.log before backup —
   procedure fix: backup-before-replay unconditional). Fires: 54, of which
   ~40 score exact-or-trivially-off vs the script; systematic リンク→
-  あいうく-class misreads noted, NO script-sourced string fixes per user
-  directive (script is verification oracle only).
+  あいうく-class misreads noted, NO script-sourced string fixes (script is verification oracle only).
 - Turned-page rescue PROVEN live: 23 flush-on-pageturn publishes, incl.
   Zelda's dungeon page and uncle page 1. Fragment-hold: 4 kills, no
   escapes. Title: 58 quiet watches, 0 publishes — still starving.
@@ -324,7 +323,7 @@ rule). Revisit only on evidence:**
   framework stays game-blind. Veto text negatives re-targeted to
   text-bearing non-dialogue: item menu, PLAYER SELECT, logo/copyright.
   Vetoes stay queued.
-- Zelda textbox sprite map (user spec 2026-10-08, from chat images —
+- Zelda textbox sprite map (from chat images —
   sprites, NOT font glyphs; handling needs sprite detection, queued as
   sidecar+host feature, NOT implemented): heart pickup → emit "<3"
   inline; sign left-arrow → "<-"; sign down-arrow → "↓" (U+2193);
@@ -388,7 +387,7 @@ rule). Revisit only on evidence:**
     that were right; neighbor-line soup). Mechanism: dialogue line spacing
     ≈ margin size, so +10px eats the next line. Edge-cuts stand; next
     shape (if ever): background-only expansion, unscoped.
-- Zelda inventory geometry (user SVG 2026-10-08, zelda-inventory.svg;
+- Zelda inventory geometry (SVG 2026-10-08, zelda-inventory.svg;
   normalized to game frame): ITEM (0.037,0.070,0.573,0.485), item-name
   (0.666,0.070,0.295,0.187) — the ONLY changing text (カンテラ/
   ブーメラン/… by selected item), pendant (0.666,0.274,0.295,0.284),
@@ -552,8 +551,7 @@ rule). Revisit only on evidence:**
   突っこむサコ/かまっな/鹿野アニマー/アニマー/サルシェ/どうとうこの.
   Both cited lines repair exactly to on-screen truth, idempotent, no
   cross-fire. Build +0/0; replay 0 / 263-identical. Revert: drop the 7
-  pairs. Name pins (Biggs/Wedge/Terra…) NOT touched — EN forms need
-  user say (Matthew precedent). Glossary gaps (gilded, High Vor ion)
+  pairs. Name pins (Biggs/Wedge/Terra…) NOT touched (Matthew precedent). Glossary gaps (gilded, High Vor ion)
   stay in translation-quality queue (exact-match-only policy intact).
 - Title weak-hold guard SHIPPED: publish-weak-hold now requires
   !_frameIsTitle (pageturn-flush precedent; loop-64 title-screen publish
@@ -562,10 +560,10 @@ rule). Revisit only on evidence:**
   reads EMPTY (total=0) so the flag was false at the cited loops — the
   empty-logo-title gap stays queued (quiet-watch interaction unscoped).
   Revert: delete the conjunct.
-- Manual name pins SHIPPED (12 entries, user-cited official manual
+- Manual name pins SHIPPED (12 entries, official manual
   literal EN): Tina/Lock/Mog/Edgar/Mash/Cayenne/Gau/Celes/Setzer/
   Shadow/Stragus/Relm. Mash REPLACES the earlier Matthew pin per the
-  same user decision. Mechanism confirmed (TryBattleGlossary exact
+  same. Mechanism confirmed (TryBattleGlossary exact
   match on menu/battle rows); merged rows stay live (known boundary).
   Wedge/Biggs NOT pinned (absent from manual pages — no source, no
   pin). Replay 0 / 263-identical. Revert: restore Matthew pin, drop
@@ -689,7 +687,7 @@ corpora predate c/n/s/d banking (conf=1.0 default, src/div
 absent — per-block quality analysis needs newer corpora);
 TRUE recall (text on screen, zero boxes) needs frames — queued
 as the banked-frame audit protocol for next play (settle-eval
-persists; sample offline, user confirms misses).
+persists; sample offline).
 Verdict: detection looks healthy on every text-present read;
 no recall failure cited → NO behavior change. Bottleneck 7
 closed pending the play-time frame audit. Revert: revert b7
@@ -712,7 +710,7 @@ off. Pack-authoring checklist (fill order by value): 1.
 Signatures (2–7 proper nouns, unlocks routing) 2. Title
 triple 3. Ocr/DisplayFixups (miner-as-pack-data) 4. Battle/
 monster/item vocabs (splitters + fuzzy) 5. BattleGlossary
-(no-burn chrome) 6. NameGlossary (official EN, user-sourced)
+(no-burn chrome) 6. NameGlossary (official EN)
 7. WeaponLabels 8. Vision calibration last (learning estimates,
 publish requires). Replay parity 0/263 (override is sim-only).
 Revert: revert b8-coldstart.
@@ -747,7 +745,7 @@ NE 0.35/0.18, BUDGET-OK. Per-kind: publishnew @1, pageturn
 the B6 entry: simLag means 30.6/15.9 were first-seen artifacts
 (repeated JA across scenes, max=704); run-based definition
 gives ~2 loops. B6 NE numbers stand.
-Mash verdict (user's fear): typical dialogue posts ~1s after
+Mash verdict: typical dialogue posts ~1s after
 appearing (p50=2 loops); worst measured ~10s (max 21);
 catch-up flushes (dwell/flash/pageturn) exist for exactly the
 autoscroll case. New batches added ~zero (parity-proven).
@@ -756,13 +754,13 @@ Remaining latency work is live-only: wall-clock conversion
 scaling (no hardware). Replay parity 0/263 throughout.
 Revert: revert b9-panellat.
 
-## keep-shots sentinel (user-requested, SHIPPED)
+## keep-shots sentinel
 `keep-shots.armed` next to `keep-log.armed`: present →
 troubleshoot/ shots accumulate across launches (newest 200
 kept, oldest pruned, one log line — bounded storage); absent
 → last-run-only wipe as before. Startup file handling only,
 zero pipeline touch. Armed-path live proof waits for an armed
-run (arming is the user's call — sentinel must be created in
+run (sentinel must be created in
 %AppData%/WunderLanguage). Replay parity 0/263.
 Revert: revert keep-shots.
 
@@ -790,14 +788,14 @@ runs are reliable — read simreplay results solo.
 Revert: revert b1-stain.
 
 ## B2 まどう action-menu variance (SHIPPED, live-triage batch 2)
-Cited (user + live 2026-10-10): slot 1 is not always たたかう —
+Cited (live 2026-10-10): slot 1 is not always たたかう —
 Magitek intro rows show まどう; panel posted まどう as "Wow"
 (CAT) and spell names as romaji garbage ("Kearu Faia").
 Fix (pack-scoped): まどう appended to FFVI BattleCommands
 (existing priority preserved); SplitActionRows indices floated
 (fight first, magic/item last-two — identical for all existing
 5-entry packs, new path only for FFVI's 6); glossary +Magitek/
-Cure/Fire (official EN, user corrects); ("まどう ?"→"まほう?")
+Cure/Fire (official EN); ("まどう ?"→"まほう?")
 fixup kept (doubt-suffixed only, clean rows unaffected);
 substring ContainsBattleCommand keeps glued rows action-side
 (remainder dropped once まどう matches). Magic menu verdict:
@@ -847,8 +845,7 @@ loop budget ≈ seconds budget at ~1s/loop p50 here):
 loop period 0.94/1.14s p50 (p95 4–7s tails); fire wall-lag FFVI
 p50 2.4s/p95 9.4/max 17.3, Zelda p50 9.1/p95 23.4/max 35.1;
 per-kind: publish-new 0.9–2.4s, pageturn 2.9–9.7s, weak-hold
-16.1s p50 / 35.1 max (Zelda only — the user's complaint,
-quantified); scroll ~1s. Translation per line (all sessions):
+16.1s p50 / 35.1 max (Zelda only); scroll ~1s. Translation per line (all sessions):
 CAT p50 3.0s/p95 8.6s/max 46s; DeepL-fallback p50 5.2s/p95
 28.5s/max 62s. End-to-end typical ≈ 5–12s (stability +
 translation); worst stacks to ~35+46s rare. CAT p95 is the
@@ -857,7 +854,7 @@ touched). Weak machines stretch loop period (unmeasured —
 no hardware). TITLE-5-min stays game-context-open. No product
 change (docs only). Revert: revert b5 (docs-only).
 
-## Growth-fast typewriter path (SHIPPED, user directive 2026-10-10)
+## Growth-fast typewriter path (SHIPPED 2026-10-10)
 Directive: everything posts (intro pages stayed empty whole
 sessions — fragments never reach count 3). Design from reads:
 growth branch posts the prefix NOW (first growth step onward);
@@ -1053,7 +1050,7 @@ Checklist order: signatures (5 evidenced proper nouns) → title
 triple (marker ペーパーマリオ, FullTitle, EN map) → fixups EMPTY
 (miner accrues; loop 1 promotes when shared) → vocabs (1 battle
 command ジャンプ + 4 item tabs, all evidenced) → glossaries
-EMPTY (EN unverified — user confirms) → vision neutral.
+EMPTY (EN unverified) → vision neutral.
 Registry routes ROM id/title/content votes; ScoreContent 3-way
 (ties keep current — strictly fewer switches, safe direction).
 Measured: FFVI sim identical (117/76/7/41); PM same-corpus
@@ -1144,8 +1141,8 @@ Banked for sprite build. Intro-as-latency-benchmark (AGREED):
 auto-advance + fast text = panellat stress. Banked.
 Revert: n/a (triage only).
 
-## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10, user-cited)
-User: cutscene/single-glimpse text never posts; errors in first
+## Bottleneck 10 — first-fire coverage (RECOGNIZED 2026-10-10)
+cutscene/single-glimpse text never posts; errors in first
 minutes; title must be recognized; vision ≤1 misteach/2hr.
 Measured: 64–71% of distinct reads are single-glimpse;
 complete+substantial unfired singletons 3/41/46 across 3
@@ -1166,22 +1163,21 @@ together — next measurable step); (d) LM fluency scoring
 Error-budget SLO proposed: ≤1 misteach/2hr play.
 Revert: n/a (report only — no code).
 
-## TITLE mistitle CONFIRMED (user 2026-10-10, game-context)
+## TITLE mistitle CONFIRMED (2026-10-10, game-context)
 Zelda 17:27:35 TITLE fired mid-gameplay, right after receiving
-the sword from the dying uncle — first-of-kind (user: never
+the sword from the dying uncle — first-of-kind (never
 seen before). Quiet-title logo detector mistook gameplay for
 logo screen (10 quiet loops, hint=True). Instance queued for
 title-path hardening (with loop-25 scroll-mid + 20:32 no-corpus
 instances). Needs shot/log context before scoping.
 
-## Strategic pivot (user 2026-10-10): game #3 = Paper Mario (480p)
+## Strategic pivot (2026-10-10): game #3 = Paper Mario (480p)
 
 ## Zelda title+intro shot verdicts (2026-10-10, 6 bundles — keeper+corpus)
 Session: 166 ocr / 4 bubbles (2 decisions + 2 fires) = ONE post
 for ~6 pages. Shots 1–4 (intro movie + throne): panel EMPTY
 ("Waiting for dialogue...") — intro-scroll gap CONFIRMED live
-(pages outrun stability; user memory of "working perfectly"
-was recognition fixups, a different layer). Shots 5–6: panel
+(pages outrun stability). Shots 5–6: panel
 shows the Agahnim page accurately but STALE across 2+ game
 pages (same bubble, game moved on) — mash failure mode.
 Mechanism (not translation backlog: [spend] FIRST SIGHTING —
@@ -1190,7 +1186,7 @@ scrolling reads never yield 2 similar loops → no candidate →
 all flush paths (need _candidateText) dead; the one post used
 publish-new, then nothing dislodged it. No TITLE in window
 (title skipped fast or quiet loops unmet — noted).
-Policy question for user (no build until answered): mashed
+Policy question: mashed
 content — (a) keep stale bubble (current), (b) fast-track
 current page (misteaching risk), (c) expire to empty on
 turn-evidence-without-fire (honest emptiness)? Recommending
@@ -1206,17 +1202,17 @@ pack detection (window title) → title triple → fixups (mined)
 upscale behavior re-verified on first corpus, perf watched
 (OCR tails already the open tail).
 
-## Zelda live run notes (2026-10-10, user — NO ACTION until FFVI run done)
+## Zelda live run notes (2026-10-10 — NO ACTION until FFVI run done)
 Three big issues observed:
 a) LATENCY — posts sometimes arrive ~5s+ late (open box, wait,
    shot, close, then it posts); one TITLE posted ~5 min late,
    minutes into gameplay.
 b) BLOCK SPLITTING — blocks cut off first/last words, or post
-   part then repeat it (copy). User hypothesis: Japanese-language
+   part then repeat it (copy). hypothesis: Japanese-language
    parameters so the pipeline better understands Japanese.
 c) HALLUCINATIONS — random dates, "this is japanese how should
    I translate"-class meta text.
-Zelda sprite/text spec (user, from chat screenshots):
+Zelda sprite/text spec (from chat screenshots):
 - 「 left bracket and 」 right bracket must post 1:1.
 - Decision arrow (white ▶): always marks a player-choice menu =
   a "decision" category box (alongside menu/title/in-game text);
@@ -1229,16 +1225,16 @@ Zelda sprite/text spec (user, from chat screenshots):
 - Link-face sprite (wanted poster etc.) → ignore, not text, no symbol.
 Status: recorded only. Triage + scoping after FFVI run.
 
-## FFVI live run notes (2026-10-10, user — triage now, both runs done)
+## FFVI live run notes
 Same 3 issues as Zelda: (a) latency, (b) half-block-then-repeat,
 (c) hallucinations.
-Battle finding (user-diagnosed): action-menu slot 1 is NOT always
+Battle finding: action-menu slot 1 is NOT always
 たたかう — intro shows まどう (Magitek). Fixed-4-slot assumption
 broken; BattleCommands/splitter/glossary impact. Magic menu
 (ケアル/ファイア + MP panel) shot banked as battle-UI reference.
 Party info: ?????? for unnamed Tina (also reward bar + level-up
 banner ??????がレベルアップ); named rows ウェッジ/ビックス live
-(qmask territory; Wedge/Biggs EN still user call).
+(qmask territory; Wedge/Biggs EN).
 Half-block-then-repeat PROOF banked (panel shot: coal-mine line
 posts first half twice instead of completing).
 FFVI brackets: closing 」 has a curled variant (OCR confusion
@@ -1308,7 +1304,7 @@ Shipped (all replay-paritied 0/263-identical unless noted, all revertible):
    Bottleneck 8 priced (JA-fire delta zero; price is menu/CAT-side; checklist shipped),
    Hygiene logging shipped (spend/cache lines, first sighting needs live loop),
    Bottleneck 9 shipped (panel budget BUDGET-OK both corpora; p50=2 loops; weak-hold never fired),
-   keep-shots sentinel shipped (unarmed default; arming is user call),
+   keep-shots sentinel shipped (unarmed default),
    B1 shipped (suspect stain; old-corpora identical; Zelda 54/60 FFVI 50/50),
    B2 shipped (madou commands/splitter/glossary; magic-menu verdict),
    B3 shipped (locke fixups; qmask live proof),
@@ -1328,10 +1324,10 @@ ConNet/training (banned), beam scores (zero signal), Ren scheduling
 (no cost model), A3 beam-choice (needs shop screens), len-ratio/repeat
 guards (n=7), meta-refusal (n=1), live consistency checks (too costly),
 empty-logo-title gap, confidently-wrong class (needs symbolic pairs).
-Queues: bottlenecks 5–7 UNDEFINED (user to name); shop UI deferred
+Queues: bottlenecks 5–7 UNDEFINED; shop UI deferred
 until books done; game #3 after FFVI polish + shop; Zelda confirmatory
 run; FFVI shop/inventory screens (A3 material); Wedge/Biggs EN (no
-manual source — user call); いたぞ (no panel truth); glossary gaps
+manual source); いたぞ (no panel truth); glossary gaps
 (gilded, High Vor ion — exact-match policy intact).
 Protocols: taskkill-first rebuilds, GREEN = +0 warnings/0 errors
 (2 pre-existing CS8604 at TranslateAndPublishAsync warmup logs),
