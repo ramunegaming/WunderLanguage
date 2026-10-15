@@ -1,0 +1,2 @@
+{"shot":"225853_285","game":"zelda","session":"22h","split":"heldout","context":"opening-crawl-partial","visible_ja":"そのハイラルの王国で 黄金がかくされた聖地への 入口がみつかり","complete":false,"panel_ja":"","verdict":"withheld-partial","notes":"Mid-scroll (missing ました) correctly silent"}
+{"shot":"225902_114","game":"zelda","session":"22h","split":"heldout","context":"opening-crawl-complete","visible_ja":"多くの人々があらそって 聖地へと消えていきました","complete":true,"panel_ja":"","verdict":"miss-complete","notes":"Complete crawl page never posted"}

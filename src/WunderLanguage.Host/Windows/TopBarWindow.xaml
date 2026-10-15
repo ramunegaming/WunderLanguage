@@ -1,0 +1,22 @@
+<Window x:Class="WunderLanguage.Host.Windows.TopBarWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" AllowsTransparency="True" Background="Transparent"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        RenderOptions.EdgeMode="Aliased">
+        
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Background="{StaticResource PanelBrush}">
+        <Grid Margin="16,0">
+            <TextBlock Text="WunderLanguage" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                       HorizontalAlignment="Left"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button x:Name="ShotGameButton" Content="Shot game" Padding="10,2" Margin="0,0,6,0" Click="ShotGameButton_Click"/>
+                <Button x:Name="ShotProgButton" Content="Shot program" Padding="10,2" Margin="0,0,12,0" Click="ShotProgButton_Click"/>
+                <Ellipse Width="8" Height="8" Fill="LimeGreen" Margin="0,0,6,0"/>
+                <TextBlock Text="Connected to Emulator" Foreground="{StaticResource TextBrush}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
