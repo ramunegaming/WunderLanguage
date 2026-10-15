@@ -2390,9 +2390,17 @@ namespace WunderLanguage.Host.Capture
                 }
                 // Stale guard: a longer version already shown covers this one
                 // (truncated completing after its full line). Don't re-append.
-                if (!string.IsNullOrEmpty(_lastTranslatedText)
+                // Folded containment (B16b follow-up, live 2026-10-15: wobble
+                // variants ナジ/ナゾ evaded exact containment and double-posted):
+                // same rule on confusion-folded text. Ordering-safe: shown
+                // state is set synchronously at fire, so late prefixes lose
+                // regardless of translation completion order.
+                bool staleCovered = !string.IsNullOrEmpty(_lastTranslatedText)
                     && _lastTranslatedText != text
-                    && _lastTranslatedText.Contains(text, StringComparison.Ordinal))
+                    && (_lastTranslatedText.Contains(text, StringComparison.Ordinal)
+                        || (StripForOverlap(text).Length >= 6
+                            && ConFoldText(StripForOverlap(_lastTranslatedText)).Contains(ConFoldText(StripForOverlap(text)), StringComparison.Ordinal)));
+                if (staleCovered)
                 {
                     FileLogger.Log($"[translate] stale-suppressed (covered by shown line)");
                     return;
@@ -3655,6 +3663,32 @@ namespace WunderLanguage.Host.Capture
                 return 1.0 - WeightedLevenshtein(a, b) / m;
             }
             catch { return 0.0; }
+        }
+
+        // Confusion-fold for MATCHING only (display/stale decisions, never
+        // published text): map inventoried visual-confusion pairs to one
+        // canonical side so wobble variants compare equal. Shared by the
+        // panel (internal consumers) — one source of truth for the Loop2
+        // inventory. Revert with its callers.
+        internal static string ConFoldText(string t)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(t)) return t ?? "";
+                var sb = new System.Text.StringBuilder(t.Length);
+                foreach (char c in t)
+                {
+                    char u = c;
+                    foreach (var (a, b) in ConfusionPairs)
+                    {
+                        if (c == a) { u = a < b ? a : b; break; }
+                        if (c == b) { u = a < b ? a : b; break; }
+                    }
+                    sb.Append(u);
+                }
+                return sb.ToString();
+            }
+            catch { return t ?? ""; }
         }
 
         // GAME OVER pack: fixed screen (big GAME OVER + 3 セーブ rows, often
