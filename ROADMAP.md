@@ -92,7 +92,7 @@ A (repetition-as-evidence) was built through 5 iterations and reverted: static-p
 Tier1 lineage counting accepts confusion-weighted similarity (inventoried pairs join instead of resetting). Counting only. Done: 48 genuine joins measured offline, empty JA diffs on all 6 corpora. Still needed: live observation (a churned line stabilizing faster).
 
 ### W1. Sidecar death root cause — CONVICTED + FIXED (revert: revert nocatfb-retry)
-CAT 4-bit quantize load segfaults ~140s after start (2 live deaths + 1 idle repro, 0xC0000005 at shard 0-1, despite 4492MB free — threshold tuning cannot catch it). Explains PM 4-death cadence (restart+120s cycles) and both intro block-10 gaps. Fix: healthy-period death retries OCR-only; startup deaths unchanged; fresh launches always try GPU. Verified by kill-test (nocatfb → healthy, tail intact). Still needed: live soak (a full session with zero 503 gaps).
+CAT 4-bit quantize load segfaults ~140s after start (3 live deaths + 2 idle repros, 0xC0000005 at shard 0-1, despite 4492MB free — threshold tuning cannot catch it). Explains PM 4-death cadence (restart+120s cycles) and both intro block-10 gaps. Fix, two layers: healthy-period death retries OCR-only (backstop); lazy CAT (revert: restore eager loader) never loads weights until first offline /translate need, so DeepL sessions never gamble — proven by 180s idle soak with zero load, then triggered load segfaulting on demand as convicted. Verified by kill-test (nocatfb → healthy, tail intact). Still needed: live soak (a full session with zero 503 gaps).
 
 ### W2. Paper Mario baseline play triage follow-ups
 Intro measured (28/28 sim); battle/menu/decision coverage needs a focused session without focus loss.

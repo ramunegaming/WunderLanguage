@@ -471,6 +471,8 @@ CAT_TRANSLATE_MODEL_ID = "cyberagent/CAT-Translate-3.3b-beta"
 _NO_CAT = os.environ.get("WUNDER_NO_CAT", "").strip() == "1"
 _CAT_SKIP_REASON = ""
 cat_translate_pipeline = None
+_cat_load_started = False
+_cat_load_lock = _threading.Lock()
 def _load_ocr_stage():
     # Stage 1: torch + OCR models (~24s cold, ~4s warm). Sequential on
     # one daemon thread; the API is already serving /health by now.
@@ -587,19 +589,14 @@ def _load_all_stages():
         READY["ocr"] = f"failed: {ex}"
         print(f"[WunderLanguage] OCR stage failed ({ex}).", flush=True)
         return
-    # Boot-window protection (cited 2026-10-08: the sidecar tree died 35s
-    # into warmup while CAT 4-bit weights loaded alongside OCR models —
-    # prime suspect is the combined load spike on 6GB VRAM, unconvicted).
-    # CAT now waits 120s after OCR-ready so the boot/title window serves
-    # on a quiet machine; translations fall back meanwhile (existing
-    # fallback chain). Daemon thread: dies with the process, no leak.
-    # Revert: delete the sleep.
-    try:
-        print("[WunderLanguage] CAT-Translate deferred 120s (boot-window protection).", flush=True)
-        time.sleep(120)
-    except Exception:
-        pass
-    _load_cat_stage()
+    # W1 lazy CAT (2026-10-15, convicted): the eager +120s weight load
+    # segfaults ~140s after start (3 live + 1 idle repro, access violation
+    # at shard 0-1) in sessions that never use offline translation (DeepL
+    # serves everything). CAT now loads ON FIRST NEED (/translate with no
+    # pipeline) instead of on a timer: normal sessions never gamble,
+    # offline sessions risk at most one death (nocatfb backstop stands).
+    # Revert: restore the sleep(120) + _load_cat_stage() call below.
+    print("[WunderLanguage] CAT-Translate lazy (loads on first offline need).", flush=True)
 _threading.Thread(target=_load_all_stages, daemon=True).start()
 print(f"[WunderLanguage] sidecar code version {CODE_VERSION}.")
 _slog("sidecar-imports-done")
@@ -1005,6 +1002,29 @@ def _log_word_stats(text: str):
     except Exception:
         pass
 
+def _ensure_cat_async():
+    # Lazy CAT: first /translate need spawns the weight load once.
+    # Returns immediately; the caller reports warming-blank meanwhile.
+    # Revert with the eager loader.
+    global _cat_load_started
+    try:
+        if _NO_CAT:
+            return
+        if cat_translate_pipeline is not None:
+            return
+        st = READY.get("cat", "warming")
+        if st in ("ready", "disabled", "disabled-low-vram"):
+            return
+        if isinstance(st, str) and st.startswith("failed"):
+            return
+        with _cat_load_lock:
+            if _cat_load_started:
+                return
+            _cat_load_started = True
+        print("[WunderLanguage] CAT-Translate load triggered by first offline need.", flush=True)
+        _threading.Thread(target=_load_cat_stage, daemon=True).start()
+    except Exception as ex:
+        print(f"[WunderLanguage] CAT lazy trigger failed ({ex})", flush=True)
 def cat_translate(text: str, source_lang: str, target_lang: str):
     try:
         _log_confusion_matches(text)
@@ -1027,6 +1047,7 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
     src_lang_name = LANGUAGE_CODE_NAMES.get(source_lang.lower(), source_lang)
     tgt_lang_name = LANGUAGE_CODE_NAMES.get(target_lang.lower(), target_lang)
     if cat_translate_pipeline is None:
+        _ensure_cat_async()
         print("[WunderLanguage] CAT unavailable (OCR-only mode), leaving blank for fallback chain")
         if _CAT_SKIP_REASON == "low-vram":
             reason = "cat-low-vram"
