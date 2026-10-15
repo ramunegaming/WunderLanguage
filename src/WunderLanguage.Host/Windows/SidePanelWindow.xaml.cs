@@ -134,6 +134,7 @@ namespace WunderLanguage.Host.Windows
         public SidePanelWindow()
         {
             InitializeComponent();
+            try { FileLogger.Log("[build] panel absorb-ring confold ON"); } catch { }
             // Bubbles from child TextBoxes (they only handle plain Ctrl+C).
             PreviewKeyDown += (_, e) =>
             {
