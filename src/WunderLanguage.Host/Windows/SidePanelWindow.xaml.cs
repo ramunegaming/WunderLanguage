@@ -681,8 +681,12 @@ namespace WunderLanguage.Host.Windows
                         }
                         if (shownStripped.Length - incomingStripped.Length >= 0
                             && shownStripped.Contains(incomingStripped, System.StringComparison.Ordinal)
-                            && shownStripped.Length > incomingStripped.Length)
+                            && shownStripped.Length >= incomingStripped.Length)
                         {
+                            // B19 drop-eq (revert: revert drop-eq): identical
+                            // (or folded-identical) arrivals collapse — the
+                            // strict > let cross-road identical re-fires
+                            // (そこで 105+106) post twice. Display-only.
                             FileLogger.Log("[panel] absorb-drop (fire already covered by recent bubble)");
                             return;
                         }
