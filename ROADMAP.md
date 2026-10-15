@@ -1,6 +1,6 @@
 # WunderLanguage — Development Roadmap & Milestone Tracker
 
-Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned** · **Blocked on user**.
+Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
 ## Complete
@@ -85,7 +85,6 @@ Undoubled stable ROM ID plus normalized line on Dolphin.
 Next bundles must carry pack prefixes and headers.
 
 ## In progress
-
 ### B19. Cross-fire variant consolidation (prerequisite for repetition-evidence)
 A (repetition-as-evidence) was built through 5 iterations and reverted: static-page recovery works (block 4 exact) but pulls misread twins with it (帰がけて/出かけて, きわって/日ボタン — incorrect lines = regressions by the book), and every guard tried (dominance, twin-veto, net-displacement) either missed the twins or ate clean lines. Conviction: variant consolidation must come FIRST (merge variant doubles into single bubbles), repetition-evidence second. Still needed: design consolidation with evidence, then re-attempt A behind it.
 
@@ -119,7 +118,7 @@ Re-mine and promotion review with Paper Mario data; profile tuning only on measu
 Positioned boxes, Zelda sprite map, PM pointing hand — queued behind Paper Mario data.
 
 ### P6. Shop UI
-Waits on user shop-play signal. FFVI battle-polish order otherwise intact.
+FFVI battle-polish order otherwise intact.
 
 ### P7. Zelda-long latency exceedance
 Pre-existing (stash-proven, not a regression). Investigate when profiling time comes.
@@ -127,15 +126,9 @@ Pre-existing (stash-proven, not a regression). Investigate when profiling time c
 ### P8. Display-behavior queue (from ChatGPT taxonomy review, 2026-10-14)
 Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/titles/name-entry/singleton-glimpse (B10-T2, B12, title/menu/battle paths). Queued, unmeasured: fading text, moving/animated text + transient notifications (damage numbers, pickups), per-line replacement, timed-vs-advance-controlled distinction. Each needs a priced miss set before any build.
 
-## Blocked on user
-
-- Mash policy a/b/c (keep stale / fast-track / expire).
-- Shop-play signal. Wedge/Biggs English. PM glossary EN confirmations.
-- Next-build pick after this handover.
-
-## Watch items (not batches)
-
-- One crash-truncated tail gzip in corpus dir (not blocking).
-- One orphaned PM miner file under pre-paren versioned id (negligible).
-- Exact-match metrics understate variant correctness (accounted in verdicts).
-- Sim/replay never touch bitmaps, loop, or title path (live-provable only).
+## Open questions (restored 2026-10-15 - blocks FFVI names work until answered)
+- Mash memo policy: keep stale / fast-track update / expire to empty (recommended: expire).
+- Wedge/Biggs official English forms (Matthew precedent: manual wins).
+- PM battle glossary EN confirmations.
+- Shop-play signal for FFVI (shop UI build waits on it).
+- Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
