@@ -2130,9 +2130,14 @@ namespace WunderLanguage.Host.Capture
                     _lastOcrContent = contentWords;
                     _lastOcrTotal = totalWords;
                     string rawTrim = rawText.Trim();
+                    // Ghost-inset override feeds here (raw level) so the
+                    // winner gets the full fixup/mined chain downstream;
+                    // corpus keeps the sidecar original as raw (provenance).
+                    string effTrim = rawTrim;
+                    try { effTrim = MaybeOverrideGhostPrimary(rawTrim, ocrBlocks, iteration); } catch { }
                     string? remembered = null;
-                    try { remembered = LookupMined(rawTrim); } catch { }
-                    string extractedText = ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(remembered ?? rawTrim)));
+                    try { remembered = LookupMined(effTrim); } catch { }
+                    string extractedText = ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(remembered ?? effTrim)));
                     // 300-token ceiling watch (cited 2026-10-08: model
                     // max_length=300; our longest boxes run ~100 chars, so
                     // 150 chars is early warning, not a boundary. Observe-only:
@@ -3675,6 +3680,70 @@ namespace WunderLanguage.Host.Capture
         {
             return s.Replace("。", "").Replace("、", "").Replace(",", "").Replace("，", "")
                 .Replace("…", "").Replace("．", "").Replace(".", "").Replace(" ", "").Replace("　", "");
+        }
+
+        // B19 ghost-inset override (revert: revert ghost-inset): when a
+        // full-bleed box (illustration art hallucinating text) contains a
+        // disagreeing inset row, the inset row is the dialogue (live: block
+        // 10's strip beat the mega-box ghost 6/6 across runs; PM date-junk
+        // outer likewise). Containment + disagreement (weighted<0.65:
+        // 124-twin 0.583 and 900-twin 0.58 trigger, distinct lines top
+        // ~0.51) + long outer + clear inset + full-bleed outer.
+        // Otherwise the primary stands (also when boxes merely overlap
+        // or agree). Never rewrites, only selects. Live-provable only
+        // (runs on raw sidecar text before the fixup chain, which sim
+        // bypasses by feeding banked extracted).
+        // NOTE: no battle/menu/title gates by design — downstream
+        // suppression already zeroes battle dialogue and gates menu/title
+        // roads regardless of which row feeds in.
+        private string MaybeOverrideGhostPrimary(string extractedText, System.Collections.Generic.List<OcrBlock> blocks, int iteration)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(extractedText) || blocks is null || blocks.Count < 2) return extractedText;
+                int primaryIdx = -1;
+                for (int bi = 0; bi < blocks.Count; bi++)
+                {
+                    string t = blocks[bi].Text ?? "";
+                    if (!HasJapanese(t) || StripForOverlap(t).Length < 6) continue;
+                    if (ScrollNorm(t) == ScrollNorm(extractedText) || WeightedSimilarity(t, extractedText) >= 0.85) { primaryIdx = bi; break; }
+                }
+                if (primaryIdx < 0) return extractedText;
+                OcrBlock primary = blocks[primaryIdx];
+                int bestIdx = -1;
+                double bestMargin = 0;
+                for (int bi = 0; bi < blocks.Count; bi++)
+                {
+                    if (bi == primaryIdx) continue;
+                    OcrBlock b = blocks[bi];
+                    string t = b.Text ?? "";
+                    if (!HasJapanese(t) || StripForOverlap(t).Length < 6) continue;
+                    OcrBlock outer = (b.Width * b.Height >= primary.Width * primary.Height) ? b : primary;
+                    OcrBlock inner = (b.Width * b.Height >= primary.Width * primary.Height) ? primary : b;
+                    if ((double)outer.Width * outer.Height < 2.0 * inner.Width * inner.Height) continue;
+                    if (!(outer.X <= inner.X && outer.Y <= inner.Y
+                        && outer.X + outer.Width >= inner.X + inner.Width
+                        && outer.Y + outer.Height >= inner.Y + inner.Height)) continue;
+                    if (outer.X > 10) continue;
+                    // Disagreement bar 0.65 (measured: 124-twin 0.583,
+                    // 900-twin 0.58 must trigger; distinct lines top out
+                    // ~0.51; N9 overlap-competitors resolve toward the
+                    // inset strip, which is the true line there too).
+                    // Downstream gates still filter whatever feeds in.
+                    if (WeightedSimilarity(outer.Text ?? "", inner.Text ?? "") >= 0.65) continue;
+                    double margin = (double)(inner.X - outer.X) / System.Math.Max(1, outer.Width);
+                    if (margin < 0.10) continue;
+                    if (StripForOverlap(outer.Text ?? "").Length < 15) continue;
+                    if (margin > bestMargin) { bestMargin = margin; bestIdx = bi; }
+                }
+                if (bestIdx >= 0 && bestIdx != primaryIdx)
+                {
+                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=ghost-inset-override (inset row beats full-bleed box)");
+                    return blocks[bestIdx].Text ?? extractedText;
+                }
+            }
+            catch { }
+            return extractedText;
         }
 
         private static bool StartsWithSuffixOfStrip(string candidate, string last, int minLen)
