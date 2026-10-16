@@ -73,16 +73,21 @@ namespace WunderLanguage.Host.Capture
             // (single choke — all roads funnel here; updates excluded).
             // Ordering-safe: recorded synchronously, so same-loop twins
             // meet regardless of translation completion order.
+            // _lastFireParked records the outcome for growth-fast's
+            // completion routing (update a posted prefix, fire fresh
+            // otherwise) — set synchronously here. Revert with it.
             try
             {
                 if (FireHistoryCovers(ja, loop))
                 {
                     FileLogger.Log($"[publish] history-parked for \"{Truncate(ja)}\" (covered by recent fire)");
+                    try { _lastFireParked = true; } catch { }
                     return System.Threading.Tasks.Task.CompletedTask;
                 }
             }
             catch { }
             try { RecordFire(ja, ev, loop); } catch { }
+            try { _lastFireParked = false; } catch { }
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             // Title-hardening clock (2026-10-11): every stability fire
             // stamps recency; the quiet-title veto below refuses TITLE
@@ -458,6 +463,10 @@ namespace WunderLanguage.Host.Capture
         private const int FireHistoryCap = 8;
         private readonly System.Collections.Generic.List<(string text, int loop)> _recentExtracted = new();
         private const int ExtractedRingCap = 25;
+        // B19 completion routing (revert: revert fresh-upd): outcome of
+        // the last PublishDecisionAsync call (synchronous). Growth-fast
+        // completes via update only when the prefix actually posted.
+        private bool _lastFireParked;
         // R1 oscillation memory: previously shown line (one slot). A stable candidate matching _prev
         // while another line is shown = same-box A-B-A flicker; the middle fire was the intruder.
         // Updated on every new-bubble path below; update-in-place paths keep lineage (untouched).
@@ -1331,8 +1340,35 @@ namespace WunderLanguage.Host.Capture
                                 // (measured: 6 pageturn misses, 2026-10-10).
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast (prefix posts now, completion via update)");
                                 try { CorpusRecordBubble("dialogue-decision:growth-fast", growthFire, "", "", iteration); } catch { }
-                                _lastTranslatedText = growthFire;
-                                _ = PublishDecisionAsync(growthFire, iteration, "growth");
+                                // B19 completion routing (revert: revert fresh-upd):
+                                // a completion (strict extension of the shown
+                                // line, prefix posted) revises in place via
+                                // the update road — one bubble, not two. New
+                                // lines and parked-prefix completions fire
+                                // fresh as before (omission-safe: a dangling
+                                // update revises nothing, so never route one
+                                // unless the prefix posted).
+                                bool completeViaUpdate = false;
+                                try
+                                {
+                                    completeViaUpdate = !_lastFireParked
+                                        && !string.IsNullOrEmpty(_lastTranslatedText)
+                                        && _lastTranslatedText != growthFire
+                                        && FoldedExtends(growthFire, _lastTranslatedText);
+                                }
+                                catch { completeViaUpdate = false; }
+                                if (completeViaUpdate)
+                                {
+                                    string updPrev = _lastTranslatedText;
+                                    FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-complete (completion revises shown prefix)");
+                                    _lastTranslatedText = growthFire;
+                                    _ = PublishUpdateAsync(updPrev, growthFire, iteration, "upd-growth-complete");
+                                }
+                                else
+                                {
+                                    _lastTranslatedText = growthFire;
+                                    _ = PublishDecisionAsync(growthFire, iteration, "growth");
+                                }
                             }
                             // Flash-post (pair-2): a stable fragment absorbed by
                             // growth was really shown (telepathy flashes). Post
