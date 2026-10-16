@@ -6,7 +6,7 @@ python-multipart
 opencv-python
 numpy
 easyocr
-transformers
+transformers<5  # W1 pin (2026-10-17): 5.x threaded weight conversion segfaults loading CAT (convicted by substitution: 4.57.6 loads 2/2, 5.15.0 crashes 17/17, all else identical). Revisit when upstream fixes the loader race. Revert: unpin.
 accelerate
 bitsandbytes
 fugashi

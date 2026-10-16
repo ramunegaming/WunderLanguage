@@ -1,5 +1,14 @@
 import time as _ptime
 _SSTART = _ptime.perf_counter()
+# W1 crash forensics (2026-10-17): the CAT 4-bit load segfaults natively
+# (0xC0000005 at shard ~1/291, no Python traceback). faulthandler dumps
+# the Python-side stack on fatal signals — zero behavior change, only a
+# traceback if we die. Permanent; revert: delete these two lines.
+import faulthandler as _faulthandler
+try:
+    _faulthandler.enable()
+except Exception:
+    pass
 def _slog(stage):
     # Perf baseline batch 2 (observe-only): startup stage timestamps so
     # the 22s spawn-to-healthy window splits into import/model stages.
@@ -528,6 +537,17 @@ def _load_cat_stage():
             _min_free_mb = int(os.environ.get("WUNDER_CAT_MIN_FREE_MB", "3072"))
         except Exception:
             _min_free_mb = 3072
+        # W1 allocator snapshot (2026-10-17, observe-only): free vs
+        # reserved distinguishes true shortage from fragmentation (free
+        # high + reserved high = fragmented heap; the quantize kernels
+        # need contiguous blocks). One line per load; revert: delete it.
+        try:
+            _snap_free, _ = torch.cuda.mem_get_info()
+            _snap_res = torch.cuda.memory_reserved()
+            _snap_alc = torch.cuda.memory_allocated()
+            print(f"[WunderLanguage] CAT-Translate allocator snapshot free={_snap_free//(1024*1024)}MB reserved={_snap_res//(1024*1024)}MB allocated={_snap_alc//(1024*1024)}MB.", flush=True)
+        except Exception as _snex:
+            print(f"[WunderLanguage] CAT-Translate allocator snapshot failed ({_snex}).", flush=True)
         try:
             _free_b, _ = torch.cuda.mem_get_info()
             _free_mb = _free_b // (1024 * 1024)
@@ -597,7 +617,17 @@ def _load_all_stages():
     # offline sessions risk at most one death (nocatfb backstop stands).
     # Revert: restore the sleep(120) + _load_cat_stage() call below.
     print("[WunderLanguage] CAT-Translate lazy (loads on first offline need).", flush=True)
-_threading.Thread(target=_load_all_stages, daemon=True).start()
+# W1 service split (2026-10-17, convicted by bisection: manga-OCR
+# residency poisons safetensors-mmap reads; clean processes load fine;
+# one process can never hold both safely). WUNDER_ROLE=cat marks the
+# dedicated translator process (see cat_service.py): it skips the OCR
+# loader thread and loads CAT eagerly into a clean address space. The
+# OCR process (role=ocr, set by the host) never loads CAT weights at
+# all — translations route to the CAT process. Unset role = legacy
+# single-process behavior (loads CAT lazily on need). Revert: delete
+# the gate (thread always starts).
+if os.environ.get("WUNDER_ROLE", "") != "cat":
+    _threading.Thread(target=_load_all_stages, daemon=True).start()
 print(f"[WunderLanguage] sidecar code version {CODE_VERSION}.")
 _slog("sidecar-imports-done")
 LANGUAGE_CODE_NAMES = {"ja": "Japanese", "en": "English"}
@@ -1005,10 +1035,15 @@ def _log_word_stats(text: str):
 def _ensure_cat_async():
     # Lazy CAT: first /translate need spawns the weight load once.
     # Returns immediately; the caller reports warming-blank meanwhile.
+    # W1 split: the OCR process (explicit role=ocr) must NEVER load
+    # weights (manga-OCR residency poisons the load — convicted
+    # 2026-10-17); translations route to the CAT process instead.
     # Revert with the eager loader.
     global _cat_load_started
     try:
         if _NO_CAT:
+            return
+        if os.environ.get("WUNDER_ROLE", "") == "ocr":
             return
         if cat_translate_pipeline is not None:
             return
