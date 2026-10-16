@@ -463,6 +463,11 @@ namespace WunderLanguage.Host.Capture
         private const int FireHistoryCap = 8;
         private readonly System.Collections.Generic.List<(string text, int loop)> _recentExtracted = new();
         private const int ExtractedRingCap = 25;
+        // B19 script-anchored fire (revert: revert script-fire): the
+        // sidecar flags primaries matching a pack script line (ground
+        // truth). Latched per loop in RunLoop, consumed by the script
+        // road in the decision pipeline.
+        private bool _lastScriptHit;
         // B19 completion routing (revert: revert fresh-upd): outcome of
         // the last PublishDecisionAsync call (synchronous). Growth-fast
         // completes via update only when the prefix actually posted.
@@ -1179,6 +1184,44 @@ namespace WunderLanguage.Host.Capture
                             _ = PublishDecisionAsync(singletonText, iteration, "singleton");
                         }
                     }
+
+                    // Script-anchored fire (revert: revert script-fire): a
+                    // clean read matching a pack script line (sidecar flag,
+                    // same 0.92 bar as translate-time script-match) posts on
+                    // first sighting — single-sighting pages (はるか昔 read
+                    // clean once in 10 loops; そこで likewise) otherwise
+                    // never stabilize. Script lines are ground truth, so a
+                    // match is never a misread post (posted text is the
+                    // verbatim read; EN comes from the script reference).
+                    // Growth-safe: skipped when the read continues the
+                    // candidate lineage (typewriter owns those; the
+                    // Contains-gate below would also block the prefix, and
+                    // the history choke singles all repeats). Non-script
+                    // packs (no script data → flag never true) unaffected.
+                    try
+                    {
+                        bool scriptFresh = _lastScriptHit
+                            && !string.IsNullOrWhiteSpace(extractedText)
+                            && StripForOverlap(extractedText).Length >= 6
+                            && HasJapanese(extractedText) && !IsJunkOcr(extractedText)
+                            && !IsEllipsisOnly(extractedText) && !IsScrollBlend(extractedText)
+                            && !IsZeldaTransitionBlend(extractedText) && !IsIncompleteSacrifice(extractedText)
+                            && !IsGameOverText(extractedText) && !_frameIsTitle && string.IsNullOrEmpty(_menuSignature)
+                            && !FoldedExtends(extractedText, _candidateText)
+                            && !FoldedExtends(_candidateText, extractedText)
+                            && extractedText != _lastTranslatedText
+                            && ComputeSimilarity(extractedText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(extractedText, StringComparison.Ordinal));
+                        if (scriptFresh)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=script-anchored (script line posts on first clean sighting)");
+                            try { CorpusRecordBubble("dialogue-decision:script-anchored", extractedText, "", "", iteration); } catch { }
+                            _lastTranslatedText = extractedText;
+                            string scriptText = extractedText;
+                            _ = PublishDecisionAsync(scriptText, iteration, "script");
+                        }
+                    }
+                    catch { }
 
                     if (string.IsNullOrWhiteSpace(extractedText))
                     {
@@ -2096,6 +2139,7 @@ namespace WunderLanguage.Host.Capture
                     catch { avgBitmap = null; ocrBitmap = bitmap; }
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(ocrBitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
                     _consecutiveOcrTransportFailures = 0;
+                    try { _lastScriptHit = _ocrClient.LastScriptHit; } catch { _lastScriptHit = false; }
                     try { avgBitmap?.Dispose(); } catch { }
                     // Stash this capture for next loop's mean (all paths).
                     try
@@ -3770,6 +3814,24 @@ namespace WunderLanguage.Host.Capture
             return n >= minLen;
         }
 
+        // Folded common-prefix length (revert: revert prefix-stale):
+        // confusion-folded, punctuation-stripped shared opening. Late
+        // wobble-fragments share long folded openings with their shown
+        // full line (13 measured); distinct lines share ~0.
+        private static int FoldedCommonPrefixLength(string a, string b)
+        {
+            try
+            {
+                string fa = ConFoldText(StripForOverlap(a ?? ""));
+                string fb = ConFoldText(StripForOverlap(b ?? ""));
+                int n = 0;
+                int max = System.Math.Min(fa.Length, fb.Length);
+                while (n < max && fa[n] == fb[n]) n++;
+                return n;
+            }
+            catch { return 0; }
+        }
+
         // R-deep mid-flicker (guard scene: stable 入れんぞ子どもは早く帰って middle, wobbling heads+t consensuses):
         // a shared stripped run of minLen anywhere (not just the ends) = same line refining, update in place.
         // minLen 10 = the evidenced core (子どもは早く帰って); shorter would merge boilerplate. Omission-neutral.
@@ -3990,6 +4052,15 @@ namespace WunderLanguage.Host.Capture
                     // same as the scroll gate; battle composites never reach
                     // here — battleFrame-excluded in the sweep).
                     if (ComputeSimilarity(text ?? "", ft ?? "") >= NearDuplicateSimilarityThreshold) return true;
+                    // Late short prefix (revert: revert prefix-stale): a
+                    // wobble-fragment arriving AFTER its full line (ここに
+                    // ナジ-fragment after the shown full: folded common
+                    // prefix 13, fragment shorter). Growth direction is
+                    // safe by construction (fuller incoming never parks
+                    // here). Measured: fragment 13 vs consecutive-distinct
+                    // 0 across the intro — bar 10 with wide margin.
+                    if (incFold.Length < shown.Length
+                        && FoldedCommonPrefixLength(text ?? "", ft ?? "") >= 10) return true;
                 }
             }
             catch { }

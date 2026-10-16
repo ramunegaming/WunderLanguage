@@ -1162,7 +1162,16 @@ async def ocr_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     primary_text, blocks, words, timing = detect_and_ocr(image)
-    return {"text": primary_text, "blocks": blocks, "words": words, "timing": timing}
+    # Script-hit flag (B19, 2026-10-17): whether the primary matches a
+    # pack script line (same 0.92 bar as translate-time script-match).
+    # Lets the host fire scripted lines on first clean sighting instead
+    # of losing single-sighting pages (はるか昔, そこで). Additive field;
+    # old hosts ignore it. Revert: delete the key.
+    try:
+        _script_hit = _script_match(primary_text) is not None
+    except Exception:
+        _script_hit = False
+    return {"text": primary_text, "blocks": blocks, "words": words, "timing": timing, "script_hit": _script_hit}
 @app.post("/translate")
 async def translate_text(request: TranslateRequest):
     import asyncio as _aio

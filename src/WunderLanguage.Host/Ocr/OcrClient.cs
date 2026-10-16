@@ -26,6 +26,12 @@ namespace WunderLanguage.Host.Ocr
         // from the HTTP round trip to decide if the transport format is
         // ever worth revisiting. Revert: delete + 2 lines.
         public double LastPngMs { get; private set; }
+        // B19 script-anchored fire (revert: revert script-fire): sidecar
+        // flags primaries matching a pack script line; the host fires
+        // those on first clean sighting (single-sighting pages like
+        // はるか昔/そこで would otherwise never stabilize). Absent in old
+        // sidecars/responses → false → road dead, zero behavior change.
+        public bool LastScriptHit { get; private set; }
 
         // Micro-hygiene (perf batch): 127.0.0.1 skips name resolution
         // entirely and matches the health polls; localhost added a
@@ -74,6 +80,12 @@ namespace WunderLanguage.Host.Ocr
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             string text = root.TryGetProperty("text", out var t) ? (t.GetString() ?? string.Empty) : string.Empty;
+            try
+            {
+                LastScriptHit = root.TryGetProperty("script_hit", out var sh)
+                    && sh.ValueKind == JsonValueKind.True;
+            }
+            catch { LastScriptHit = false; }
 
             var blocks = new List<OcrBlock>();
             if (root.TryGetProperty("blocks", out var b) && b.ValueKind == JsonValueKind.Array)
