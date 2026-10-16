@@ -446,6 +446,31 @@ def detect_and_ocr(pil_image: Image.Image):
                 primary_text = " ".join(b["text"] for b in _row)
             else:
                 primary_text = primary_block["text"]
+            # Script-row promotion (B19, live 2026-10-17: the はるか昔 crawl
+            # read clean 7 loops but the dots box won primary by area, so
+            # block 1 never posted). A non-primary JA row matching a script
+            # line (same 0.92 bar as _script_match) beats the area pick:
+            # script lines are evidenced per-game ground truth (title-pack
+            # discipline), matching is game-blind. Never rewrites text,
+            # only selects which row is primary. Dots/short rows can never
+            # match a full script line, so ghost rows are unaffected.
+            # Revert: delete this block.
+            try:
+                if blocks and _SCRIPT_KEYS:
+                    _pkey = _script_key(primary_text)
+                    _phit = bool(_pkey) and any(difflib.SequenceMatcher(None, _pkey, _sk).ratio() >= 0.92 for _sk, _ in _SCRIPT_KEYS)
+                    if not _phit:
+                        for _b in blocks:
+                            _bt = (_b.get("text") or "").strip()
+                            if not _bt or _bt == primary_text:
+                                continue
+                            _bk = _script_key(_bt)
+                            if _bk and any(difflib.SequenceMatcher(None, _bk, _sk).ratio() >= 0.92 for _sk, _ in _SCRIPT_KEYS):
+                                print(f"[WunderLanguage] script-row promoted for primary.", flush=True)
+                                primary_text = _bt
+                                break
+            except Exception:
+                pass
         except Exception:
             primary_text = primary_block["text"]
     words = {"content": 0, "total": 0}
