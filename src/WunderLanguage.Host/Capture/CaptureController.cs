@@ -1822,14 +1822,23 @@ namespace WunderLanguage.Host.Capture
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=subpart-suppressed (tail of shown line)");
                         }
-                        else if ((similarity >= 0.70
+                        else if (similarity >= 0.85
+                            && LevenshteinDistance(_candidateText, _lastTranslatedText) <= 3
                             && (HasCommonPrefix(_candidateText, _lastTranslatedText, 6)
                                 || StartsWithSuffixOfStrip(_candidateText, _lastTranslatedText, 6)
-                                || StartsWithSuffixOfStrip(_lastTranslatedText, _candidateText, 6)))
-                            || HasLongCommonMiddle(_candidateText, _lastTranslatedText, 10))
+                                || StartsWithSuffixOfStrip(_lastTranslatedText, _candidateText, 6)
+                                || HasLongCommonMiddle(_candidateText, _lastTranslatedText, 10)))
                         {
-                            // Flicker variant (こらこら ねなさい/ねえさい): same
-                            // bubble, update in place - never a second post.
+                            // Flicker variant (こらこら ねなさい/ねえさい, dist 1):
+                            // same bubble, update in place - never a second post.
+                            // B19 twin-guard (revert: revert upd-twins), live
+                            // 2026-10-17: ぽっとリー/ほうむり (dist 5, sim
+                            // 0.88) revised a CORRECT bubble into a twin.
+                            // Revisions are cosmetic (the fired text stays if
+                            // blocked), so bias hard to blocking: small wobbles
+                            // refine, twins never swap in. Measured: flicker
+                            // (1, 0.875) fires; twin (5, 0.881) parks; growth
+                            // revisions use the separate containment road.
                             string prev = _lastTranslatedText;
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=update-neardupe (flicker variant, single bubble)");
                             _lastTranslatedText = _candidateText;
@@ -3322,12 +3331,18 @@ namespace WunderLanguage.Host.Capture
                             // a fuller or variant scrolled form of the shown
                             // line revises it in place (same shape as the
                             // update-in-place / update-neardupe roads).
-                            // Genuinely new lines fire fresh.
+                            // Genuinely new lines fire fresh. Twin-guard
+                            // (revert: revert upd-twins): the similarity
+                            // clause needs the same small-wobble bar as
+                            // update-neardupe (dist<=3, sim>=0.85) so a
+                            // twin row can't revise a correct bubble;
+                            // exact-containment growth stays unconditional.
                             bool scrollGrowth = !string.IsNullOrEmpty(_lastTranslatedText)
                                 && ((best.Length > _lastTranslatedText.Length
                                     && (best.StartsWith(_lastTranslatedText, System.StringComparison.Ordinal)
                                         || best.Contains(_lastTranslatedText, System.StringComparison.Ordinal)))
-                                || (ComputeSimilarity(best, _lastTranslatedText) >= 0.70
+                                || (ComputeSimilarity(best, _lastTranslatedText) >= 0.85
+                                    && LevenshteinDistance(best, _lastTranslatedText) <= 3
                                     && (HasCommonPrefix(best, _lastTranslatedText, 6)
                                         || StartsWithSuffixOfStrip(best, _lastTranslatedText, 6)
                                         || StartsWithSuffixOfStrip(_lastTranslatedText, best, 6))));
