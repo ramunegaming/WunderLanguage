@@ -1349,15 +1349,31 @@ namespace WunderLanguage.Host.Capture
                             // candidate instead self-suppresses (fired もう
                             // blocks full at 1.0). Fire the growth, lag zero.
                             string growthFire = _candidateText;
+                            bool growthFresh = false;
                             try
                             {
                                 if (FoldedExtends(extractedText, _candidateText))
                                 {
                                     growthFire = extractedText;
+                                    growthFresh = true;
                                     FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast-fresh (firing grown extraction, not lagged candidate)");
                                 }
                             }
-                            catch { growthFire = _candidateText; }
+                            catch { growthFire = _candidateText; growthFresh = false; }
+                            // B19 wobble-variant publishes newer (revert: revert wobble-publish): when
+                            // extracted is longer than candidate and highly similar (wobble variant,
+                            // not clean extension), publish extracted — the newer reading is more
+                            // complete. Live 2026-10-17: 貌蓮を...the full line should post, not
+                            // 貌違を... the wobble variant.
+                            if (!growthFresh
+                                && extractedText.Length > _candidateText.Length
+                                && ComputeSimilarity(extractedText, _candidateText) >= 0.85
+                                && HasCommonPrefix(extractedText, _candidateText, 6))
+                            {
+                                growthFire = extractedText;
+                                growthFresh = true;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast-wobble (wobble variant publishes newer extraction)");
+                            }
                             // B14 split-post reduction REVERTED 2026-10-14: the
                             // stall requirement broke the prefix-prime chain
                             // (update-in-place needs lastTranslated primed by
