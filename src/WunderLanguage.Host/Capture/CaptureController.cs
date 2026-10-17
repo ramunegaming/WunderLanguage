@@ -1374,6 +1374,20 @@ namespace WunderLanguage.Host.Capture
                                 growthFresh = true;
                                 FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast-wobble (wobble variant publishes newer extraction)");
                             }
+                            // B19 complete-version replaces incomplete candidate (revert: revert complete-replaces-incomplete):
+                            // when extracted ends with sentence-ending punctuation and is highly similar
+                            // to the candidate, publish extracted even if shorter — the complete version
+                            // replaces the incomplete candidate. Live 2026-10-18: もうそこまでせまっていました。
+                            // should replace ささばられる運命の時も、もうそこま even though shorter.
+                            if (!growthFresh
+                                && EndsCompleteSentence(extractedText)
+                                && ComputeSimilarity(extractedText, _candidateText) >= 0.75
+                                && HasCommonPrefix(extractedText, _candidateText, 4))
+                            {
+                                growthFire = extractedText;
+                                growthFresh = true;
+                                FileLogger.Log($"[loop {iteration}] STABLE-DECISION=growth-fast-complete (complete version replaces incomplete candidate)");
+                            }
                             // B14 split-post reduction REVERTED 2026-10-14: the
                             // stall requirement broke the prefix-prime chain
                             // (update-in-place needs lastTranslated primed by
@@ -1388,7 +1402,8 @@ namespace WunderLanguage.Host.Capture
                                 && !IsZeldaTransitionBlend(growthFire)
                                 && !IsIncompleteSacrifice(growthFire) && !_frameIsTitle
                                 && ComputeSimilarity(growthFire, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(growthFire, StringComparison.Ordinal)))
+                                && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(growthFire, StringComparison.Ordinal))
+                                && EndsCompleteSentence(growthFire))
                             {
                                 // Lineage note: sets _lastTranslatedText only
                                 // (update road + dupe gates need it).
@@ -3739,7 +3754,8 @@ namespace WunderLanguage.Host.Capture
         private static string StripForOverlap(string s)
         {
             return s.Replace("。", "").Replace("、", "").Replace(",", "").Replace("，", "")
-                .Replace("…", "").Replace("．", "").Replace(".", "").Replace(" ", "").Replace("　", "");
+                .Replace("…", "").Replace("．", "").Replace(".", "").Replace(" ", "").Replace("　", "")
+                .Replace("!", "").Replace("！", "");
         }
 
         // B19 ghost-inset override (revert: revert ghost-inset): when a
