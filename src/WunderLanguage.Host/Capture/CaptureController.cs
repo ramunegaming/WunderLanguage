@@ -1211,7 +1211,8 @@ namespace WunderLanguage.Host.Capture
                             && !FoldedExtends(_candidateText, extractedText)
                             && extractedText != _lastTranslatedText
                             && ComputeSimilarity(extractedText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(extractedText, StringComparison.Ordinal));
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(extractedText, StringComparison.Ordinal))
+                            && EndsCompleteSentence(extractedText);
                         if (scriptFresh)
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=script-anchored (script line posts on first clean sighting)");
@@ -4084,6 +4085,15 @@ namespace WunderLanguage.Host.Capture
                     // same as the scroll gate; battle composites never reach
                     // here — battleFrame-excluded in the sweep).
                     if (ComputeSimilarity(text ?? "", ft ?? "") >= NearDuplicateSimilarityThreshold) return true;
+            // B19 digit-strip containment (revert: revert digit-strip-contain): an OCR
+            // misread that inserts digits in the middle (e.g. ２０１２度 vs ２度) can make
+            // two lines of the same script text dissimilar enough to bypass the similarity
+            // bar. Strip all digits and check containment either way. Game-blind: digits
+            // are never semantically distinguishing in dialogue text.
+            string incNoDigits = new string(inc.Where(c => !char.IsDigit(c)).ToArray());
+            string shownNoDigits = new string(shown.Where(c => !char.IsDigit(c)).ToArray());
+            if (incNoDigits.Length >= 6 && shownNoDigits.Length >= 6
+                && (shownNoDigits.Contains(incNoDigits) || incNoDigits.Contains(shownNoDigits))) return true;
                     // Late short prefix (revert: revert prefix-stale): a
                     // wobble-fragment arriving AFTER its full line (ここに
                     // ナジ-fragment after the shown full: folded common
