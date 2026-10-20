@@ -3754,9 +3754,18 @@ namespace WunderLanguage.Host.Capture
 
         private static string StripForOverlap(string s)
         {
+            // Quote/bracket family added (revert: revert two-anchor): ＂
+            // (205 hits banked) stole BestText by inflating stripped length
+            // and zeroes any tail anchor trailing it; 「」『』 (6859 hits)
+            // wrap dialogue so bracketed-vs-unwrapped re-reads of one line
+            // must compare equal for identity checks. Comparison-only —
+            // never touches published text. ？ stays (sentence-type info,
+            // separate evidenced change if ever needed).
             return s.Replace("。", "").Replace("、", "").Replace(",", "").Replace("，", "")
                 .Replace("…", "").Replace("．", "").Replace(".", "").Replace(" ", "").Replace("　", "")
-                .Replace("!", "").Replace("！", "");
+                .Replace("!", "").Replace("！", "")
+                .Replace("＂", "").Replace("“", "").Replace("”", "")
+                .Replace("「", "").Replace("」", "").Replace("『", "").Replace("』", "");
         }
 
         // B19 ghost-inset override (revert: revert ghost-inset): when a
@@ -3860,6 +3869,24 @@ namespace WunderLanguage.Host.Capture
                 int n = 0;
                 int max = System.Math.Min(fa.Length, fb.Length);
                 while (n < max && fa[n] == fb[n]) n++;
+                return n;
+            }
+            catch { return 0; }
+        }
+
+        // Two-anchor suffix twin of FoldedCommonPrefixLength: shared tail
+        // length on the folded+stripped pair. Pairing it with the prefix
+        // bar identifies a re-read of a line already shown from BOTH ends,
+        // so a mid-string OCR wobble can't masquerade as a new block.
+        private static int FoldedCommonSuffixLength(string a, string b)
+        {
+            try
+            {
+                string fa = ConFoldText(StripForOverlap(a ?? ""));
+                string fb = ConFoldText(StripForOverlap(b ?? ""));
+                int n = 0;
+                int max = System.Math.Min(fa.Length, fb.Length);
+                while (n < max && fa[fa.Length - 1 - n] == fb[fb.Length - 1 - n]) n++;
                 return n;
             }
             catch { return 0; }
@@ -4103,6 +4130,22 @@ namespace WunderLanguage.Host.Capture
                     // 0 across the intro — bar 10 with wide margin.
                     if (incFold.Length < shown.Length
                         && FoldedCommonPrefixLength(text ?? "", ft ?? "") >= 10) return true;
+                    // Two-anchor same-line (revert: revert two-anchor): a
+                    // mid-string OCR wobble of a line ALREADY SHOWN (fade
+                    // misread swapping 伝説→情報 while both ends survive:
+                    // prefix 11 + suffix 6 on the folded pair) is the same
+                    // block re-read, not a new line — long shared head AND
+                    // long shared tail = identity from both ends. Length
+                    // -direction free (the wobble can lengthen the string —
+                    // an unstripped junk char did exactly that here), which
+                    // the shorter-incoming prefix rule above cannot see.
+                    // Growth stays exempt by construction: typewriter
+                    // completion changes the tail (suffix anchor breaks) and
+                    // a head-fragment lacks the prefix anchor — both must
+                    // hold. Measured distinct-line collisions: see simreplay
+                    // gate (raise suffix bar if any appear).
+                    if (FoldedCommonPrefixLength(text ?? "", ft ?? "") >= 10
+                        && FoldedCommonSuffixLength(text ?? "", ft ?? "") >= 6) return true;
                 }
             }
             catch { }
