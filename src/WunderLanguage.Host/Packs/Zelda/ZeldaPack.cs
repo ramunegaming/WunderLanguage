@@ -187,6 +187,10 @@ namespace WunderLanguage.Host.Packs.Zelda
             ("封印は、２度", "封印は　２度"),
             ("伝説となったころ！", "伝説となったころ…"),
             ("もうそこまでせまっていました。", "もうそこまでせまっていました"),
+            // Intro 1:1 (revert: revert intro-punct): しかし-line tail —
+            // screen has no trailing 。 (user spec 2026-10-20); OCR
+            // fabricates it 4/7 reads. Scoped to the わきでてきた clause.
+            ("わきでてきたと言うことです。", "わきでてきたと言うことです"),
         };
         public const string TitleMarker = "トライフォ";
         public const string FullTitle = "ゼルダの伝説 神々のトライフォース";
