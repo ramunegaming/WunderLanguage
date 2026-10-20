@@ -12,7 +12,11 @@ namespace WunderLanguage.Host.Packs.Zelda
             ("もルダ", "ゼルダ"),
             ("ナジの同禁", "ナゾの司祭"), ("ナジの司祭", "ナゾの司祭"), ("ナツの司祭", "ナゾの司祭"),
             ("アゲニム", "アグニム"),
-            ("させばられる", "ささげられる"),
+            ("させばられる", "ささげられる"), ("ささばられる", "ささげられる"),
+            // Intro 1:1 (revert: revert intro-punct): block-4 read inserts か
+            // (消えていきました vs screen 消えていました, user-confirmed
+            // 2026-10-20). Scoped to 消えて — real きました words untouched.
+            ("消えていきました", "消えていました"),
             ("わきでできた", "わきでてきた"),
             ("みっかり", "みつかり"),
             ("いまました", "いました"),
@@ -168,6 +172,21 @@ namespace WunderLanguage.Host.Packs.Zelda
             ("… こら。こら、城へは入れんぞ子どもは、早く帰ってねなさい！", "こら こら 城へは入れんぞ 子どもは 早く帰ってねなさい！"),
             ("… こら、こら。城へは入れんぞ子どもは、早く帰ってねなさい！", "こら こら 城へは入れんぞ 子どもは 早く帰ってねなさい！"),
             ("… こら、こら。城へは入れんぞ子どもは早く帰ってねなさい！！", "こら こら 城へは入れんぞ 子どもは 早く帰ってねなさい！"),
+            // Intro 1:1 punctuation (revert: revert intro-punct): the OCR's
+            // language model fabricates punctuation the screen doesn't have —
+            // commas at wide gaps (game renders 　), trailing 。 on
+            // sentence-complete rows, trailing ！ where the screen has ….
+            // Restore the game's true form. All keys are intro-unique
+            // substrings (tail-agnostic where tails vary between reads).
+            ("はるか昔、山と森にかこまれた美しき、ハイラル", "はるか昔　山と森にかこまれた美しき　ハイラル"),
+            ("ハイラルの大地！", "ハイラルの大地…"),
+            ("しかし、戻ってきた者", "しかし　戻ってきた者"),
+            ("そこで、国の王は", "そこで　国の王は"),
+            ("そこで国の王は", "そこで　国の王は"),
+            ("封印させたそうです。", "封印させたそうです"),
+            ("封印は、２度", "封印は　２度"),
+            ("伝説となったころ！", "伝説となったころ…"),
+            ("もうそこまでせまっていました。", "もうそこまでせまっていました"),
         };
         public const string TitleMarker = "トライフォ";
         public const string FullTitle = "ゼルダの伝説 神々のトライフォース";

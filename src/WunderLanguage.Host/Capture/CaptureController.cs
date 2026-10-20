@@ -767,6 +767,12 @@ namespace WunderLanguage.Host.Capture
                 fixed_ = Regex.Replace(fixed_, @".{1,3}をとこう", "封印をとこう");
             fixed_ = fixed_.Replace("たくらも、", "たくらむ、", StringComparison.Ordinal);
             fixed_ = fixed_.Replace("カジの司祭", "ナゾの司祭", StringComparison.Ordinal);
+            // Intro 1:1 (revert: revert intro-punct): the bare-tail read of the
+            // legend line (…ころ, no terminator) — the screen has ころ….
+            // $ anchor scopes it to that exact tail: the ！！/＂ raw variants
+            // are handled downstream (NormalizePunctForStability +
+            // DisplayFixups), idempotent (ころ… has trailing …, no rematch).
+            fixed_ = Regex.Replace(fixed_, @"伝説となったころ$", "伝説となったころ…");
             fixed_ = Regex.Replace(fixed_, @"イケ[ァ-ヶー]+", "イケニエ");
             // Generic families: shapes, not instances. New variants same shape fix day one.
             fixed_ = Regex.Replace(fixed_, @"[腎覧貿貮]者", "賢者");
