@@ -1,7 +1,80 @@
-# WunderLanguage — Development Roadmap & Milestone Tracker
+﻿# WunderLanguage — Development Roadmap & Milestone Tracker
 
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
+
+## HANDOVER STATE (2026-10-21 — read this first)
+
+### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
+- **11/11 blocks, one bubble each**, byte-identical vs user's official script
+  (char-for-char: gap 　, … tails, only アグニム + ささげていった blocks keep 。,
+  ささげられる, 消えていました, no fabricated 。 anywhere). Title posted once.
+- Both defects closed live: two-anchor (`1f2f66a`) + intro-punct (`5cafd30`).
+- Evidence: `app-log-intro-live-pass-2026-10-21.log` (474KB, copied out of the
+  wipe-per-launch app.log).
+
+### Committed (git log)
+- `6a819cb` しかし-line tail strip pair — gated (revert: revert intro-punct)
+- `1f2f66a` Z1 two-anchor + quote/bracket strip (revert: revert two-anchor)
+- `5cafd30` Zelda intro 1:1 fixup pairs + ころ… anchor (revert: revert intro-punct)
+- `44e5691` BOOKS log entries for both
+
+### Uncommitted (working tree)
+- Untracked docs: `CHECKPOINT-2026-10-20.md`, `CHECKPOINT-2026-10-21.md`
+- `App.xaml.cs`, `SidecarProcessManager.cs`, `AppShell.cs` — W1b parked files — DO NOT commit
+- Untracked: WunderLanguage-Portfolio.pdf, battle-ui-mockup.svg, ocr-service/cat_service.py, tools/*.py
+
+### Optional (evidence-first, not blocking)
+- **Defensive pairs** — strip 。 from other no-。 blocks (大地, 伝えられていました,
+  みつかり, 消えていました, はずでした, ころ). 0 fabrication observed in 49 corpora;
+  mechanism proven on しかし-line. Add only if wanted for future-proofing.
+
+### Gate results (offline)
+- two-anchor: 412-corpus A/B simreplay PASS (0 orphans), live 11/11 ✓
+- intro-punct: ReplayChecker 50 Zelda corpora — 343 intended drifts + 57 pre-existing,
+  0 collisions; non-Zelda 0 key hits
+- しかし-line pair (`6a819cb`): A/B ReplayChecker 52-corpus sweep — baseline 402 vs
+  pair 403 drifts: 395 identical, 7 changed + 1 added, **all 8 deltas = the designed
+  。 strip on the わきでてきた clause**, 0 removed; non-Zelda 364 corpora 0 key hits;
+  build +0 warnings. Live block 5 clean (exe under test contained the pair).
+
+### Key files
+- `src/WunderLanguage.Host/Capture/CaptureController.cs` — two-anchor, regex
+- `src/WunderLanguage.Host/Packs/Zelda/ZeldaPack.cs` — fixup pairs
+- `C:\Users\RamuneGaming\AppData\Local\Temp\opencode\gate\` — A/B logs (rp_*/base_*,
+  ab_result.txt, nonzelda_scan.txt). NOTE: old harness scripts (gate_diff.py,
+  sibling_check.py, zelda_replay.py, drift_classified.txt) lost to temp cleanup —
+  this session's A/B diff was done ad hoc in PowerShell.
+- `C:\Users\RamuneGaming\AppData\Roaming\WunderLanguage\corpus\` — 417 corpora (incl. today's intro run)
+
+### Next steps
+1. ~~Decide しかし-line pair~~ done → `6a819cb`
+2. ~~Live intro run~~ done → PASS 11/11 (log: `app-log-intro-live-pass-2026-10-21.log`)
+3. Campaign continues with **G1** (debugging/hardware audit — audit first, no rewrites)
+
+## Campaign plan (2026-10-20 — session restart, the wrap order)
+
+Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, then extend the resolution matrix. Every onboard must strengthen the shared game-blind systems so untested future games inherit the gains (Scalability — never a collection of unrelated hand-tuned implementations).
+
+### Immediate queue (work in this order)
+1. **✅ Z1 — Zelda intro 11/11 — DONE (live pass 2026-10-21).** Standing user demand: nothing else until it works. Two defects: **A** block 8 double-post (similarity 0.89 sits inside the 0.85–0.90 gap, both fire via script-anchored); **B** block 11 wobble twin (ささげられる vs ささばられる posted as separate lines). Fix by extending the B19 twin/wobble machinery, not by bolting on a threshold. Proof: fresh live run + screenshot; commit with revert phrase. Lesson on file: proper edit tools only — no PowerShell line-splicing on CaptureController.cs (213 build errors, reverted). **Closed: 11/11 blocks byte-identical vs official script, one bubble each, 1:1 punctuation — see HANDOVER STATE (2026-10-21).**
+2. **G1 — Debugging-workflow & hardware audit** (user-approved brief; audit first — no logger/architecture rewrites). Deliverable: prioritized improvement plan with affected files. Known breakpoint spots: CaptureController.cs 1202–1219 (scriptFresh), 1349–1392 (growth-fast/wobble-publish); main.py 1108–1130 (/ocr), 767–780 (_script_match).
+3. **C1 — Category measurement pass** (offline, corpus-only, no behavior change): mine corpora for how many junk fires came from mis-categorized screens (menu garbage, battle junk, decision prompts). Decides Option 1 (display tagging) vs Option 2 (routing-level).
+
+### Campaign phases (after the immediate queue)
+- **Z2 — Zelda wrap: inventory menu.** Not started. Menu routing has burned us before (B19 MENU attempt reverted) — evidence-first, small gated steps.
+- **F2x — FFVI wrap arc:** title, intro all blocks, first town (most/all text), battle UI (F1 exists — validate), shop UI (P6, blocked on shop-play signal), inventory UI.
+- **PM1 — Paper Mario focused week:** intro stability, title posting, inventory, menus. User plays; no alt-tab; our Shot button; collects N1–N6 proofs.
+- **R1–R4 — Resolution matrix, 2 games per generation:**
+  - R1 240p: Zelda + FFVI (both onboarded ✓)
+  - R2 480p: Paper Mario + second game (**TBD — user to pick**)
+  - R3 720p: **both TBD — user to pick**
+  - R4 1080p: Persona 5 + second game (**TBD — user to pick**)
+  Each generation trains resolution-specific capture/recognition until solid, then feeds gains back into shared systems.
+
+### Feed categories (agreed 2026-10-20)
+Five exclusive categories for the translation feed: **Title** (title screens only) · **In-game text** (NPC dialogue, signs — the default) · **Decisions** (option lists with selector arrow/finger) · **MENU** (inventory, save select, game over, map, pause, main menu) · **BATTLE** (battle screens, JRPG-flavored — command windows, status, FFVI the model case).
+Current reality: Title works and is gated; In-game is the solid default; Battle is an FFVI-only bolt-on; Menu is fragile; Decisions does not exist. Untested games leak menu/battle junk through the default path — that is the mass-release hole C1/C2 target. Safety-valve design rule: **default to in-game; route away only on strong evidence; misclassification costs a label, never a suppressed line.**
 
 ## Complete
 
@@ -85,7 +158,7 @@ Undoubled stable ROM ID plus normalized line on Dolphin.
 Next bundles must carry pack prefixes and headers.
 
 ## In progress
-### B19. Cross-fire variant consolidation (prerequisite for repetition-evidence)
+### B19. Cross-fire variant consolidation (prerequisite for repetition-evidence) — code complete through 2f (HEAD c082fdc), live 11/11 proof still owed (see Z1)
 A (repetition-as-evidence) was built through 5 iterations and reverted: static-page recovery works (block 4 exact) but pulls misread twins with it (帰がけて/出かけて, きわって/日ボタン — incorrect lines = regressions by the book), and every guard tried (dominance, twin-veto, net-displacement) either missed the twins or ate clean lines. Conviction: variant consolidation must come FIRST (merge variant doubles into single bubbles), repetition-evidence second. Part 1 DONE (live 2026-10-16 Zelda specimens: 900/封印は both posted, そこで identical double-post, 164-full never fired while truncated did, イグニュー ghost flushed): (1) fire-history ring (revert: revert fire-hist) — identical/folded-identical/containment/near-dupe vs last-8-fires in a 10-loop window, recorded synchronously at the Publish choke (sim+live); (2) sweep twin-park (revert: revert twin-sweep) — evidence-ordered sweep (Sightings desc) keeps max-evidence twin (weighted-sim ≥0.55, strictly-less-than; measured P1 0.58 catch / N9 0.48 miss / distinct ≤0.45), plus deterministic matcher/sweep/trim ordering (hash-randomized Dictionary iteration convicted by sim: identical inputs gave 86 vs 91 fires run-to-run; sorted snapshots now hash-identical across repeats); (3) freshest-extension (revert: revert fresh-ext) — growth-fast fires the extraction when it folded-extends the candidate (gate moved onto the fired text; self-suppression convicted by sim); (4) blank-flush corroboration (revert: revert blank-corrob) — uncorroborated held lines don't publish on blank (omission over misteaching); (5) panel drop-eq (revert: revert drop-eq) — identical/folded-equal arrivals collapse. Deterministic ConFold closure included (multi-pair chars げ×3/封×7 folded by HashSet luck; convicted by sim). Sim-verified: target run 13→9 fires (dup/900/ささ-prefix/ghost-173 gone, ここに-full single post, ゼルダ-full fires); Zelda-old 91→86 deterministic with 3 genuine recoveries (full-ささば, イケニエを使い, あっ魔法) and no live-affecting miss (Presents = live-vision-only line via untouched weak-hold; 地図/カンテラ pre-existing sim gaps; マスターソード fires as read-variant); FFVI 121→115 with identical misses (6 dup-variants parked). Killed in measurement, not shipped: flush corroboration ≥2 (legit FFVI pageturn flushes score 1 — mass-omission) and naive twin-suppression (would have kept 900-garbage over correct). RESIDUAL for part 2: ghost-row wins (138 mega-box flushed as candidate — needs region/mined promotion design with the 3 banked specimens) + A-retry behind it. Part 2a DONE (live 2026-10-17: correct ここに revised to ぽっとリー by update-neardupe): revision twin-guard (revert: revert upd-twins) — updates revise only on small wobbles (plain-sim ≥0.85, edit-distance ≤3, affix/middle shape; growth-via-containment road untouched). Measured: motivating flicker (dist 1, 0.875) still revises; twin (dist 5, 0.881) parks; blocking a revision keeps the fired text (omission-safe direction — worst case is a stale-correct bubble, never a swap-in). Sim: target 9 fires steady + 0 updates (ぽっとリー-class neither revises nor refires); Zelda-old 86→89 fires with 11→5 updates; FFVI 115→120 fires (deterministic hash ×2), 7→2 updates, missed 4→1 (remaining miss pre-existing, zero new), extra 69→71 (variant doubles now visible instead of swapped in — dup preferred over misteach). Part 2b DONE (live 2026-10-17: ここに prefix + full posted as TWO bubbles; first block はるか昔 never posted in any run): (a) completion routing (revert: revert fresh-upd) — growth-fast completions (strict folded extensions of the shown, posted prefix) revise via the update road instead of firing fresh, so typewriter lines post ONE bubble (design matches the road's documented "completion via update"; panel already order-safe both directions, absorb-growth stays as backup); parked-prefix completions still fire fresh (dangling updates revise nothing). Sim: target 9+0 becomes 8+1 (ゼルダ-full via update), today's run 8 fires + 2 updates (ここに-full and ゼルダ-full both via update, prefixes single). (b) script-row promotion (revert: revert script-promo) — sidecar assembly prefers a row matching a pack script line (same 0.92 bar as script-match) over the area pick: the はるか昔 crawl read clean 7 loops but the dots box won primary by area every time. Game-blind mechanism over evidenced per-game data (title-pack discipline); never rewrites, only selects; dots/shorts can never match a full script line (ghost max 0.59 vs 1.00 measured). Live-proof owed for (b) (extraction-level, sim-invisible). Loop2 queue: (き,ま) evidenced games=2 (いまました misread ×68: zelda 55 + ffvi 13; EN already correct via script-match, JA wobble honest) — next mining batch with zero-delta discipline, not this commit. Part 2c DONE (live 2026-10-17: block 10 posted the ghost row ありがとう/先輩 instead of the strip): ghost-inset override (revert: revert ghost-inset) — when a full-bleed box contains a disagreeing inset row, the inset row feeds the pipeline (raw level, so the winner gets the full fixup/mined chain; corpus keeps sidecar original as raw). Gates, all measured: containment + weighted<0.65 (124-twin 0.583 and 900-twin 0.58 trigger, distinct lines top ~0.51) + long outer + clear inset margin + full-bleed outer (x≤10); no battle/menu/title gates (downstream suppression owns those frames). Mirror-verified on all banked ghost loops (122-partial silent, 123/124/127 strip wins, 138 strip wins; remnants/dots/disjoint rows silent; PM date-junk resolves to content). Sim-neutral by construction (runs before the banked-extracted feed point; identical hash). Part 2d DONE (live 2026-10-17: MENU chrome posted as dialogue; ここに full followed by a late wobble-fragment post; はるか昔 + そこで single-sighting losses): (a) late-prefix staleness (revert: revert prefix-stale) — incoming shorter than shown with folded common prefix ≥10 parks at the Publish choke (growth direction safe by construction; measured fragment 13 vs consecutive-distinct 0, bar 10). (b) script-anchored fire (revert: revert script-fire) + sidecar script_hit flag (revert: revert script-hit) — a clean read matching a pack script line (same 0.92 bar) posts on first sighting; skipped when the read continues the candidate lineage (growth owns); repeats die at the history choke (single post guaranteed); packs without script data unaffected. (c) MENU attempt and revert: menu-provenance parking mass-parked legitimate lines within one sim run (menu tracker false-positives on intro remnants) — reverted same session, zero residue; MENU chrome needs a shape-based answer (latin-majority measurement queued). Sim: target steady 8+1 (hash-identical); Zelda-old 89→88 fires with identical missed-4 (one fewer double, zero legit loss); FFVI hash-identical. む/せ: single specimen only — NOT added (Loop2 needs games≥2); the prefix rule covers the class inventory-free. Still needed: live proof (no MENU post, no late fragments, はるか昔 + そこで post on first clean read, block 10 strip), then A-retry design behind the finished B19. Part 2e DONE (live 2026-10-17: block 10 posted incomplete → complete → wobbled incomplete triple): wobble-publish (revert: revert wobble-publish) — when extracted is longer than candidate and highly similar (wobble variant, not clean extension), publish extracted — the newer reading is more complete. Live 2026-10-17: 貌蓮を...the full line posts instead of 貌違を... the wobble variant. Gates all measured: extracted longer than candidate + weighted≥0.85 (124-twin 0.881 triggers, distinct lines top ~0.51) + common prefix≥6. Measured: Zelda-old 86→88 fires with missed 4→2 (地図/カンテラ now post), FFVI 120→119 fires with missed 4→2 (2 previously-missed lines now post), target run block 10 posts incomplete → complete (no 貌違を... third post). Loop2 queue: (き,ま) evidenced games=2 (いまました misread ×68: zelda 55 + ffvi 13; EN already correct via script-match, JA wobble honest) — next mining batch with zero-delta discipline, not this commit. Still needed: live proof (no MENU post, no late fragments, はるか昔 + そこで post on first clean read, block 10 strip posts complete last), then A-retry design behind the finished B19. Part 2f DONE (live 2026-10-18: block 10 triple-post fixed; block 11 incomplete-prefix fixed): (3) incomplete-prefix suppression — growth-fast now requires `EndsCompleteSentence(extractedText)` so incomplete prefixes (ささげら, もうそこま) don't post; complete version replaces incomplete candidate when extracted is longer, sim≥0.85, common prefix≥6. Verified: block 10 posts `７賢者の血をひく娘達を、つぎつぎイケニエにささげていったのです。` once (complete), block 11 posts `もうそこまでせまっていました。` (complete), block 8 posts once (… vs ! twin deduped). Sim: target 11 fires all blocks correct; Zelda-old 82 fires identical hash (no regression); FFVI 108 fires identical hash (no regression).
 
 ### B18. Confusion-tolerant counting (revert: revert fuzzy-weighted)
@@ -108,8 +181,8 @@ Ring of recent plain bubbles with element refs: extending fires revise, covered 
 
 ## Planned
 
-### P2. Dictionary experiment (Step 3)
-Design accepted; needs truth (banked) plus beams (banked). Pass bar: corrections ≥3× regressions, zero name damage, ≤50ms/line. Integration only on pass, separate revert.
+### P2. Dictionary experiment (Step 3) — EXECUTED 2026-10-18, concluded inconclusive-by-design
+The v2 dev-only beam-diversity rule yielded 0 corrections / 0 damages across the truth set — gate safe, nothing worth shipping. Residue: 6 untracked tools/p2_*.py scripts. Side-question open: true-beam re-OCR on the ~36 mapped crops, or declare done and move to P3.
 
 ### P3. Missed-line sweep + LM-fluency gate (Steps 4–6)
 Re-price singleton residue with truth set; build only what evidence convicts.
@@ -134,4 +207,7 @@ Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/
 - Wedge/Biggs official English forms (Matthew precedent: manual wins).
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
+- P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done (recommended: declare done, move to P3).
+- Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
+- Category routing depth: Option 1 (display tagging) vs Option 2 (routing-level) — decision deferred to C1 measurement numbers.
 - Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).

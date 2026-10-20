@@ -1381,3 +1381,25 @@ troubleshoot/ wipes per launch (pull before relaunch).
   non-Zelda raw scan (364 corpora + 2 repaired) 0 key hits -> other
   games byte-identical by input-level proof. Live intro run vs user
   script pending. Revert: revert intro-punct.
+
+## Session state - 2026-10-21 Z1 WRAPPED (live proof landed)
+- Live intro run 08:27-08:29 (log: app-log-intro-live-pass-2026-10-21.log,
+  474KB): 11/11 blocks posted once each + title, zero double-posts/wobble
+  twins, byte-identical 1:1 vs user's official script (all 11 lines
+  compared char-for-char - gap 　, … tails, only アグニム + ささげていった
+  blocks keep 。). Both Z1 defects CLOSED live: two-anchor (block 8/11) +
+  intro-punct (fabricated 。/、, ささばられる, 消えていきました).
+- しかし-line tail strip SHIPPED (6a819cb, joins revert intro-punct):
+  ("わきでてきたと言うことです。" -> no 。) in ZeldaPack DisplayFixups,
+  comment carries revert phrase. Gate: A/B ReplayChecker 52-corpus sweep
+  (49 Zelda + 2 Legend + hwnd; set = baseline-50 + today's live corpus
+  +116 lines + hwnd 0) - baseline 402 vs pair 403 drifts: 395 identical,
+  7 changed + 1 added, ALL 8 deltas = the designed 。 strip on the
+  わきでてきた clause (6 trailing, 1 mid-string block-boundary merge);
+  0 removed. Build 17 pre-existing warnings/0 errors (+0 delta).
+  Non-Zelda input scan 364 corpora 0 key hits. Live block 5 clean = the
+  exe under test contained the pair (exe 08:25 > edit 17:47).
+- Gate harness note: Temp\opencode\gate was wiped between sessions - rebuilt
+  rp_*/base_* logs + ab_result.txt + nonzelda_scan.txt there this session.
+  Old gate_diff/sibling_check/zelda_replay scripts + drift_classified.txt
+  are GONE (temp cleanup) - ReplayChecker A/B diff done ad hoc in PS.
