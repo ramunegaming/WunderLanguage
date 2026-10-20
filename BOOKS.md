@@ -1354,3 +1354,30 @@ troubleshoot/ wipes per launch (pull before relaunch).
   katakana-boundary longest-first (モグリン untouched, ティナ masked —
   verified); CAT-eaten tokens keep EN + [namemask-lost]. Wedge/Biggs
   still unpinned (no manual source). Revert: revert namemask.
+
+## Session state - 2026-10-20 shipped (gated, revertible)
+- Z1 dup fix SHIPPED (1f2f66a): quote/bracket family ＂“”「」『』 added to
+  StripForOverlap + FoldedCommonSuffixLength two-anchor clause in
+  FireHistoryCovers (prefix>=10 AND suffix>=6 folded+stripped,
+  direction-free; growth exempt by construction). Gate: 412-corpus
+  A/B simreplay sweep - 391 identical, 28 changed all variant-double
+  collapses/cleaner-variant swaps, 0 orphans (every suppressed fire
+  covered by sibling), 情報 ghost killed on today's + 7 historical
+  Zelda corpora; live run 11/11 blocks posted once each.
+  Revert: revert two-anchor.
+- Zelda intro 1:1 SHIPPED (5cafd30): OCR-LM fabricates punctuation the
+  screen lacks (、 at wide gaps, trailing 。, ！ where screen has …).
+  Restored via pack tables: DisplayFixups +9 intro-unique keys
+  (はるか昔/ハイラルの大地/しかし/そこで x2/封印させたそうです/封印は/
+  伝説となったころ/もうそこまでせまっていました), OcrFixups +2
+  (ささばられる, 消えていきました - user script truth), + $-anchored
+  伝説となったころ ellipsis anchor in ApplyZeldaOcrFixups.
+  Gate insight: simreplay is fixup-INERT (decision seam feeds the
+  banked `extracted` string, never re-runs the chain) - so fixup
+  changes gate on ReplayChecker (--replay, real chain from raw):
+  all 50 Zelda corpora, 10,882 lines -> 400 drifts = 343 intended
+  (26 unique 1:1 forms, intro lines only) + 57 pre-existing key-free
+  (blend-collapse + remembered/mined raw!=recorded classes);
+  non-Zelda raw scan (364 corpora + 2 repaired) 0 key hits -> other
+  games byte-identical by input-level proof. Live intro run vs user
+  script pending. Revert: revert intro-punct.
