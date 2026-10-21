@@ -1651,3 +1651,27 @@ troubleshoot/ wipes per launch (pull before relaunch).
   rewrites; hotspots CaptureController 1202-1219/1349-1392, main.py
   1108-1130/767-780; scope = loop resilience vs hung sidecar requests,
   watchdog, emulator-crash W1b chain, VRAM pressure), then C1.
+
+## Session state - 2026-10-22 round-6: JA title body CONFIRMED live; boot double-post ROOT-CAUSED + FIXED
+- Round-6 (04:25): intro 11/11 clean, post-intro title single, TITLE bubble
+  now shows TITLE / ゼルダの伝説 神々のトライフォース / EN (1cd1125 fix
+  proven live). ONE defect: boot title posted TWICE (04:25:17 + 04:25:19).
+- Root cause (log + code): bubble#1 = [title] episode publish (L29, correct
+  path). Bubble#2 = [menu] publish TITLE lines=1 (L31) - the MENU TRACKER's
+  OWN title publisher: UpdateMenuTracker line 4758 isTitle (blocks<=3 +
+  TitleMarker row) -> kind=TITLE -> mint. It normalizes marker rows to
+  FullTitle (line 4657-4660) which is why bubble#2 was byte-identical.
+  It never read the title clock; its only dedup was sig==_lastPublishedMenu
+  (empty at boot -> mint allowed; at post-intro it held the boot sig ->
+  deduped, which is why post-intro LOOKED single - the double class was
+  always there, boot just exposes it).
+- FIX (commit, revert title-episode): UpdateMenuTracker takes iteration;
+  TITLE-kind mints now share the same contract as episode+quiet: skip if
+  `_titleFireLoop` <60 loops old, and stamp BOTH `_titleFireLoop` +
+  `_lastDialogueFireLoop` when minting (so episode defers via title clock,
+  quiet defers via dialogue clock - three-way mutual exclusion, same 60
+  semantics the episode already had). Build GREEN.
+- ROUND 7 GATE: boot title ONE bubble, post-intro ONE, intro 11/11, JA+EN
+  body on both titles. Watch for [menu] publish TITLE without a nearby
+  episode publish - if it ever appears >60 loops after an episode publish,
+  that's a legit tracker fallback post, not a double.
