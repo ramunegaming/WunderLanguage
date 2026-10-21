@@ -4655,8 +4655,16 @@ namespace WunderLanguage.Host.Capture
                     jaRows.Add((rows[i].y + 1, "", rows[i].ja));
             }
             // Zelda title pack: single line. Tolerant トライフォ prefix (トライフォス misread).
+            // Empty-marker guard (round-7 Q&A, revert: revert universal-marker-guard):
+            // universal's TitleMarker/FullTitle are "" and Contains("") is TRUE in
+            // .NET - unguarded, EVERY row of an UNKNOWN game's screen normalizes
+            // to "" (row wipe) and sparse frames mint degenerate TITLE bubbles.
+            // Packed games declare non-empty markers, so this guard only changes
+            // the universal (unknown-game) path, from broken to intact.
+            string _marker = Packs.PackRegistry.Current.TitleMarker;
+            bool _hasMarker = !string.IsNullOrEmpty(_marker);
             for (int i = 0; i < jaRows.Count; i++)
-                if (jaRows[i].t.Contains(Packs.PackRegistry.Current.TitleMarker) && !jaRows[i].t.Contains("ゼルダ"))
+                if (_hasMarker && jaRows[i].t.Contains(_marker) && !jaRows[i].t.Contains("ゼルダ"))
                     jaRows[i] = (jaRows[i].y, Packs.PackRegistry.Current.FullTitle, true);
             // Split header repair: PLAYER row + SELECT row adjacent -> one header.
             for (int i = 0; i + 1 < jaRows.Count; i++)
@@ -4693,7 +4701,7 @@ namespace WunderLanguage.Host.Capture
                 jaRows = decRows;
                 isDecision = true;
             }
-            bool isTitleFrame = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
+            bool isTitleFrame = (_hasMarker && blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
             // Fragments on dialogue screens are not menus: few rows, little JA,
             // little total content. (Title + kanji-dense single headers exempt.)
             if (!isTitleFrame)
@@ -4755,7 +4763,7 @@ namespace WunderLanguage.Host.Capture
             if (sig == _lastPublishedMenu) return;
             _lastPublishedMenu = sig;
             if (isDecision) _lastDecisionSig = sig;
-                        bool isTitle = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
+                        bool isTitle = (_hasMarker && blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
             string kind = isTitle ? "TITLE" : (isDecision ? "DECISION" : "MENU");
             // T2 anti-double (round-6 boot 2026-10-22: episode posted L29 and
             // THIS tracker minted again L31 - two TITLE bubbles 2s apart; the
