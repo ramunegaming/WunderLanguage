@@ -250,3 +250,18 @@ Policy: every new knowledge item must have a PATH to a shared store
 staging is fine, knowledge with NO promotion path is tier-3 in
 disguise. Per-game silos remain ONLY for narrative-specific data
 (script matches) and seal-tier pairs.
+
+## G1 PROGRESS - 2026-10-22 (audit done, fixes committed, live gate owed)
+Audit complete + fix batch shipped (013c5bc, reverts: g1-timeouts /
+g1-single-instance / g1-circuit-breaker): HttpClient 100s defaults were the
+entire wedge window (OCR now 15s, translate 30s + gate-slot release);
+single-instance named mutex at module init (round-3 = two hosts running
+simultaneously - the "6x OCR collapse + sidecar refused" class); circuit
+breaker (3+ nested timeouts -> /health probe, quiet hold). W1b
+RECLASSIFIED: job ABNORMAL events = sidecar import probes + shutdown kills,
+NEVER the emulator (emulator is not in the job); the parked crash hunt was
+chasing that phantom - remaining unknown = round-4 launch-1 silent death
+(instrumentation sufficient, await recurrence). T2.6 CLOSED (A/B zero
+delta across 429 corpora; bare pair 消えていきました Zelda-pack-scoped =
+no live cross-game exposure). OWED: one live gate (normal round + double-
+launch test + no [g1] lines), then G1 closes and C1 starts.
