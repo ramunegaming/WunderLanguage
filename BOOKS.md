@@ -1434,3 +1434,48 @@ troubleshoot/ wipes per launch (pull before relaunch).
   IsSelfDuplicated). STILL NEEDED: live run (boot->intro->return posts again,
   gameplay silent). Note: corpus boot-title evidence live at sim=1.00 within
   3 loops (loops 21-23) - faster than the old quiet bar=10.
+
+## Session state - 2026-10-21 T2.5 (round-1 live FAILED, root-caused, fixed: 2851b11 + 904e02d, live round 2 owed)
+- Round-1 live (20:56-21:01): boot posted (quiet fallback), post-intro title did
+  NOT post, reset-title posted. ZERO [title] episode evidence/publish lines in
+  app.log - detector ran (call site shares the try with the quiet path that
+  logged) but returned silently every loop; dll string check confirmed binary
+  had the code.
+- Root cause (tonight's corpus 205651, replay_one): OCR dropped the prolonged-
+  sound mark on every title read (神々のトライフォス, no ー) vs morning reads
+  (神々のトライフォース, ー present -> containment 1.00). Block still matched
+  the WORD after dash-strip (sim 1.00) but the matcher keyed on the literal:
+  C# Levenshtein 0.5625, python difflib 0.72, both <0.85 - zero evidence all
+  session, quiet fallback covered boot+reset but not post-intro (old veto/edge
+  failure unchanged). Also caught: python gate used difflib where C# uses
+  Levenshtein - gate/runtime mismatch, fixed for parity.
+- T2.5 (2851b11, revert: revert title-episode): TitleNorm strips ー/―/—/‐/－
+  on both sides of evidence (key on the word, not the diacritic); matcher
+  rewritten as mirror of gate title_sim (TitleNorm containment both ways +
+  Unvoice containment + ComputeSimilarity(bn,pn)>=0.85, len>=4 post-norm);
+  anti-double guard added: publish requires _titleFireLoop<0 or >=60 loops
+  since the last TITLE (quiet runs before us in the same try; our publish
+  stamps _lastDialogueFireLoop so quiet's internal 60-loop veto blocks it -
+  mutual exclusion both directions; _titleFireLoop inits -1000 = cold start
+  never blocks).
+- Intro fixups (904e02d, revert: revert intro-punct), both user-flagged/evid-
+  enced from tonight's live run: DisplayFixup 伝説となったころ…？ -> …ころ…
+  (raw L101 ！？ -> pair ころ！ consumes ！ leaving …？ ; key placed AFTER the
+  ころ！ pair so it matches the post-pair state); DisplayFixups
+  もうそこ(そう)まではまっていました。 -> もうそこまでせまっていました (raw L181
+  OCR misread せ->は beat the correct read L173 in the growth race).
+- Gates round 2 (all offline, GREEN): build 0 err/+0 warn; t2_title_mine
+  (now Levenshtein+dash-strip, E null-loop guard): 292 match frames/31
+  corpora (was 102/14 - ー-drop caught many), 0 dialogue FPs of 3,749 reads;
+  t2_episode_gate: 54 publishes/49 zelda corpora (was 16) - 6 historical
+  boot+post-intro doubles now covered, tonight's run [28,204,329] = all three
+  visits (replay_one), FFVI/PM 0, holds/mined stable; ReplayChecker A/B via
+  merged 418-corpus single-pass (replay_merge.py; checker per-line stateless)
+  stash-revert of ZeldaPack only: base drift=3916 vs cand=3921 (+5), holds
+  2853=2853, mined 662=662; delta = 9 rows ALL in the two designed families
+  (2x ころ？, 7x はまって), 0 rows left the drift set (4 lines reappear with
+  changed now=), 0 non-intro/non-Zelda hits. Sim structurally untouched.
+- STILL NEEDED: live round 2 - boot posts ONCE (episode may be vetoed by
+  quiet's earlier publish in the same dwell - expected, one post either way),
+  intro -> title posts AGAIN (the money shot, evidence [L204] proven offline),
+  gameplay silent, reset/return posts again. THEN close T2 in ROADMAP/BOOKS.
