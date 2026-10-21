@@ -154,6 +154,17 @@ namespace WunderLanguage.Host.Packs.Zelda
             ("ショウ前を開く", "ジョウ前を開く"),
             ("物にわって", "物にさわって"),
             ("一つ、この剣と盾を持って行け", "…こ、この剣と盾を持って行け"),
+            // 2026-10-22 live evidence (corpus L54, posted as a duplicate of
+            // intro block 4 at 02:41:28): the 4→5 crossfade frame OCRs as
+            // ハロハのノハ” + the block-4 line with a いきました tail — the
+            // growth machinery then holds it as a NEW line (prefix grew) and
+            // flushes it next fire. Strip the ghost prefix and normalize the
+            // tail so the variant collapses into the already-fired line
+            // (dedup catches it). Deeper fix = crossfade-frame suppression in
+            // growth (G1 audit, CaptureController 1349-1392).
+            // Revert: revert intro-dup.
+            ("ハロハのノハ”", ""),
+            ("聖地へと消えていきました", "聖地へと消えていました"),
         };
         public static readonly (string from, string to)[] DisplayFixups =
         {
