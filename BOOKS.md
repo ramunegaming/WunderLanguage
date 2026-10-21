@@ -1717,3 +1717,10 @@ troubleshoot/ wipes per launch (pull before relaunch).
   isTitle all gated on non-empty marker. Inert for Zelda/FFVI/PM (all
   declare non-empty markers). Build GREEN, no A/B owed (change is
   conditional on marker=="" = universal only).
+
+## STANDING POLICY - 2026-10-22 (see ROADMAP "SCALING DOCTRINE")
+User directive: 1 person cannot playtest every game -> default to
+universal/scalable fixes, stop one-game fixups as the default move.
+Every future defect goes through the fix ladder (engine/class ->
+self-learning -> pack data -> [forbidden] one-off). Zelda/FFVI pairs =
+legacy bootstrapping, ease off going forward. Codified in ROADMAP.

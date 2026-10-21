@@ -215,3 +215,21 @@ Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/
 - Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
 - Category routing depth: Option 1 (display tagging) vs Option 2 (routing-level) — decision deferred to C1 measurement numbers.
 - Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
+
+## SCALING DOCTRINE (standing policy, 2026-10-22, user-set)
+Two tiers: (1) THE FLOOR - a universal game-blind core strong enough that
+UNSEEN games work out of the box; this is where effort goes by default.
+(2) THE SEAL - gradually certified playtested games (guaranteed list at
+release), grown by choice, never by blocking the floor.
+Fix ladder for every defect, in order: (1) ENGINE/CLASS fix - ask "does
+this bug class exist for all games?" and fix the class once; (2) SELF-
+LEARNING mechanism - prefer strengthening mined corrections / gates /
+thresholds so the system learns per-game (ML direction) over hand rules;
+(3) PACK DATA - static pairs only inside a pack, seal-tier games only,
+never engine logic keyed on a game name; (4) ONE-OFF ENGINE BRANCH -
+forbidden without explicit user sign-off. Verification substitute for
+"can't playtest every game": every engine fix runs the merged-corpus
+replay A/B (all recorded games at once); unseen games have no corpora,
+which is exactly why their fixes must be class-level. Zelda/FFVI fixup
+accumulation = legacy bootstrapping; STOP adding new per-game fixups by
+default (user directive 2026-10-22).
