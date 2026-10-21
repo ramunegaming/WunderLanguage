@@ -1623,3 +1623,31 @@ troubleshoot/ wipes per launch (pull before relaunch).
   vetoes named; rounds 3-4 = infrastructure (sidecar outage, VRAM wedge,
   emulator crashes, universal-pack start). ROUND 5 GATE unchanged: boot
   title posts, intro posts, post-intro title posts, gameplay silent.
+
+## T2 CLOSED - 2026-10-22 round-5 live PASS + TITLE JA body fix
+- Round-5 live (04:05-04:07) PASSED the full T2 gate:
+  * Boot title posted 04:05:27 via [title] episode publish (L25, hits=3,
+    evidenceAge=0 - evidence LIVE at fire time, evidence-live override
+    working, zero BLOCKED lines all run).
+  * Intro 11/11 blocks posted CLEAN (ころ… no ?, せまって no trailing 。,
+    no crossfade duplicate, no hallucinated prefixes).
+  * Post-intro title posted 04:07:41 via episode (L197, age=0). Gameplay
+    silent. Quiet counter built (3/6/14, hint=False) but never minted -
+    episode owns both visits; anti-double held.
+  * T2 = done: TITLE posts once per visit, knows via pack FullTitle
+    matching (voicing/dash/misread tolerant), re-Posts on return, silent
+    in gameplay. Detector shipped across 3558867..355dd23.
+- Round-5 defect (user-flagged, fixed same session): TITLE bubble showed
+  EN but NO JAPANESE. Cause: the TITLE payload has been (0,"",false) since
+  the quiet era - TranslateAndPublishMenuAsync's TITLE branch falls back
+  to pack FullTitle for the TRANSLATION line (ApplyTitleFixup TitleMap
+  JA->EN canned), but the bubble's source string = rows' raw texts = "".
+  Fix (revert title-episode): all three publish sites (quiet-static,
+  quiet-settled, episode) now pass (0, FullTitle, true) - JA body shows,
+  EN line unchanged (branch runs r.t through ApplyTitleFixup either way).
+  Next title post will show: TITLE / ゼルダの伝説 神々のトライフォース /
+  The Legend of Zelda: Triforce of the Gods.
+- Campaign queue resumes: G1 (debugging/hardware audit - audit first, no
+  rewrites; hotspots CaptureController 1202-1219/1349-1392, main.py
+  1108-1130/767-780; scope = loop resilience vs hung sidecar requests,
+  watchdog, emulator-crash W1b chain, VRAM pressure), then C1.
