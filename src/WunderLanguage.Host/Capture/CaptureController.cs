@@ -3605,25 +3605,22 @@ namespace WunderLanguage.Host.Capture
                 string pn = TitleNorm(packTitle);
                 string pnUV = Unvoice(pn);
                 if (pn.Length < 4) return false;
+                // Shared matcher: TitleNorm'd containment either way, B13b
+                // voicing containment, Levenshtein similarity soft net.
+                bool Match(string bt)
+                {
+                    string bn = TitleNorm(bt);
+                    // Short fragments don't count (B13 trunc semantics).
+                    if (bn.Length < 4 || !HasJapanese(bt)) return false;
+                    return pn.Contains(bn, System.StringComparison.Ordinal)
+                        || bn.Contains(pn, System.StringComparison.Ordinal)
+                        || pnUV.Contains(Unvoice(bn), System.StringComparison.Ordinal)
+                        || ComputeSimilarity(bn, pn) >= 0.85;
+                }
                 bool evidence = false;
                 foreach (var b in blocks)
                 {
-                    string bt = (b.Text ?? "").Trim();
-                    string bn = TitleNorm(bt);
-                    // Short fragments don't count (B13 trunc semantics):
-                    // a misread must carry real title substance. Length is
-                    // post-normalization so a lone ー can't pad a fragment.
-                    if (bn.Length < 4 || !HasJapanese(bt)) continue;
-                    // Mirror of tools/t2_title_mine.py title_sim:
-                    // TitleNorm'd containment either way (full-title-in-
-                    // junk and partial-title reads), voicing-tolerant
-                    // containment (B13b), Levenshtein similarity as the
-                    // soft net.
-                    if (pn.Contains(bn, System.StringComparison.Ordinal)
-                        || bn.Contains(pn, System.StringComparison.Ordinal)
-                        || pnUV.Contains(Unvoice(bn), System.StringComparison.Ordinal)
-                        || ComputeSimilarity(bn, pn) >= 0.85)
-                    { evidence = true; break; }
+                    if (Match((b.Text ?? "").Trim())) { evidence = true; break; }
                 }
                 if (evidence)
                 {
@@ -3641,26 +3638,40 @@ namespace WunderLanguage.Host.Capture
                     _titleEpisodeHits = 0;
                     _titleEpisodePosted = false;
                 }
-                if (_titleEpisodeHits >= TitleEpisodePublishAt && !_titleEpisodePosted
-                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
-                    && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0
-                    // Anti-double: whoever posts first owns the screen.
-                    // Quiet runs this loop before us (line above) and the
-                    // static path can race us too — a TITLE within 60 loops
-                    // of another TITLE is the same visit (revert: revert
-                    // title-episode). _titleFireLoop inits -1000 (cold
-                    // start never blocks).
-                    && (_titleFireLoop < 0 || iteration - _titleFireLoop >= 60))
+                if (_titleEpisodeHits >= TitleEpisodePublishAt && !_titleEpisodePosted)
                 {
-                    _titleEpisodePosted = true;
-                    _titlePosted = true;
-                    try { _titleFireLoop = iteration; } catch { }
-                    // Stamp the title-hardening clock so the quiet-timer
-                    // fallback cannot mint a second TITLE for this screen.
-                    try { _lastDialogueFireLoop = iteration; } catch { }
-                    FileLogger.Log($"[title] episode publish TITLE (hits={_titleEpisodeHits}, evidenceAge={iteration - _titleEpisodeLastEvidence})");
-                    _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
-                    return true;
+                    // Round-2 live (2026-10-22): evidence hit 3 at boot L22
+                    // AND post-intro L171-178, yet zero publishes — a shared
+                    // state veto (_menuSignature or _candidateText, the two
+                    // fields quiet's edge also checks, which explains its
+                    // silence too) held across both dwells. Two responses:
+                    // (a) a candidate that IS the pack title is title-path
+                    // content (the B13 park already holds it from dialogue),
+                    // not a dialogue in progress — it must not veto; (b) log
+                    // the named blocker so the next live run settles any
+                    // remaining field definitively.
+                    bool bMenu = !string.IsNullOrEmpty(_menuSignature);
+                    bool bCand = !string.IsNullOrEmpty(_candidateText) && !Match(_candidateText);
+                    bool bBattle = !string.IsNullOrEmpty(_battleFiredSig) || _battleCooldown > 0;
+                    bool bFire = !(_titleFireLoop < 0 || iteration - _titleFireLoop >= 60);
+                    if (bMenu || bCand || bBattle || bFire)
+                    {
+                        string ct = _candidateText ?? ""; if (ct.Length > 48) ct = ct.Substring(0, 48) + "…";
+                        string ms = _menuSignature ?? ""; if (ms.Length > 48) ms = ms.Substring(0, 48) + "…";
+                        FileLogger.Log($"[title] episode BLOCKED loop={iteration} menu={bMenu} candTitle={bCand} battle={bBattle} fire={bFire} cand=\"{ct}\" menuSig=\"{ms}\"");
+                    }
+                    else
+                    {
+                        _titleEpisodePosted = true;
+                        _titlePosted = true;
+                        try { _titleFireLoop = iteration; } catch { }
+                        // Stamp the title-hardening clock so the quiet-timer
+                        // fallback cannot mint a second TITLE for this screen.
+                        try { _lastDialogueFireLoop = iteration; } catch { }
+                        FileLogger.Log($"[title] episode publish TITLE (hits={_titleEpisodeHits}, evidenceAge={iteration - _titleEpisodeLastEvidence})");
+                        _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        return true;
+                    }
                 }
                 return false;
             }
