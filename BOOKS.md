@@ -1724,3 +1724,13 @@ universal/scalable fixes, stop one-game fixups as the default move.
 Every future defect goes through the fix ladder (engine/class ->
 self-learning -> pack data -> [forbidden] one-off). Zelda/FFVI pairs =
 legacy bootstrapping, ease off going forward. Codified in ROADMAP.
+
+## CONTINUOUS STRENGTHENING confirmed - 2026-10-22
+User doctrine extension: every onboarded game teaches ALL games (words,
+error patterns, structure); older games strengthen as new ones onboard.
+Verified live in code: Loop 1 compounding (per-game mined -> >=2-game
+agreement -> _global.json -> loaded for all games, 89 global pairs,
+non-seal Dolphin game contributing). Amendment appended to ROADMAP
+"SCALING DOCTRINE". No code change needed - mechanism exists; doctrine
+now requires every future knowledge item to have a path to a shared
+store.

@@ -233,3 +233,20 @@ replay A/B (all recorded games at once); unseen games have no corpora,
 which is exactly why their fixes must be class-level. Zelda/FFVI fixup
 accumulation = legacy bootstrapping; STOP adding new per-game fixups by
 default (user directive 2026-10-22).
+
+CONTINUOUS STRENGTHENING (user, 2026-10-22): knowledge COMPOUNDS - every
+onboarded game is a training session for the WHOLE system; older games
+must get stronger as new ones onboard (new words, error patterns,
+structure). Reference implementation already live: Loop 1 compounding
+(CaptureController LoadMinedCorrections/PromoteGlobalCorrections,
+approved 2026-10-11) - per-game mined pairs (corrections/<game>.json)
+that >=2 distinct games mine IDENTICALLY promote to
+corrections/_global.json, loaded for EVERY game (89 global pairs as of
+2026-10-22, with a non-seal Dolphin game already contributing);
+conflicts hold per-game, never poisoning the shared store. The
+translation model + engine machinery are inherently shared layers.
+Policy: every new knowledge item must have a PATH to a shared store
+(mined -> global promotion, engine, translation layer); per-game
+staging is fine, knowledge with NO promotion path is tier-3 in
+disguise. Per-game silos remain ONLY for narrative-specific data
+(script matches) and seal-tier pairs.
