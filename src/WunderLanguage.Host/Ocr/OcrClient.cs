@@ -39,7 +39,14 @@ namespace WunderLanguage.Host.Ocr
         public OcrClient(string endpoint = "http://127.0.0.1:8000")
         {
             _endpoint = endpoint;
-            _http = new HttpClient();
+            // G1 timeout (revert: revert g1-timeouts): the default
+            // HttpClient timeout is 100s - the full round-4 wedge window
+            // (wedged sidecar, request never picked up). Warm OCR runs
+            // 0.3-2s (session means det=130ms rec=291ms); even round-3's
+            // 6x-degraded loops were ~7s. 15s caps any single wedge at
+            // 15s; the loop already survives nested timeouts
+            // (revert loop-timeout-hold) - this bounds the FREEZE.
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         }
 
         public async Task<string> ExtractTextAsync(Bitmap bitmap)

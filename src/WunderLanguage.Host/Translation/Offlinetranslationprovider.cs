@@ -45,7 +45,14 @@ namespace WunderLanguage.Host.Translation
         public OfflineTranslationProvider(string endpoint = "http://127.0.0.1:8000")
         {
             _endpoint = endpoint;
-            _http = new HttpClient();
+            // G1 timeout (revert: revert g1-timeouts): 100s default = the
+            // round-4 wedge, and a hung :8001 request held one of the 4
+            // _catGate GPU slots the entire time (four wedges = every
+            // future translate queued behind dead requests). Warm
+            // single-row ~0.6s, worst measured cold fan-out ~8s; 30s =
+            // ~4x headroom over the worst healthy frame, and the gate
+            // slot releases at 30s instead of 100s.
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         }
 
         private bool _versionLearned;

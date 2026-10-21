@@ -390,6 +390,11 @@ namespace WunderLanguage.Host.Capture
         // catch below). Reset on every successful OCR read.
         private int _consecutiveOcrTransportFailures;
         private int _consecutiveNestedTimeouts;
+        // G1 circuit breaker (revert: revert g1-circuit-breaker): loops
+        // spent in breaker-open hold (health probe failing).
+        private int _circuitHoldLoops;
+        // 2s budget - a wedged sidecar must not stall the breaker itself.
+        private static readonly System.Net.Http.HttpClient _g1HealthHttp = new() { Timeout = TimeSpan.FromSeconds(2) };
 
         private string? _lastFrameHash;
         private string? _pendingFrameHash;
@@ -2024,6 +2029,21 @@ namespace WunderLanguage.Host.Capture
             return false;
         }
 
+        // G1 circuit breaker (revert: revert g1-circuit-breaker): the
+        // loop-side health probe. Hits the OCR sidecar's /health (the
+        // endpoint the boot path has always polled) on a 2s budget;
+        // any failure = unhealthy (fail-closed on the probe, fail-open
+        // on the pipeline: holds are recoverable, dead loops are not).
+        private async Task<bool> SidecarHealthOkAsync()
+        {
+            try
+            {
+                using var resp = await _g1HealthHttp.GetAsync("http://127.0.0.1:8000/health");
+                return resp.IsSuccessStatusCode;
+            }
+            catch { return false; }
+        }
+
         private async Task RunLoopAsync(CancellationToken token)
         {
             FileLogger.Log("CaptureController loop starting (cc-converge-overlap)");
@@ -2068,6 +2088,36 @@ namespace WunderLanguage.Host.Capture
                         _lastFrameNovel = true;
                         _prevSmall = null;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
+                    }
+                    // G1 circuit breaker (revert: revert g1-circuit-breaker):
+                    // 3+ consecutive nested timeouts = the sidecar is wedged
+                    // (round-4 class: request never picked up). Probe health
+                    // on a 2s budget; unhealthy = hold the pipeline quietly
+                    // (no capture, no OCR POST to wedge behind) until it
+                    // answers again. Healthy = close + reset the timeout
+                    // counter. Fires only AFTER the timeout-hold machinery
+                    // (revert loop-timeout-hold) has already counted, so
+                    // first-failure behavior is unchanged: the loop still
+                    // survives on its own; this stops it FREEZING for the
+                    // request's lifetime and noticing never.
+                    if (_consecutiveNestedTimeouts >= 3)
+                    {
+                        if (await SidecarHealthOkAsync())
+                        {
+                            FileLogger.Log($"[loop {iteration}] [g1] circuit closed (sidecar healthy after {_consecutiveNestedTimeouts} timeouts)");
+                            _consecutiveNestedTimeouts = 0;
+                            _circuitHoldLoops = 0;
+                        }
+                        else
+                        {
+                            _costHolds++;
+                            _sessHolds++;
+                            _circuitHoldLoops++;
+                            if (_circuitHoldLoops == 1 || _circuitHoldLoops % 20 == 0)
+                                FileLogger.Log($"[loop {iteration}] [g1] circuit open ({_consecutiveNestedTimeouts} timeouts, health probe failed): holding ({_circuitHoldLoops} loops)");
+                            await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
+                            continue;
+                        }
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
                     var capSw = System.Diagnostics.Stopwatch.StartNew();
