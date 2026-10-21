@@ -1075,7 +1075,7 @@ namespace WunderLanguage.Host.Capture
                     // candidate state (read-only except its own tracker +
                     // _lastTranslatedText chaining shared with all roads).
                     try { TrackScrollLines(iteration, ocrBlocks); } catch (Exception sx) { FileLogger.Log($"[scroll] tracker error: {sx.Message}"); }
-                    try { UpdateMenuTracker(ocrBlocks); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
+                    try { UpdateMenuTracker(ocrBlocks, iteration); } catch (Exception mex) { FileLogger.Log($"[menu] tracker error: {mex.Message}"); }
                     // Zelda repair: the battle tracker (publishes BATTLE frames,
                     // owns _battleFiredSig/cooldown/stickies) runs on FFVI packs
                     // only — same gate as the suppression above. Revert: drop the if.
@@ -4508,7 +4508,7 @@ namespace WunderLanguage.Host.Capture
         }
 
         // Generic menu/title: small JA blocks, art filtered. No per-game strings.
-        private void UpdateMenuTracker(List<OcrBlock> blocks)
+        private void UpdateMenuTracker(List<OcrBlock> blocks, int iteration)
         {
             _frameIsTitle = blocks.Count <= 3 && blocks.Any(b => b.Text.Contains(Packs.PackRegistry.Current.TitleMarker));
             if (TryBuildGameOverRows(blocks, out var goRows))
@@ -4757,6 +4757,22 @@ namespace WunderLanguage.Host.Capture
             if (isDecision) _lastDecisionSig = sig;
                         bool isTitle = (blocks.Count <= 3 && jaRows.Count(a => a.ja && !string.IsNullOrWhiteSpace(a.t)) <= 2 && jaRows.Any(a => a.t.Contains(Packs.PackRegistry.Current.TitleMarker)));
             string kind = isTitle ? "TITLE" : (isDecision ? "DECISION" : "MENU");
+            // T2 anti-double (round-6 boot 2026-10-22: episode posted L29 and
+            // THIS tracker minted again L31 - two TITLE bubbles 2s apart; the
+            // tracker never read the title clock and at boot _lastPublishedMenu
+            // was empty so its own dedup didn't help. Post-intro looked single
+            // only because the tracker deduped against its boot sig). All
+            // three title publishers (episode, quiet, tracker) now share one
+            // contract: one TITLE per 60 loops, and a tracker mint stamps
+            // both clocks so episode (title clock) and quiet (dialogue
+            // clock) defer to it exactly as they defer to each other.
+            // Revert: revert title-episode.
+            if (kind == "TITLE")
+            {
+                if (_titleFireLoop >= 0 && iteration - _titleFireLoop < 60) return;
+                try { _titleFireLoop = iteration; } catch { }
+                try { _lastDialogueFireLoop = iteration; } catch { }
+            }
             // Title purity (cited 2026-10-07: Zelda scroll fragment
             // "これからの" rode a marker row into a minted TITLE).
             // Zelda-gated: TITLE bubbles carry only the TitleMarker row;
