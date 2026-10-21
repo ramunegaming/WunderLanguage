@@ -3581,6 +3581,20 @@ namespace WunderLanguage.Host.Capture
         private bool _titleEpisodePosted;
         private const int TitleEpisodePublishAt = 3;
         private const int TitleEpisodeBlindGap = 20;
+        // T2.5 (2026-10-21 live round 1): OCR drops the prolonged-sound
+        // mark ー between reads (morning: 神々のトライフォース matched
+        // containment 1.00; evening: 神々のトライフォス — no ー — scored
+        // 0.56 Levenshtein, detector inert all night while the quiet
+        // fallback happened to cover both posts). Title evidence
+        // normalizes dash-like marks away on BOTH sides so the match
+        // keys on the word, not the diacritic.
+        private static string TitleNorm(string t)
+        {
+            if (string.IsNullOrEmpty(t)) return "";
+            return t.Replace(" ", "").Replace("　", "")
+                    .Replace("ー", "").Replace("―", "")
+                    .Replace("—", "").Replace("‐", "").Replace("－", "");
+        }
         private bool CheckTitleEpisode(int iteration, List<OcrBlock> blocks)
         {
             try
@@ -3588,18 +3602,27 @@ namespace WunderLanguage.Host.Capture
                 string packTitle = "";
                 try { packTitle = Packs.PackRegistry.Current.FullTitle ?? ""; } catch { }
                 if (string.IsNullOrEmpty(packTitle) || blocks == null || blocks.Count == 0) return false;
+                string pn = TitleNorm(packTitle);
+                string pnUV = Unvoice(pn);
+                if (pn.Length < 4) return false;
                 bool evidence = false;
                 foreach (var b in blocks)
                 {
                     string bt = (b.Text ?? "").Trim();
+                    string bn = TitleNorm(bt);
                     // Short fragments don't count (B13 trunc semantics):
-                    // a misread must carry real title substance.
-                    if (bt.Length < 4 || !HasJapanese(bt)) continue;
-                    string btUV = Unvoice(bt);
-                    string titleUV = Unvoice(packTitle);
-                    if (packTitle.Contains(bt, System.StringComparison.Ordinal)
-                        || (!string.IsNullOrEmpty(btUV) && titleUV.Contains(btUV, System.StringComparison.Ordinal))
-                        || ComputeSimilarity(ScrollNorm(bt), ScrollNorm(packTitle)) >= 0.85)
+                    // a misread must carry real title substance. Length is
+                    // post-normalization so a lone ー can't pad a fragment.
+                    if (bn.Length < 4 || !HasJapanese(bt)) continue;
+                    // Mirror of tools/t2_title_mine.py title_sim:
+                    // TitleNorm'd containment either way (full-title-in-
+                    // junk and partial-title reads), voicing-tolerant
+                    // containment (B13b), Levenshtein similarity as the
+                    // soft net.
+                    if (pn.Contains(bn, System.StringComparison.Ordinal)
+                        || bn.Contains(pn, System.StringComparison.Ordinal)
+                        || pnUV.Contains(Unvoice(bn), System.StringComparison.Ordinal)
+                        || ComputeSimilarity(bn, pn) >= 0.85)
                     { evidence = true; break; }
                 }
                 if (evidence)
@@ -3620,7 +3643,14 @@ namespace WunderLanguage.Host.Capture
                 }
                 if (_titleEpisodeHits >= TitleEpisodePublishAt && !_titleEpisodePosted
                     && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
-                    && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0)
+                    && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0
+                    // Anti-double: whoever posts first owns the screen.
+                    // Quiet runs this loop before us (line above) and the
+                    // static path can race us too — a TITLE within 60 loops
+                    // of another TITLE is the same visit (revert: revert
+                    // title-episode). _titleFireLoop inits -1000 (cold
+                    // start never blocks).
+                    && (_titleFireLoop < 0 || iteration - _titleFireLoop >= 60))
                 {
                     _titleEpisodePosted = true;
                     _titlePosted = true;
