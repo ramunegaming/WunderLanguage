@@ -1547,3 +1547,38 @@ troubleshoot/ wipes per launch (pull before relaunch).
   that already chain).
 - Round-2 A/B results logged: pairs ころ/はまって + crossfade pairs =
   zero unrelated deltas (replay_base2/new2 in gate dir).
+
+## Session state - 2026-10-22 T2 round-3 live: INFRA failure run (not code); title veto NOW NAMED + overridden; round 4 owed
+- Round-3 (03:06-03:10, user ABORTED mid-intro): 3/11 intro posts, no title.
+  Root causes, all infrastructure:
+  1) TWO emulator job ABNORMAL-exits at startup (03:06:49 pid 40544, 03:07:26
+     pid 20760) - W1b family, user relaunched twice. + sidecar process
+     ABNORMAL-exit 03:10:23 at shutdown (3 total tonight).
+  2) Translation sidecar (127.0.0.1:8001) REFUSED at 03:08:08-11 exactly when
+     intro block 1 fired: fire went out, translation ERRORed -> bubble lost.
+  3) OCR loop rate collapsed ~6x (L21->L30 = 56s vs round-2's 1s/loop): intro
+     blocks 2 and 4 were never captured as frames at all; blocks 3/5/6 reads
+     were suppressed by the DIALOGUE hold machinery (fuzzy-window-keep /
+     subpart-suppressed / hold-weak-challenger - untouched by T2 commits).
+     Only ころ/アグニム/城の兵達 fired = user's 3 posts.
+  4) 城の兵達をあやつって？ = script-row promotion fired a PARTIAL weak read
+     with hallucinated ？ (round-2 posted the full line; degraded OCR +
+     script-promotion behavior) - G1-adjacent, no pair yet (one occurrence).
+- TITLE: evidence hit 3/3 at 03:10:13 (loop79-81, post-intro visit) and the
+  BLOCKED diagnostic NAMES the blocker for the first time:
+  cand="このメニュー" menuSig="これ以上、…" - the menu tracker + a junk
+  candidate claiming the title screen's OWN garbage text. Round-2's
+  menuSig-or-candidate hypothesis CONFIRMED (menuSig was the field).
+- FIX SHIPPED (commit, revert title-episode): evidence-live override -
+  while THIS frame still carries title evidence, menuSig/candidate cannot
+  veto (they are transition vetoes; no transition while on the title
+  screen). Battle veto + 60-loop anti-double always hold. Quiet untouched.
+- NO REVERT of this session's commits: diagnosis complete, revert to
+  pre-session state would have failed round-3 identically (quiet's bar
+  also never reached in the aborted ~10-loop dwell; dialogue loss was
+  sidecar/loop-rate). e9caa52/f0109d2 proven innocent of the 3/11 outcome.
+- ROUND 4 GATE: rebuild, boot title posts, intro posts ~all blocks (infra
+  permitting), post-intro title posts, gameplay silent, no ハロハ dup.
+  If any title post missing, read [title] episode BLOCKED lines (now show
+  evidence override effect via ev not needed - blocked only when evidence
+  absent + battle/fire).
