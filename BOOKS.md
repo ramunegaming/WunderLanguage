@@ -1734,3 +1734,62 @@ non-seal Dolphin game contributing). Amendment appended to ROADMAP
 "SCALING DOCTRINE". No code change needed - mechanism exists; doctrine
 now requires every future knowledge item to have a path to a shared
 store.
+
+## G1 AUDIT COMPLETE + FIX BATCH SHIPPED - 2026-10-22 (commit 013c5bc; live gate owed)
+Audit findings (evidence-first, all mechanism-proven):
+1) THE 100s FREEZE, fully mapped: OcrClient.cs:42 + Offlinetranslationprovider.cs:48
+   built new HttpClient() with NO Timeout = the 100s default = the entire
+   round-4 wedge window. A hung translate ALSO held one of the 4 _catGate GPU
+   slots the whole time (4 wedges = every future translate queued behind dead
+   requests). Loop survived (355dd23) but froze request-lifetime.
+2) W1b RECLASSIFICATION (CORRECTION to rounds 3-4 entries below - entries stay
+   as written, this supersedes their attribution): job events come ONLY from
+   the sidecar's job tree (SidecarProcessManager assigns _process only - the
+   emulator is NEVER in the job). Startup ABNORMAL-exit-process = python
+   import probes (round-7 same pattern: exit + ABNORMAL same pid 23ms apart
+   right after [sstartup] stage=imports-done; documented benign in-code since
+   2026-10-06). Shutdown ABNORMALs = job-close kills (round-7: 4 within 100ms
+   of "App exiting - stopping sidecar"). Round-4's "emulator crashed at
+   03:30:55/03:31:15" = those probes from TWO APP launches (03:30:51 and
+   03:31:12) - launch #1 died silently mid-warmup (log stops 03:31:11.087, no
+   OnExit, no DispatcherUnhandledException, no WER dump) and the user
+   relaunched. Round-3's REAL story: up to FIVE app launches with TWO RUNNING
+   SIMULTANEOUSLY (duplicate [env] lines 82ms apart, "log-cost probe failed:
+   file being used by another process", second boot's lines interleaved with
+   the first instance's live OCR loops) = the app has NO single-instance
+   guard; two hosts = two sidecars fighting :8000/:8001 + two capture loops
+   + split GPU - that IS round-3's 6x OCR collapse + sidecar-refused outage.
+   The user-witnessed Snes9x crashes are real but live outside our process;
+   only the bare-window-title aftermath is visible to us. REMAINING UNKNOWN:
+   launch #1's silent death (round-4) - no dump, no exception log = user kill
+   or sub-handler native crash; instrumentation (warmup-tick heartbeat +
+   crash handlers + WER armed) is already sufficient, wait for recurrence.
+3) VRAM: precondition confirmed (round-4 boot 5691/6144MB, ~453MB free under
+   main.py's 3072MB CAT floor which is fail-open + allocator-snapshot
+   observe-only). No new VRAM code: the timeout caps bound the damage class;
+   close-GPU-apps guidance stands.
+4) T2.6 GHOST-INSET: the chain-wrap already SHIPPED (CaptureController
+   2217-2224: ghost winner -> LookupMined -> full chain; corpus keeps raw
+   provenance). Owed A/B DONE: regenerated gate/merged_all.jsonl (429 files,
+   50267 lines, 2 known gzip truncations pre-existing), stash-revert A/B
+   base-vs-G1 = STRIPPED DELTA 0 (identical checked=45077 match=40479
+   drift=3931 mined-or-stale=667 holds=2991) = G1 fixes provably
+   text-path-inert. Pair-family census on the drift surface: all hits in
+   expected families (crossfade tail + intro pairs retroactively cleaning
+   old raws); anchored pairs narrow (聖地へと/伝説となった/もうそこまで);
+   the single BARE pair 消えていきました->消えてしました (line 19,
+   user-confirmed for Zelda) is Zelda-PACK-scoped = zero live cross-game
+   exposure (universal/PM packs lack it; replay's cross-game hits are the
+   documented "replay defaults to Zelda chains" artifact). T2.6 CLOSED.
+Fixes shipped (013c5bc): (a) revert g1-timeouts - OCR 15s, translate 30s;
+(b) revert g1-single-instance - named mutex Local\WunderLanguage_SingleInstance
+at [ModuleInitializer] (before App.Main, zero parked-file edits; --replay/
+--simcheck/--simreplay exempt; second launch logs + message + exit 1; static
+field holds the owned mutex against GC); (c) revert g1-circuit-breaker -
+3+ consecutive nested timeouts -> 2s /health probe (static client); unhealthy
+= quiet hold (own delay+continue, honors token) with first+every-20th log;
+healthy = close + reset both counters.
+LIVE GATE OWED: (1) normal round behaves like round-7 (timeouts/breaker inert
+on healthy paths); (2) double-launch test - second copy must show "already
+running" and exit, first unaffected; (3) no [g1] lines + no nested-timeout
+spam on a healthy run. G1 close + C1 start after the gate.
