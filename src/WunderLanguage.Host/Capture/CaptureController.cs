@@ -2093,7 +2093,7 @@ namespace WunderLanguage.Host.Capture
                         string? quietTitleStatic = CheckQuietTitle(iteration, null);
                         // Same battle guard as the settled path: static cooldown screens
                         // must never mint a TITLE mid-fight (forces a dupe frame).
-                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
+                        if (quietTitleStatic != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, Packs.PackRegistry.Current.FullTitle, true) }); }
                         // Static dwell confirms a clean held candidate. Menu screens
                         // (sig set) and titles stay out; dupes stay out via guards.
                         if (!string.IsNullOrEmpty(_candidateText)
@@ -2266,7 +2266,7 @@ namespace WunderLanguage.Host.Capture
                         // A live battle owns the screen: the logo/title detector must
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
                         // frame). Battle-grace covers transitions too.
-                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
+                        if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, Packs.PackRegistry.Current.FullTitle, true) }); }
                         // T2 title episode (revert: revert title-episode): positive
                         // title-screen detection alongside the quiet-timer fallback.
                         // See CheckTitleEpisode for the full design note.
@@ -3699,7 +3699,13 @@ namespace WunderLanguage.Host.Capture
                         // fallback cannot mint a second TITLE for this screen.
                         try { _lastDialogueFireLoop = iteration; } catch { }
                         FileLogger.Log($"[title] episode publish TITLE (hits={_titleEpisodeHits}, evidenceAge={iteration - _titleEpisodeLastEvidence})");
-                        _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                        // JA body = pack FullTitle (round-5: bubble showed the
+                        // EN TitleMap line but no Japanese - the payload was
+                        // (0,"",false) since the quiet era; the TITLE branch
+                        // in TranslateAndPublishMenuAsync only had the empty
+                        // source to show). EN line unchanged: the branch runs
+                        // r.t through ApplyTitleFixup either way.
+                        _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, packTitle, true) });
                         return true;
                     }
                 }
