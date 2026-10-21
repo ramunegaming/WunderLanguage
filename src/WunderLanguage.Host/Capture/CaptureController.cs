@@ -3654,7 +3654,17 @@ namespace WunderLanguage.Host.Capture
                     bool bCand = !string.IsNullOrEmpty(_candidateText) && !Match(_candidateText);
                     bool bBattle = !string.IsNullOrEmpty(_battleFiredSig) || _battleCooldown > 0;
                     bool bFire = !(_titleFireLoop < 0 || iteration - _titleFireLoop >= 60);
-                    if (bMenu || bCand || bBattle || bFire)
+                    // Evidence-live override (round-3, 03:10:13: BLOCKED with
+                    // menuSig="これ以上、" + cand="このメニュー" — the menu tracker
+                    // and a junk candidate claiming the TITLE SCREEN's own
+                    // garbage). menuSig/candidate are transition vetoes: they
+                    // exist to stop a title post while leaving to menu/dialogue.
+                    // While THIS frame still carries title evidence there is no
+                    // transition — we are on the title screen — so they cannot
+                    // veto. Battle + the 60-loop anti-double always hold.
+                    // Revert: revert title-episode.
+                    bool block = (bMenu && !evidence) || (bCand && !evidence) || bBattle || bFire;
+                    if (block)
                     {
                         string ct = _candidateText ?? ""; if (ct.Length > 48) ct = ct.Substring(0, 48) + "…";
                         string ms = _menuSignature ?? ""; if (ms.Length > 48) ms = ms.Substring(0, 48) + "…";
