@@ -2265,6 +2265,10 @@ namespace WunderLanguage.Host.Capture
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
                         // frame). Battle-grace covers transitions too.
                         if (quietTitleSettled != null && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0) { _titlePosted = true; try { _titleFireLoop = iteration; } catch { } _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) }); }
+                        // T2 title episode (revert: revert title-episode): positive
+                        // title-screen detection alongside the quiet-timer fallback.
+                        // See CheckTitleEpisode for the full design note.
+                        try { CheckTitleEpisode(iteration, ocrBlocks); } catch { }
                     }
                     catch { }
                     // Battle-frame dialogue guard: bottom-band battle blocks never become
@@ -3552,6 +3556,87 @@ namespace WunderLanguage.Host.Capture
 
         // M8-2 moved: game-specific blend lives in Packs/Zelda/ZeldaPack.cs. Core name kept so 8 call sites unchanged.
         private static bool IsZeldaTransitionBlend(string text) => Packs.PackRegistry.Current.IsTransitionBlend(text);
+
+        // T2 title episode (2026-10-21) — REVERT PHRASE: revert title-episode.
+        // Positive title-screen detection: evidence = any JA OCR block
+        // matching the pack FullTitle (voicing-tolerant, the same matcher
+        // the B13 park uses to SUPPRESS title text — promoted to positive
+        // detection). 3 evidence loops -> publish FullTitle once per
+        // visit (episode). Blind-gap tolerance covers the measured
+        // 13-loop copyright-only stretch where the logo OCRs as nothing
+        // (2026-10-21 live: post-intro title evidence at loops 191-202,
+        // sim=1.00 on 9/12, but the old quiet-timer's single edge attempt
+        // at loop 186 was veto-blocked and burned). Episode ends after
+        // TitleEpisodeEnd loops without evidence -> returning to title
+        // (post-intro or post-gameplay) posts again. No ©/year hints, no
+        // geometry guessing: measured on 8,593 corpus frames — 102/102
+        // title frames matched, 0 false matches in 3,632 dialogue reads
+        // (tools/t2_title_mine.py). FFVI quiet-timer path untouched
+        // (fallback for Latin/textless titles; its FullTitle never matches
+        // JA blocks so this detector stays inert there by construction).
+        // Live-gate owed: boot posts once, intro, return-to-title posts
+        // again, gameplay silent.
+        private int _titleEpisodeHits;
+        private int _titleEpisodeLastEvidence = -100000;
+        private bool _titleEpisodePosted;
+        private const int TitleEpisodePublishAt = 3;
+        private const int TitleEpisodeBlindGap = 20;
+        private bool CheckTitleEpisode(int iteration, List<OcrBlock> blocks)
+        {
+            try
+            {
+                string packTitle = "";
+                try { packTitle = Packs.PackRegistry.Current.FullTitle ?? ""; } catch { }
+                if (string.IsNullOrEmpty(packTitle) || blocks == null || blocks.Count == 0) return false;
+                bool evidence = false;
+                foreach (var b in blocks)
+                {
+                    string bt = (b.Text ?? "").Trim();
+                    // Short fragments don't count (B13 trunc semantics):
+                    // a misread must carry real title substance.
+                    if (bt.Length < 4 || !HasJapanese(bt)) continue;
+                    string btUV = Unvoice(bt);
+                    string titleUV = Unvoice(packTitle);
+                    if (packTitle.Contains(bt, System.StringComparison.Ordinal)
+                        || (!string.IsNullOrEmpty(btUV) && titleUV.Contains(btUV, System.StringComparison.Ordinal))
+                        || ComputeSimilarity(ScrollNorm(bt), ScrollNorm(packTitle)) >= 0.85)
+                    { evidence = true; break; }
+                }
+                if (evidence)
+                {
+                    _titleEpisodeLastEvidence = iteration;
+                    if (_titleEpisodeHits < TitleEpisodePublishAt) _titleEpisodeHits++;
+                    FileLogger.Log($"[title] episode evidence loop={iteration} hits={_titleEpisodeHits} posted={_titleEpisodePosted}");
+                }
+                else if (iteration - _titleEpisodeLastEvidence > TitleEpisodeBlindGap)
+                {
+                    // Blind-gap tolerance IS the episode end: the logo can
+                    // go OCR-invisible briefly (13-loop copyright-only
+                    // stretch measured 2026-10-21) — hold through 20 —
+                    // and once evidence has been gone longer, this visit
+                    // is over. Re-arms for the next visit to the title.
+                    _titleEpisodeHits = 0;
+                    _titleEpisodePosted = false;
+                }
+                if (_titleEpisodeHits >= TitleEpisodePublishAt && !_titleEpisodePosted
+                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
+                    && string.IsNullOrEmpty(_battleFiredSig) && _battleCooldown <= 0)
+                {
+                    _titleEpisodePosted = true;
+                    _titlePosted = true;
+                    try { _titleFireLoop = iteration; } catch { }
+                    // Stamp the title-hardening clock so the quiet-timer
+                    // fallback cannot mint a second TITLE for this screen.
+                    try { _lastDialogueFireLoop = iteration; } catch { }
+                    FileLogger.Log($"[title] episode publish TITLE (hits={_titleEpisodeHits}, evidenceAge={iteration - _titleEpisodeLastEvidence})");
+                    _ = TranslateAndPublishMenuAsync("TITLE", new List<(int y, string t, bool ja)> { (0, "", false) });
+                    return true;
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
         // Quiet-title detector (universal machinery): textless logo screens yield long zero-substance
         // stretches. Fires pack FullTitle ONCE per stretch (edge-trigger at bar). Fades/loads never
         // qualify (too short, no logo hints). Zelda unaffected (readable titles fire first and reset).
