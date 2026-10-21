@@ -1403,3 +1403,34 @@ troubleshoot/ wipes per launch (pull before relaunch).
   rp_*/base_* logs + ab_result.txt + nonzelda_scan.txt there this session.
   Old gate_diff/sibling_check/zelda_replay scripts + drift_classified.txt
   are GONE (temp cleanup) - ReplayChecker A/B diff done ad hoc in PS.
+
+## Session state - 2026-10-21 T2 title episode SHIPPED (3558867, live gate owed)
+- Root cause of no-post-intro-title (investigated, user report): quiet-timer
+  TITLE mints via edge-exact `_quietCount == titleBar` (CaptureController
+  CheckQuietTitle); the single post-intro attempt (08:29:05, corpus loop ~186)
+  was refused by BOTH the 60-loop gameplay veto (block 11 fired ~11 loops
+  prior) AND logo geometry (only JA block = the 1995-copyright line
+  x=331 w=256 h=38, not a full-bleed band) - and the edge was consumed, so
+  no retry existed for the rest of the dwell. Boot worked because the veto
+  clock defaults ancient. Fire-history ring (user's sign model) never applied:
+  TITLE bypasses the dialogue path entirely.
+- T2 replacement (revert: revert title-episode): POSITIVE detection -
+  evidence = any JA block matching pack FullTitle voicing-tolerant (the B13
+  park matcher promoted to positive use); 3 evidence loops publish FullTitle
+  once per VISIT (episode); episode ends 20 loops after evidence ends
+  (= blind-gap tolerance for the measured 13-loop copyright-only OCR-invisible
+  stretch) so return-to-title after intro OR gameplay posts again. No
+  copyright/year hints (measured useless: sim 0.00 on all copyright frames).
+  Vetoes: battle/menu/candidate. Publish stamps _lastDialogueFireLoop so the
+  quiet fallback cannot double-mint. FFVI inert by construction (Latin
+  FullTitle never matches JA blocks; quiet path untouched as fallback).
+- Offline gates: t2_title_mine.py 8,593 frames - 102/102 title frames match,
+  0 false in 3,632 dialogue reads (giant-geometry alone: 4,227 false - pure
+  knowledge vs guessing, measured); t2_episode_gate.py state-machine replay -
+  16 publishes/14 corpora all correct (today's run [23,196] = boot+post-intro,
+  one historical double [32,194], three mid-session returns = the
+  after-gameplay scenario, 35 dialogue-only corpora silent, FFVI/PM zero);
+  build 0 err/+0 warn; sim structurally untouched (SimReplay only calls
+  IsSelfDuplicated). STILL NEEDED: live run (boot->intro->return posts again,
+  gameplay silent). Note: corpus boot-title evidence live at sim=1.00 within
+  3 loops (loops 21-23) - faster than the old quiet bar=10.
