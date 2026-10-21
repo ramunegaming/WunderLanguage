@@ -1675,3 +1675,27 @@ troubleshoot/ wipes per launch (pull before relaunch).
   body on both titles. Watch for [menu] publish TITLE without a nearby
   episode publish - if it ever appears >60 loops after an episode publish,
   that's a legit tracker fallback post, not a double.
+
+## T2 FINAL CLOSE - 2026-10-22 round-7 (07:22-07:26) FULL PASS
+- All three title visits posted EXACTLY ONCE each, all via [title] episode
+  publish with evidenceAge=0 (boot 07:22:40, post-intro 07:24:54, and the
+  hard one: played gameplay (rupee NPC dialogue 07:26:02) then RETURNED to
+  title -> third post 07:26:29). Zero tracker mints, zero quiet mints,
+  zero BLOCKED lines. The 8b4c6ec shared-clock anti-double held: single
+  bubbles everywhere. Intro 11/11 (one OCR garbage variant on block 10 -
+  pre-existing class, translation followed the misread - OCR quality, not
+  machinery).
+- T2 visit semantics PROVEN end-to-end: post once per visit (3 hits/loop),
+  blind-gap reset during gameplay (>20 loops no evidence), re-post on
+  return, silent during gameplay. The episode detector OWNS titles now;
+  quiet + tracker = clock-coordinated fallbacks.
+- T2 state: DONE. Detector: engine-side (pack-parameterized via FullTitle/
+  TitleMarker/TitleMap), revert phrases: revert title-episode / revert
+  intro-punct / revert intro-dup / revert loop-timeout-hold. Known scope
+  items carried forward (NOT blockers): matcher HasJapanese gate = JA-title
+  assumption inherited from B13 (generalize when F2x/FFVI title activates);
+  tracker purity block 4766 is a pre-existing Zelda-gated branch (cited
+  2026-10-07, FFVI unverifiable - predates T2).
+- NEXT: G1 (debugging/hardware audit: hung-sidecar watchdog, emulator
+  W1b crash chain, VRAM pressure; T2.6 ghost-inset chain-wrap folds in),
+  then C1 (category measurement pass).
