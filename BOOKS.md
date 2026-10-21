@@ -1582,3 +1582,44 @@ troubleshoot/ wipes per launch (pull before relaunch).
   If any title post missing, read [title] episode BLOCKED lines (now show
   evidence override effect via ev not needed - blocked only when evidence
   absent + battle/fire).
+
+## Session state - 2026-10-22 T2 round-4 live: ZERO posts - environment never ran the code; real loop-killer FOUND + FIXED
+- Round-4 (03:30:51-03:34:16): user saw NOTHING. Full forensic chain:
+  1) Emulator crashed TWICE at startup again (03:30:55, 03:31:15 -
+     W1b family continues) and came up with a BARE window title (no ROM
+     name) -> 03:31:36 [pack] session Snes9x_1.60 -> universal: the whole
+     session ran under the UNIVERSAL pack. Intro script, title detector
+     (FullTitle empty = silent early-return BY DESIGN - zero [title]
+     episode lines), fixups: all inert. Corpus name proves it (no
+     Zelda_ prefix).
+  2) OCR DID read the title at L18-19 (03:31:52) as 神々のドライフォース
+     (voicing misread) - matcher's Unvoice containment WOULD have matched
+     it if the pack had been active.
+  3) 03:31:59 [pack] game switch -> zelda fired - one second too late: at
+     03:31:58 the pipeline WEDGED. Sidecar never picked up a request
+     (pressure logs: sidecar=idle, gpu=u99% 5691/6144MB VRAM, mem=high) ->
+     100s HttpClient timeout fired 03:33:38 - and the timeout KILLED THE
+     CAPTURE LOOP (03:33:39 loop cancelled/exited, session loops=20). The
+     user's entire intro played during that frozen window. Quit 03:34:16.
+- ROOT CODE BUG FOUND + FIXED (commit, revert loop-timeout-hold): the
+  loop's catch (OperationCanceledException) broke on ANY OCE - but
+  HttpClient timeouts throw TaskCanceledException which DERIVES from OCE,
+  so an inner timeout masqueraded as the loop's own stop signal. Fix: the
+  break catch is now filtered on token.IsCancellationRequested (only the
+  loop token stops the loop); all other OCEs = nested timeout -> throttled
+  quiet hold (first + every 20th, own counter, reset on healthy OCR like
+  the transport counter). Build GREEN.
+- REMAINING KNOWN FREEZE (G1, not fixed here): the hung request still
+  blocks the loop for its full duration (publish/translate awaiting
+  inline); the fix stops the DEATH, not the stall. True resilience =
+  watchdog + shorter timeouts + sidecar restart on VRAM exhaustion -
+  exactly the G1 debugging/hardware audit already queued (hotspots
+  CaptureController 1202-1219/1349-1392, main.py 1108-1130/767-780).
+- HARDWARE NOTE for the user: RTX 3060 laptop = 6GB VRAM; emulator +
+  sidecar model + overlay at 99% GPU / 5691MB = the wedge precondition.
+  Closing other GPU apps before runs may prevent recurrence.
+- T2 status unchanged in substance: detector proven firing (rounds 2-3
+  evidence lines), matcher proven voicing-tolerant (round-4 corpus), all
+  vetoes named; rounds 3-4 = infrastructure (sidecar outage, VRAM wedge,
+  emulator crashes, universal-pack start). ROUND 5 GATE unchanged: boot
+  title posts, intro posts, post-intro title posts, gameplay silent.
