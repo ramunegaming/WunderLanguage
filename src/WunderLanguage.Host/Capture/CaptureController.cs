@@ -389,6 +389,7 @@ namespace WunderLanguage.Host.Capture
         // Boot/outage survival: consecutive OCR transport failures (see
         // catch below). Reset on every successful OCR read.
         private int _consecutiveOcrTransportFailures;
+        private int _consecutiveNestedTimeouts;
 
         private string? _lastFrameHash;
         private string? _pendingFrameHash;
@@ -2177,6 +2178,7 @@ namespace WunderLanguage.Host.Capture
                     catch { avgBitmap = null; ocrBitmap = bitmap; }
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(ocrBitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
                     _consecutiveOcrTransportFailures = 0;
+                    _consecutiveNestedTimeouts = 0;
                     try { _lastScriptHit = _ocrClient.LastScriptHit; } catch { _lastScriptHit = false; }
                     try { avgBitmap?.Dispose(); } catch { }
                     // Stash this capture for next loop's mean (all paths).
@@ -2400,10 +2402,28 @@ namespace WunderLanguage.Host.Capture
                     // M7c slice v2 seam: one step per observation (see ProcessOcrObservationAsync).
                     if (await ProcessOcrObservationAsync(iteration, extractedText, ocrBlocks, token)) return;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     FileLogger.Log("CaptureController loop cancelled");
                     break;
+                }
+                catch (OperationCanceledException oce)
+                {
+                    // Round-4 kill (2026-10-22 03:31:58-03:33:39): a wedged
+                    // sidecar (GPU 99%, VRAM 5691/6144MB, request never
+                    // picked up) burned a 100s HttpClient timeout, and the
+                    // timeout surfaces as TaskCanceledException — which
+                    // DERIVES from OperationCanceledException — so the
+                    // single catch above treated it as OUR stop signal and
+                    // broke the loop: the entire intro then played against
+                    // a dead pipeline (user saw nothing, quit 2min later).
+                    // Inner timeouts are not our cancellation: only the
+                    // loop token (filtered catch above) may stop the loop.
+                    // Hold quietly like the OCR transport catch below.
+                    // Revert: revert loop-timeout-hold.
+                    _consecutiveNestedTimeouts++;
+                    if (_consecutiveNestedTimeouts == 1 || _consecutiveNestedTimeouts % 20 == 0)
+                        FileLogger.Log($"[loop {iteration}] nested timeout hold ({_consecutiveNestedTimeouts} consecutive): {oce.Message.Split('\n')[0]}");
                 }
                 catch (WindowUnavailableException ex)
                 {
