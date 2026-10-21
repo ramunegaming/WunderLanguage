@@ -1793,3 +1793,14 @@ LIVE GATE OWED: (1) normal round behaves like round-7 (timeouts/breaker inert
 on healthy paths); (2) double-launch test - second copy must show "already
 running" and exit, first unaffected; (3) no [g1] lines + no nested-timeout
 spam on a healthy run. G1 close + C1 start after the gate.
+
+## G1 LIVE GATE PASSED - 2026-10-22 (G1 = DONE)
+User clean run (title + intro movie only): title posted BEFORE and AFTER the
+intro, all intro blocks posted - the round-7 reference behavior held with
+the G1 resilience batch active (timeouts/circuit breaker inert on healthy
+paths = as designed). No nested-timeout spam reported. Double-launch dialog
+not exercised by the user - it self-validates on the first accidental
+double-launch ([single-instance] log line is the proof). Parked W1b files
+remain uncommitted as required. G1 closed: audit + fixes (013c5bc) + A/B
+(zero delta) + live gate. NEXT: C1 (category measurement pass, offline,
+corpus-only, no behavior change - ROADMAP line for scope).
