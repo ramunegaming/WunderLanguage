@@ -1699,3 +1699,21 @@ troubleshoot/ wipes per launch (pull before relaunch).
 - NEXT: G1 (debugging/hardware audit: hung-sidecar watchdog, emulator
   W1b crash chain, VRAM pressure; T2.6 ghost-inset chain-wrap folds in),
   then C1 (category measurement pass).
+
+## Round-7 Q&A finding - 2026-10-22 unknown-game (universal) marker guard
+- Asked: would a random untested game with no pack fixups be recognized?
+  Answer wired into the design: UNKNOWN game -> universal pack (PackRegistry
+  "never wrong-pack guesses") -> FullTitle="" -> episode detector + quiet
+  BOTH refuse to fire (empty target = no guessing, by original T2
+  requirement). Dialogue/menu/translation machinery still runs (structural,
+  game-blind). Adding a minimal pack (just FullTitle + TitleMarker, zero
+  fixups) enables full title detection for a JA-title game - fixups are
+  post-text quality only, never required for detection.
+- Finding from that question: UniversalPack.TitleMarker = "" and .NET
+  Contains("") is always true -> unguarded marker normalization wiped EVERY
+  menu row to "" on unknown games + sparse frames could mint degenerate
+  TITLE bubbles (round-4's first universal session = this class). Fixed:
+  revert universal-marker-guard - marker normalization + isTitleFrame +
+  isTitle all gated on non-empty marker. Inert for Zelda/FFVI/PM (all
+  declare non-empty markers). Build GREEN, no A/B owed (change is
+  conditional on marker=="" = universal only).
