@@ -186,7 +186,20 @@ namespace WunderLanguage.Host.Packs.Zelda
             ("封印させたそうです。", "封印させたそうです"),
             ("封印は、２度", "封印は　２度"),
             ("伝説となったころ！", "伝説となったころ…"),
+            // 2026-10-21 live evidence (corpus L101): raw ends ！？ — the
+            // pair above consumes ！ first, leaving ？ after …; the screen
+            // ends at … (user spec: no ? here). Key is the post-pair state,
+            // so it runs after the ！ pair regardless of raw variant.
+            // Revert: revert intro-punct.
+            ("伝説となったころ…？", "伝説となったころ…"),
             ("もうそこまでせまっていました。", "もうそこまでせまっていました"),
+            // 2026-10-21 live evidence (corpus L181): OCR misread
+            // せ→は on this row (もうそうまではまっていました。) — the
+            // correct read (L173) lost the growth race to the misread.
+            // Restore the screen's true row; trailing 。 dies via the
+            // せまって above or included here. Revert: revert intro-punct.
+            ("もうそこまではまっていました。", "もうそこまでせまっていました"),
+            ("もうそうまではまっていました。", "もうそこまでせまっていました"),
             // Intro 1:1 (revert: revert intro-punct): しかし-line tail —
             // screen has no trailing 。 (user spec 2026-10-20); OCR
             // fabricates it 4/7 reads. Scoped to the わきでてきた clause.
