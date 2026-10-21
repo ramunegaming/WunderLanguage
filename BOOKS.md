@@ -1479,3 +1479,71 @@ troubleshoot/ wipes per launch (pull before relaunch).
   quiet's earlier publish in the same dwell - expected, one post either way),
   intro -> title posts AGAIN (the money shot, evidence [L204] proven offline),
   gameplay silent, reset/return posts again. THEN close T2 in ROADMAP/BOOKS.
+
+## Session state - 2026-10-22 T2 round-2 live: evidence FIRED, publish VETOED; crossfade dup fixed; round 3 owed
+- Round-2 live (02:39-02:43, fresh boot + full intro): title posted NOWHERE
+  (boot dwell was only ~8 loops - intro auto-started L27). Log shows the
+  detector WORKING for the first time: [title] episode evidence boot
+  L20-25 (hits=3 at L22) and post-intro L171-178 (hits=3 at L173) - but
+  ZERO [title] episode publish lines. A publish veto held across both
+  dwells. Only two fields can do that: _menuSignature or _candidateText
+  (battle impossible fresh boot; _titleFireLoop guard passes at -1000;
+  quiet's edge is separately explainable: its bar is 10-hinted loops and
+  the boot dwell ended before it, post-intro the 60-loop gameplay veto
+  ate the single edge - same historical failure mode). Quiet ALSO checks
+  menuSig+candidateText, which is why it stayed silent too.
+- Fix in place (uncommitted CaptureController + committed-next): (a)
+  candidate-is-title exemption - a held candidate that MATCHES pack
+  FullTitle is title-path content (B13 park already holds it from
+  dialogue), not dialogue-in-progress, so it no longer vetoes; (b)
+  BLOCKED diagnostic: every vetoed publish attempt now logs
+  [title] episode BLOCKED loop=N menu= candTitle= battle= fire=
+  cand="..." menuSig="..." - the next live run names the exact blocker
+  if one remains. Quiet path UNTOUCHED (agreed fallback scope).
+- Round-2 defect #2 (user-flagged): "ハロハのノハ”多くの人々...消えていきました"
+  posted as a duplicate of intro block 4 at 02:41:28. Root cause =
+  crossfade frame corpus L54 (block4->5 transition): OCR read the
+  half-faded row as ghost prefix + line with a いきました tail; growth
+  held it as a NEW line (prefix grew) and flushed it next fire at 02:41:28.
+  Fixed via OcrFixups (revert: revert intro-dup):
+  ハロハのノハ” -> (strip), 聖地へと消えていきました -> 聖地へと消えていまし
+  た (variant collapses into the already-fired line, dedup catches it).
+  Deeper fix = crossfade suppression in growth (G1 audit target,
+  CaptureController 1349-1392). A/B owed: stash-revert merged-corpus
+  replay (running at session end; expect only L54-family deltas).
+- Confirmed WORKING round-2: ころ line posted 伝説となったころ… with NO ?
+  (904e02d pair proven live); T2.5 evidence matcher proven live (evidence
+  lines at both dwells - the ー-strip did its job, no zero-evidence
+  recurrence).
+- OPEN THREAD (not user-flagged, noticed): block 11 posted with trailing
+  。(もうそこまでせまっていました。) + raw-form prefix イケーエにささばられる
+  選命 - but corpus L145/L152 extracted are CLEAN (chain fixups fired:
+  はまって->せまって ✓ 。 stripped ✓). Posted bubble = RAW L145 text ->
+  the fire came from a NON-CHAIN text source (ghost-inset/block-winner or
+  mined remember of an old raw) - trace the 02:42:40 fire's winning block
+  at L144-152 next session (G1-adjacent).
+- STILL NEEDED: live round 3: boot title posts (expect via episode once
+  the veto field is named/cleared), post-intro repost, gameplay silent,
+  no ハロハ duplicate. Then T2 closes.
+
+## T2.6 UNIFIED ROOT CAUSE (2026-10-22, post-round-2 forensics) - ghost-inset override bypasses the fixup chain
+- Replay of tonight's corpus (current build): L54 MATCHES (primary raw was
+  clean) -> the ハロハ text was a SECONDARY block, and the posted duplicate
+  + the block-11 。 both came from the same source: the ghost-inset
+  override (CaptureController ~3919, `return blocks[bestIdx].Text ??`
+  under STABLE-DECISION=ghost-inset-override) returns RAW block text with
+  NO fixup chain, and growth/candidates feed on it. Every other publish
+  path runs ApplyDisplayFixups(Normalize(ApplyZeldaOcrFixups(...))).
+- NEXT-SESSION FIX (not shipped - chain-affecting change owes its A/B):
+  wrap the ghost-inset return in the standard chain:
+  return ApplyDisplayFixups(NormalizePunctForStability(ApplyZeldaOcrFixups(
+  blocks[bestIdx].Text))). Then: regenerate gate/merged_all.jsonl (stale -
+  predates tonight's corpus), stash-ReplayChecker A/B on the merged file
+  (expect: ハロハ L54 + block-11 line + only fixup-key families; WATCH FOR
+  existing pairs newly hitting OTHER games' ghost blocks - PM is JA).
+  Note: the 2 new OcrFixups (revert intro-dup) are already A/B'd clean on
+  418 corpora (zero delta; keys absent from all historical raws) and will
+  pull their full weight once the ghost path chains (they only help paths
+  that already chain).
+- Round-2 A/B results logged: pairs ころ/はまって + crossfade pairs =
+  zero unrelated deltas (replay_base2/new2 in gate dir).
