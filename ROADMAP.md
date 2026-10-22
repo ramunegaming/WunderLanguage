@@ -61,7 +61,8 @@ Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, 
 ### Immediate queue (work in this order)
 1. **✅ Z1 — Zelda intro 11/11 — DONE (live pass 2026-10-21).** Standing user demand: nothing else until it works. Two defects: **A** block 8 double-post (similarity 0.89 sits inside the 0.85–0.90 gap, both fire via script-anchored); **B** block 11 wobble twin (ささげられる vs ささばられる posted as separate lines). Fix by extending the B19 twin/wobble machinery, not by bolting on a threshold. Proof: fresh live run + screenshot; commit with revert phrase. Lesson on file: proper edit tools only — no PowerShell line-splicing on CaptureController.cs (213 build errors, reverted). **Closed: 11/11 blocks byte-identical vs official script, one bubble each, 1:1 punctuation — see HANDOVER STATE (2026-10-21).**
 2. **G1 — Debugging-workflow & hardware audit** (user-approved brief; audit first — no logger/architecture rewrites). Deliverable: prioritized improvement plan with affected files. Known breakpoint spots: CaptureController.cs 1202–1219 (scriptFresh), 1349–1392 (growth-fast/wobble-publish); main.py 1108–1130 (/ocr), 767–780 (_script_match).
-3. **C1 — Category measurement pass** (offline, corpus-only, no behavior change): mine corpora for how many junk fires came from mis-categorized screens (menu garbage, battle junk, decision prompts). Decides Option 1 (display tagging) vs Option 2 (routing-level).
+3. **C1 — Category measurement pass** — ✅ **DONE 2026-10-22** (observe-only `CatStats` harness, revert: `revert catstats`; artifact `gate\catstats_c1_v3.log`): 431 corpora / 45,369 lines through the REAL pipeline offline, two truth levels (sim attempts = pre-guard; publish-truth = stamped live bubbles joined to sampled frame state). Frame census: 88.9% in-game, 7.0% transient menu-shaped (crawls), 3.1% stable menu, 0.86% battle-shaped. Attempts: 8.1% of dialogue fires land on non-ingame frames; the live funnel absorbs nearly all where a bolt-on exists (FFVI 220→1) but has none elsewhere (Zelda 18→14). Publish truth: 16/563 flagged (2.8%), ALL flagged corpora content-spot-checked → **real junk = menu garbage, 3–4 instances, a UNIVERSAL class** (Zelda save-menu rows, FFVI magic-menu spell lists, PM date-screen garbage ≈0.6% of stamped publishes) + **14 battle flags were FALSE POSITIVES** (correct dialogue on date-stamped text screens — BattleFrame.Classify misreads non-FFVI layouts). **DECISION: Option 1 (display tagging)** + evidence-triggered guards stay; no universal routing layer (see watch item). C2 = the menu-garbage class fix.
+4. **C2 — Menu-garbage class fix** (C1's measured target): menu rows must never publish as dialogue — universal, tier-1, hold-and-release (withhold the candidate while the frame is a stable menu, release on exit; misclassification costs a delayed label, never a suppressed line). Plus BattleFrame label-independence so unknown-game battles are at least measured (today battleLoops=0 on universal — the shape detector is blind without pack labels).
 
 ### Campaign phases (after the immediate queue)
 - **Z2 — Zelda wrap: inventory menu.** Not started. Menu routing has burned us before (B19 MENU attempt reverted) — evidence-first, small gated steps.
@@ -76,7 +77,7 @@ Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, 
 
 ### Feed categories (agreed 2026-10-20)
 Five exclusive categories for the translation feed: **Title** (title screens only) · **In-game text** (NPC dialogue, signs — the default) · **Decisions** (option lists with selector arrow/finger) · **MENU** (inventory, save select, game over, map, pause, main menu) · **BATTLE** (battle screens, JRPG-flavored — command windows, status, FFVI the model case).
-Current reality: Title works and is gated; In-game is the solid default; Battle is an FFVI-only bolt-on; Menu is fragile; Decisions does not exist. Untested games leak menu/battle junk through the default path — that is the mass-release hole C1/C2 target. Safety-valve design rule: **default to in-game; route away only on strong evidence; misclassification costs a label, never a suppressed line.**
+Current reality: Title works and is gated; In-game is the solid default; Battle is an FFVI-only bolt-on; Menu is fragile; Decisions does not exist. Untested games leak menu/battle junk through the default path — that is the mass-release hole C1/C2 target. Safety-valve design rule: **default to in-game; route away only on strong evidence; misclassification costs a label, never a suppressed line.** C1 measured (2026-10-22): the hole is NOT a flood (universal publish-truth junk = 0/15 stamped; attempt-level 2.7%) — the real class is menu garbage, rare (~0.6% content-verified) but hits EVERY game (Zelda/FFVI/PM), and battle-shape routing would over-suppress (14 correct publishes flagged). Decision: Option 1, C2 fixes the class.
 
 ## Complete
 
@@ -213,7 +214,7 @@ Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/
 - Shop-play signal for FFVI (shop UI build waits on it).
 - P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done (recommended: declare done, move to P3).
 - Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
-- Category routing depth: Option 1 (display tagging) vs Option 2 (routing-level) — decision deferred to C1 measurement numbers.
+- Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
 - Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
 
 ## SCALING DOCTRINE (standing policy, 2026-10-22, user-set)
@@ -265,4 +266,4 @@ chasing that phantom - remaining unknown = round-4 launch-1 silent death
 delta across 429 corpora; bare pair 消えていきました Zelda-pack-scoped =
 no live cross-game exposure). Live gate PASSED 2026-10-22: title posted
 before + after intro, all intro blocks posted, healthy-path behavior
-byte-compatible with round-7. NEXT: C1.
+byte-compatible with round-7. NEXT: C2 — C1 measured + decided (Option 1; menu-garbage class named), see C1 entry.

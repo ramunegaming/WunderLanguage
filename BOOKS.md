@@ -1804,3 +1804,67 @@ double-launch ([single-instance] log line is the proof). Parked W1b files
 remain uncommitted as required. G1 closed: audit + fixes (013c5bc) + A/B
 (zero delta) + live gate. NEXT: C1 (category measurement pass, offline,
 corpus-only, no behavior change - ROADMAP line for scope).
+
+## C1 CATEGORY MEASUREMENT PASS - DONE 2026-10-22 (handover of record)
+Observe-only harness `src/WunderLanguage.Host/Capture/CatStats.cs`
+(revert: `revert catstats` + the --catstats line in SingleInstanceGuard;
+zero engine edits - reflection-samples private tracker state, feeds
+corpora through the REAL ProcessOcrObservationAsync like SimReplay).
+`--catstats <dir>` = one process over all corpora (~95s for 431).
+Artifact: gate\catstats_c1_v3.log (full [catstats] census, 243KB).
+Build GREEN 0/17 both versions.
+
+METHOD (two truth levels - the honesty core): (1) SIM ATTEMPTS = dialogue
+fires captured in the seam, PRE-guard (live-funnel guards don't run in
+sim - SimReplay B4 note); (2) PUBLISH TRUTH = recorded live dialogue
+bubbles (loop-stamped, B6) joined to the sampled frame category at their
+live loop = what the user actually saw. Frame classes from REAL state:
+stable menu (_menuSignature && _menuStableCount>=2 = mint-eligible),
+transient menu-shaped (count<2 = crawls/moving text), battle
+(BattleFrame.Classify>0 called directly - the in-engine battle tracker
+is FFVI-gated by the Zelda repair, so non-FFVI battle shape is only
+visible harness-side), in-game default.
+
+NUMBERS (431 corpora, 45,369 fed lines, 0 errors):
+- Frames: ingame 40,321 (88.9%) / transient menu-shaped 3,164 (7.0%) /
+  stable menu 1,403 (3.1%) / battle-shaped 388+93 both (0.86%+).
+- Attempts: 3,178 fires; 256 (8.1%) on non-ingame frames
+  (publishnew=231 dominant). Funnel asymmetry: FFVI 220 junk-class
+  attempts -> 1 published (99.5% caught, the bolt-on works); Zelda
+  18 -> 14 (NO bolt-on = publishes flow).
+- Publish truth (stamped subset 563/3,472 = 16%; recent sessions):
+  16 flagged on non-ingame frames (2.8%). Content spot-check of ALL
+  flagged corpora: REAL JUNK = menu garbage, 3-4 instances (~0.6%):
+  (a) Zelda 20261010 loop 3593 - save-menu rows published as dialogue
+  (セーブして続ける/セーブしておわる/セーブしないで続けろ);
+  (b) FFVI 20261010 - magic-menu SPELL LISTS published as dialogue
+  (サンダービーム/バイオブラスタ..., loops 895 + 2299);
+  (c) PM 20261012 loop 357 - date/number screen garbage
+  (大学校は１９９９年１２月１６日...). THE CLASS IS UNIVERSAL - hits
+  every game = tier-1 fix target, not a per-game bug.
+- THE ROUTING COUNTER-EVIDENCE: 14 of the 16 flags were BattleFrame
+  FALSE POSITIVES - correct dialogue on date-stamped text screens
+  (Zelda intro crawl, ３００９年 rows read as battle stat rows). The
+  23 transient-menu publishes = correct (crawls). Battle-shape is the
+  strongest available route signal and it still misreads non-FFVI
+  layouts - routing on it would have SUPPRESSED ~14 correct publishes.
+- DECISION (ROADMAP watch item closed): **OPTION 1 - display tagging**
+  as universal category semantics; routing stays evidence-triggered
+  (the FFVI bolt-on pattern), no universal routing layer. Junk too
+  rare (~0.6%) to route; misclassification cost of Option 2 = lost
+  correct lines, which the safety-valve rule forbids.
+- C2 NAMED: menu-garbage class fix - menu rows must never publish as
+  dialogue (universal, tier-1, hold-and-release: withhold candidate
+  while frame is a stable menu, release on exit - delayed label, never
+  a suppressed line). Plus BattleFrame label-independence (universal
+  battleLoops=0: shape detector blind without pack labels - unknown-
+  game battles currently unmeasured).
+
+CAVEATS ON FILE: publish truth = stamped subset only (2,909 publishes
+predate loop stamps - attempt view covers all 431); transient-menu junk
+can hide under the crawl assumption (spell lists = transient-classified
+but garbage content - the ~0.6% is a FLOOR); recBattle=22 on Zelda +
+56 on universal corpora = session-boundary pack-attribution artifact
+(corpus rotates on window title, pack switches on detection - minor,
+noted); title category re-measured only via tracker mints (episode
+detector = live-provable only, T2 already gated).

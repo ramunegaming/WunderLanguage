@@ -33,7 +33,8 @@ namespace WunderLanguage.Host
                 foreach (string a in Environment.GetCommandLineArgs())
                     if (string.Equals(a, "--replay", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(a, "--simcheck", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(a, "--simreplay", StringComparison.OrdinalIgnoreCase))
+                        || string.Equals(a, "--simreplay", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(a, "--catstats", StringComparison.OrdinalIgnoreCase))
                         return;
                 _mutex = new Mutex(true, @"Local\WunderLanguage_SingleInstance", out bool createdNew);
                 if (!createdNew)
