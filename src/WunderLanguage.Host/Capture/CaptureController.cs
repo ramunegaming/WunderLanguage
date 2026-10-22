@@ -523,6 +523,17 @@ namespace WunderLanguage.Host.Capture
         private readonly System.Collections.Generic.List<(string text, int ev, int loop)> _recentFires = new();
         private const int FireHistoryLoopWindow = 10;
         private const int FireHistoryCap = 8;
+        // readback-run store (revert: revert readback-run-guard): what the
+        // overlay can visibly re-show — the last ReadbackWindowLoops fires
+        // (cap ReadbackStoreCap) — kept deliberately LONGER than
+        // _recentFires: B19's 10-loop/8-fire scope is double-fire
+        // semantics, while a feed bubble stays on screen for minutes
+        // (measured readback ~230 loops after the original post). Only the
+        // run-guard below reads this store; every other rule keeps the
+        // short history untouched.
+        private readonly System.Collections.Generic.List<(string text, int loop)> _postedTexts = new();
+        private const int ReadbackWindowLoops = 400;
+        private const int ReadbackStoreCap = 200;
         private readonly System.Collections.Generic.List<(string text, int loop)> _recentExtracted = new();
         private const int ExtractedRingCap = 25;
         // B19 script-anchored fire (revert: revert script-fire): the
@@ -3744,15 +3755,39 @@ namespace WunderLanguage.Host.Capture
                         || ComputeSimilarity(bn, pn) >= 0.85;
                 }
                 bool evidence = false;
+                bool strong = false;
                 foreach (var b in blocks)
                 {
-                    if (Match((b.Text ?? "").Trim())) { evidence = true; break; }
+                    string bt = (b.Text ?? "").Trim();
+                    if (Match(bt))
+                    {
+                        evidence = true;
+                        // Title-fastpath (revert: revert title-fastpath): a
+                        // block that CONTAINS the full pack title (bn ⊇ pn,
+                        // voicing-fold variant too) is definitive identity -
+                        // the T2 miner measured 0 false matches in 3,632
+                        // dialogue reads, so ONE such read outranks the 3-hit
+                        // soft confirmation. Live evidence (2026-10-22): the
+                        // boot visit's logo was visible only ~2-4s before a
+                        // fast user clicked through to the intro - fewer
+                        // settled reads than TitleEpisodePublishAt, so the
+                        // soft path could never post the first visit while
+                        // the lingered second visit posted fine. Same vetoes
+                        // gate the publish; Latin titles stay inert here
+                        // (HasJapanese inside Match), as before.
+                        string bn = TitleNorm(bt);
+                        if ((bn.Length >= pn.Length && bn.Contains(pn, System.StringComparison.Ordinal))
+                            || (Unvoice(bn).Length >= pnUV.Length && Unvoice(bn).Contains(pnUV, System.StringComparison.Ordinal)))
+                            strong = true;
+                        break;
+                    }
                 }
                 if (evidence)
                 {
                     _titleEpisodeLastEvidence = iteration;
                     if (_titleEpisodeHits < TitleEpisodePublishAt) _titleEpisodeHits++;
-                    FileLogger.Log($"[title] episode evidence loop={iteration} hits={_titleEpisodeHits} posted={_titleEpisodePosted}");
+                    if (strong && _titleEpisodeHits < TitleEpisodePublishAt) _titleEpisodeHits = TitleEpisodePublishAt;
+                    FileLogger.Log($"[title] episode evidence loop={iteration} hits={_titleEpisodeHits} posted={_titleEpisodePosted}{(strong ? " strong" : "")}");
                 }
                 else if (iteration - _titleEpisodeLastEvidence > TitleEpisodeBlindGap)
                 {
@@ -4359,8 +4394,38 @@ namespace WunderLanguage.Host.Capture
             {
                 _recentFires.Add((text ?? "", ev, loop));
                 while (_recentFires.Count > FireHistoryCap) _recentFires.RemoveAt(0);
+                // readback-run store (revert: revert readback-run-guard):
+                // same fire, longer memory — see _postedTexts declaration.
+                _postedTexts.Add((text ?? "", loop));
+                while (_postedTexts.Count > 0 && loop - _postedTexts[0].loop > ReadbackWindowLoops) _postedTexts.RemoveAt(0);
+                while (_postedTexts.Count > ReadbackStoreCap) _postedTexts.RemoveAt(0);
             }
             catch { }
+        }
+        private const int ReadbackRunBar = 8;
+        // Longest contiguous character run shared by two strings (the
+        // classic O(n*m) DP - dialogue lines are short, and this only
+        // runs after the cheap containment rules failed). Punctuation
+        // counts: the visual run is what the OCR re-read preserves.
+        private static int LongestCommonRun(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return 0;
+            int[] prev = new int[b.Length + 1];
+            int best = 0;
+            for (int i = 1; i <= a.Length; i++)
+            {
+                int[] cur = new int[b.Length + 1];
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    if (a[i - 1] == b[j - 1])
+                    {
+                        cur[j] = prev[j - 1] + 1;
+                        if (cur[j] > best) best = cur[j];
+                    }
+                }
+                prev = cur;
+            }
+            return best;
         }
         // Identical (exact or folded) or contained-in-history: this fire
         // adds nothing over a recent post. Direction matters: incoming
@@ -4420,6 +4485,41 @@ namespace WunderLanguage.Host.Capture
                     // gate (raise suffix bar if any appear).
                     if (FoldedCommonPrefixLength(text ?? "", ft ?? "") >= 10
                         && FoldedCommonSuffixLength(text ?? "", ft ?? "") >= 6) return true;
+                }
+                // readback-run (revert: revert readback-run-guard): the
+                // overlay renders our recent posts INSIDE the capture
+                // region, so the OCR re-reads them with MUTATED edges —
+                // measured 2026-10-22 live: そうですね。そういうことですか re-read off
+                // a shown それでもそうですね。そういうことですが、 (run 15), そういうこと
+                // ですが、これから (run 10), さあ、どうする？しょうぶする + a shown
+                // あんた、やってみないかい？さあ、どうする？ (run 8), and the
+                // gambler tail + next-line head merge (run 10, 230 loops
+                // after the original post). Every rule above reads
+                // _recentFires (cap 8 / window 10 = B19's double-fire
+                // scope), which cannot see feed bubbles minutes old — so
+                // readback identity gets its OWN store and horizon
+                // (_postedTexts, ReadbackWindowLoops). Same bars as the
+                // measured leaks: contiguous run >= ReadbackRunBar at ANY
+                // position (all existing rules are head-anchored —
+                // containment / prefix / two-anchor — an edge mutation
+                // that keeps a long MIDDLE run leaks all of them).
+                // Direction: incoming CONTAINING the shown line stays
+                // exempt — that is typewriter completion / a superset, the
+                // same growth rule as the containment park above; exact
+                // re-shows beyond the short window also keep their current
+                // repost behavior (contains ⇒ exempt). Only mutated bulk
+                // re-reads park. Bar 8: between digit-strip (6) and prefix
+                // (10). Audit surface: runs in sim too — the --catstats
+                // A/B (stash/rebuild/sweep, both sides) lists every newly
+                // parked fire for false-positive review; live
+                // [publish] history-parked carries the same texts.
+                foreach (var (pt, pl) in _postedTexts)
+                {
+                    if (loop >= 0 && loop - pl > ReadbackWindowLoops) continue;
+                    string shownP = StripForOverlap(pt ?? "");
+                    if (shownP.Length < ReadbackRunBar) continue;
+                    if (inc.Contains(shownP, System.StringComparison.Ordinal)) continue; // growth/superset/exact exempt
+                    if (LongestCommonRun(inc, shownP) >= ReadbackRunBar) return true;
                 }
             }
             catch { }

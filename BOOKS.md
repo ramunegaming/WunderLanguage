@@ -1923,3 +1923,119 @@ round-7 title/intro behavior unchanged. NAMED RESIDUAL: cursor-moving
 menus (FFVI spell lists mid-page-turn) reset tracker stability each
 move and stay transient = NOT held by v1; overlaps F2x battle-UI
 scope or a future tier-2 content guard.
+
+## T3+C3 - BOOT-TITLE FASTPATH + OVERLAY READBACK GUARD
+### (2026-10-22 - CODED + OFFLINE-GATED; live gates owed)
+
+Trigger: the user's 40-min Zelda live run (20:25-20:35, interleaved
+with decision mockups) reported (1) first load posted neither title
+nor intro while the return visit posted both - "work out why, we need
+100% reliability"; (3) four "hallucination" posts - "stop them for
+all games, scalably"; (2) DECISIONS category now needed (queued, see
+ROADMAP D1); (4) inventory menu explicitly deferred to Z2.
+
+T3 ROOT CAUSE (first-visit title). The episode detector needs
+TitleEpisodePublishAt=3 evidence loops; the boot logo window offered
+fewer. Forensics chain: iterations 18-30 = "[loop N] frame unchanged,
+skipping OCR" while mockup #2 covered the screen (correct skips, no
+logo reads exist for them - corpus rows confirm loop 17 = mockup,
+not logo); when the mockup cleared (~20:27:26) the logo was up only
+~2-4s before the user clicked through into the intro crawl (loop 40+
+already reads crawl fragments) = ZERO to two settled full-title reads
+< 3. The second visit lingered (copyright phase settled loops 158-171,
+logo evidence 174/175/176 = 3 hits -> publish 20:28:57). NOT pack lag:
+RefreshGameSession healed zelda at iteration 20 (20:27:17, one second
+after the logo appeared) via the window-title path, and ScoreContent
+needs >=2 signature votes the single logo read could not give; NOT
+universal blindness beyond that heal (the FullTitle gate only silenced
+pre-heal iterations). Round-7 passed because that run lingered.
+
+T3 FIX (revert: revert title-fastpath). Inside CheckTitleEpisode the
+evidence loop flags "strong" when a block CONTAINS the full
+TitleNorm'd pack title (bn >= pn.Length && bn.Contains(pn), or the
+unvoiced variant) and accelerates _titleEpisodeHits straight to
+TitleEpisodePublishAt: ONE definitive read publishes this same loop
+through the UNCHANGED veto block (menu/candidate/battle/recency,
+including its evidence-live override). Justification: the T2 miner
+already measured full-title containment at 102/102 title frames and
+0 false matches in 3,632 dialogue reads, so one read outranks the
+3-hit soft confirmation by construction. Latin titles (FFVI) stay
+inert behind HasJapanese exactly as before. Intro blocks on a fast
+first pass remain READ-limited (mid-scroll fragments never give the
+script matcher a clean sighting - user speed, not engine; watch in
+the live gate).
+
+C3 ROOT CAUSE (hallucinations) - TWO classes, evidence-split.
+(a) OVERLAY SELF-READBACK, 4 of 4 flagged posts: the overlay renders
+recent fires INSIDE the capture region; the OCR re-reads them with
+mutated edges while the feed scrolls (reads land timed with new
+posts/scroll-line fires on screens with no game dialogue):
+そうですね。そういうことですか against shown それでもそうですね。そういうこと
+ですが、 (shared run 15); そういうことですが、これから (run 10);
+さあ、どうする？しょうぶする (run 8 against the shown
+あんた、やってみないかい？さあ、どうする？); and that merge itself against
+the original gambler post ~230 loops earlier (run 10:
+あんた、やってみない). Every pre-existing dupe rule is HEAD-anchored
+(containment, 0.85 similarity, digit-strip, prefix-10, two-anchor
+10+6) and the whole history is FireHistoryCap=8 entries inside
+FireHistoryLoopWindow=10 - an edge mutation keeping a MIDDLE run,
+older than 10 loops, leaks all of them. (b) WEAK-HOLD STALE FIRE,
+1 of 4: これからのサイトは、 = a real intro-crawl row read ONCE at
+loop 555 (サイト = OCR misread), then weak-held through 18 ellipsis
+loops and fired at loop 573 after the row had scrolled away.
+
+C3 FIX (revert: revert readback-run-guard). _postedTexts store
+(appended in RecordFire alongside _recentFires; horizon
+ReadbackWindowLoops=400, cap ReadbackStoreCap=200 - B19's cap-8/
+window-10 semantics untouched) plus ONE new rule at the tail of
+FireHistoryCovers: incoming strictly CONTAINING a shown line stays
+exempt (growth = typewriter completion, and exact/superset re-shows
+keep their current repost behavior), otherwise a contiguous shared
+run >= ReadbackRunBar=8 at ANY position parks pre-translate.
+LongestCommonRun = classic O(n*m) DP over StripForOverlap'd strings
+(punctuation counts: it is part of the visual run).
+
+GATES. Build strict GREEN 0 errors / 17 warnings both sides (exact
+baseline). Replay A/B ZERO DELTA (4,600 lines, exit-mismatch verdict
+3931 identical) - CAVEAT NOW MEASURED: the replay harness re-runs
+EXTRACTION only (zero STABLE-DECISION/[publish] lines in its log), so
+that delta proves fixup-path neutrality, NOT guard behavior; the
+publish-path surface is --catstats. catstats full-sweep A/B: base 108
+history-parked -> new 615 (delta 507 parks; 321 unique new-only
+texts, artifacts gate\catstats_c3_v1_base.log + _new.log): ALL 321
+audited line-by-line - every one a duplicate/wobble/merge/battle-
+command/party-row/item-menu/emulator-chrome re-read of content
+already shown, ZERO clean first-time dialogue lines. Title path inert
+in catstats (0 [title] lines) = fastpath offline-inert by
+construction. Decision screens confirmed present in corpora as D1
+fixtures (save-point "はい/いいえ", gambler さあ、どうする？ list).
+
+C2 LIVE GATE EVALUATED on this session: outcome criteria MET -
+zero dialogue bubbles of stable-menu rows (GAME OVER/save 20:33:18,
+inventory 20:29:56, PLAYER SELECT), MENU mints unchanged, dialogue
+fired after menus, round-7 title/intro behavior held on the return
+visit. The specific [publish] menu-hold line never appeared because
+upstream guards pre-empted every instance (subpart-suppressed at
+loops 529-531 on the save rows) - the hold stands as an unengaged
+backstop; first-fire evidence still unobserved. C2 = CLOSED with this
+note.
+
+LIVE GATES OWED. T3: cold boot posts the title on the FIRST visit
+even through a fast click-through ([title] episode evidence ... strong
+-> episode publish), and the return visit still posts exactly once per
+visit. C3: a replayed session shows zero re-posts of overlay content
+([publish] history-parked lines carry the mutation class) with NO
+real dialogue missing (safety valve - corpus audit says none, live is
+the final gate) and title/intro/menu flows unchanged. While awaiting
+those: D1 (Decisions category) is the build work.
+
+NAMED RESIDUAL (class b, evidence-gated): weak-hold stale fires.
+publish-weak-hold fires at weakHold~=18 on hold-survival alone; the
+GOOD fire (mockup #3 line, fired while still on screen) and the BAD
+fire (crawl row, fired after departure) are identical in every
+observable we capture - stableCount 1-3 at fire, ~18-19 loops of
+ellipsis-challenger hold, zero candidate re-reads inside either
+window. No measured discriminator exists yet; frame-diff/scroll state
+for loops 555-573 was never logged. Next move: capture frame-motion
+state during weak-hold windows, then gate a motion-abort rule on that
+data. Do NOT retune weakHold bars without it.
