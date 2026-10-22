@@ -4647,9 +4647,47 @@ namespace WunderLanguage.Host.Capture
             var texts = new List<(int y, string t)>();
             foreach (var ln in lines.OrderBy(l => l.y))
             {
-                string j = string.Join(" ", ln.parts.OrderBy(p => p.X).Select(p => p.Text.Trim()));
-                if (!string.IsNullOrWhiteSpace(j)) texts.Add((ln.y, j));
+                // D-SUB (revert: revert decision-sublines): a question-
+                // bearing multi-line box arrives as ONE merged block whose
+                // rec drops lines (single-line model on a tall crop). The
+                // sidecar now ships its per-line reads; decision rows come
+                // from those real lines instead of the flattened text
+                // (measured live 2026-10-23: gambler box minted question +
+                // one option, shop box merged question+options into one
+                // row and never minted). Blocks without sub-lines join
+                // exactly as before -> replay byte-identical.
+                var subRows = new List<(int y, string t)>();
+                var plainParts = new List<string>();
+                foreach (var p in ln.parts.OrderBy(p => p.X))
+                {
+                    if (p.Lines != null && p.Lines.Count >= 2)
+                    {
+                        foreach (var sl in p.Lines)
+                        {
+                            string slt = sl.Text.Trim();
+                            if (!string.IsNullOrWhiteSpace(slt)) subRows.Add((sl.Y, slt));
+                        }
+                    }
+                    else
+                    {
+                        // join preserves the old select-trim-join exactly
+                        // (empty parts included) -> replay byte-identical
+                        plainParts.Add(p.Text.Trim());
+                    }
+                }
+                if (subRows.Count > 0)
+                {
+                    foreach (var sr in subRows.OrderBy(s => s.y)) texts.Add(sr);
+                    // chrome riders sharing the box line keep their join
+                    if (plainParts.Count > 0) texts.Add((ln.y, string.Join(" ", plainParts)));
+                }
+                else
+                {
+                    string j = string.Join(" ", plainParts);
+                    if (!string.IsNullOrWhiteSpace(j)) texts.Add((ln.y, j));
+                }
             }
+            texts = texts.OrderBy(t => t.y).ToList();
             int qi = -1, qpos = -1;
             for (int i = 0; i < texts.Count; i++)
             {

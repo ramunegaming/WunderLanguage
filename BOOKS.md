@@ -2102,3 +2102,56 @@ needs sub-line splits; hermit 4 FP; flattened no-？pickers; battle
 question rows whose OCR drops the space (none observed - watch).
 Live gate owed: the 6 mockups + gambler/PLAYER SELECT tag DECISIONS,
 dialogue path byte-identical.
+
+D-SUB (decision sub-lines) CODED + SIDECAR-FRAME-TESTED 2026-10-23,
+live gate owed (revert: revert decision-sublines). The first live gate
+session (2026-10-23 03:36-03:48, cold boot + decisions route) proved
+the D1 category end-to-end (DECISION tag + rows live at 03:46:54.407)
+but short: rows=さあ、どうする？ | しょうぶする dropped the second
+option, and the start-point picker posted IN-GAME TEXT. Forensics from
+the session log: [blocks] n=3 "さあ、どうする？しょうぶする" = the
+detector found all three line regions but the chest-sprite boxes
+chain-merged them into ONE block, and the recognizer (manga-ocr is a
+single-LINE model) dropped line 3 inside the merged crop - the same
+merge class behind the shop sweep chaos (どうするあるよ？レッか。いらない
+どうするあるよ？ = question+options merged + question echo). Design,
+all universal: merge_nearby_boxes now returns the member raw boxes; in
+the rec loop a merged block that is n>=2 AND h>=40 AND question-bearing
+(？ in the rec text = decision-prompt shape) also recs each member
+sub-box and ships "lines" [{t,box}] + a [sublines] log line. Single-
+line and non-question blocks never pay a crop, so multi-line DIALOGUE
+pages without ？ (the dominant FFVI case) are untouched. Host:
+OcrBlock.Lines (absent in old sidecars/corpora -> null -> dormant) +
+TryBuildDecisionRows expands blocks with >=2 lines into per-line rows;
+parts without lines keep the exact old trim-join (replay byte-
+identical). Verification: sidecar frame test on the saved troubleshoot
+captures - gambler zelda_203101: lines=3 = さあ、どうする？ / しょうぶする /
+逃げだす (y=277/332/393), the dropped option recovered, +~300ms on that
+frame (1022ms total request); shop zelda_203449: detector split Q and
+いらない into separate n=1 boxes on that frame (かう sits on a chest
+sprite - no clean box ever fires, detector-quality residual; vocab mode
+still drops the classical merged block), so the host mints Q + いらない;
+picker control zelda_202935: no ？ -> no lines attached, the 2-row
+no-question residual stands by design. Build GREEN 0 err / 17 warn.
+Sweep A/B (435 corpora): the 433 pre-session corpora are byte-
+identical in DECISION content (12 distinct row-sets = v5's, zero new
+FP shapes); the +1 DECISION / +2 MENU / +2 TITLE delta = the 2 NEW
+corpora from the 03:37 session itself (20261023_033712/033733) replaying
+your own captures (gambler rows identical); [sublines] never fires in
+replay; two runs r1==r2 deterministic. VERIFICATION CAVEAT: the corpus
+JSONL schema strips blocks to t/x/y/w/h/c/n/s/d, so future corpora do
+NOT carry lines either - the sub-line path is live-only verified
+(sidecar frame test + the owed live session); adding lines to the
+capture schema is a future corpora decision. Residuals: かう-on-sprite
+detector miss (shop mints Q + one option until the detector keeps the
+line); picker stays MENU/dialogue (2-row no-question, by design); +300ms
+on question-box frames only; live watch for new DECISION FPs on ？-
+bearing FFVI dialogue pages (they now pay the sub-line cost). T3 and
+C3 CLOSED from the same session's log: T3 = title posted on the first
+visit (03:37:34.997, hits=3 evidenceAge=0, cold boot no input) and
+exactly one post per visit across 3 visits (03:39:49.065 return after
+intro, 03:48:17.756 post-reset); C3 = 4 [publish] history-parked lines,
+all intro-crawl re-reads parked "covered by recent fire", zero overlay
+re-posts, no dialogue missing, 0 errors in the whole session. D1 live
+gate remaining: gambler DECISION with BOTH options + shop DECISION
+tag, dialogue path byte-identical.

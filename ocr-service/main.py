@@ -82,7 +82,7 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
     # Perf/vision batch (box confidence v0): also returns detector
     # multiplicity per merged box — a region where the detector fired
     # 5 overlapping boxes is stronger text evidence than a singleton.
-    # Returns [(box, nmerged)]. Single caller below.
+    # Returns [(box, nmerged, member_boxes)]. Single caller below.
     merged = []
     used = [False] * len(boxes)
     if not boxes:
@@ -90,6 +90,9 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
     # M6.2 (steadiness): horizontal gap scales with the frame's tallest
     # block (split word-groups rejoin on tall dialogue); vertical gap
     # stays 15 so menu rows, HUD stacking, and ASCII grouping never move.
+    # D-SUB (revert: revert decision-sublines): also return the member
+    # raw-box indices per merged box - the sub-line pass recs them for
+    # question-bearing multi-line blocks (see the rec loop).
     try:
         _max_h = max(b[3] - b[1] for b in boxes)
     except Exception:
@@ -105,6 +108,7 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
         x_min, y_min, x_max, y_max = box
         used[i] = True
         _nmerged = 1
+        _members = [box]
         changed = True
         while changed:
             changed = False
@@ -120,7 +124,8 @@ def merge_nearby_boxes(boxes, x_gap=20, y_gap=15):
                     used[j] = True
                     changed = True
                     _nmerged += 1
-        merged.append(((x_min, y_min, x_max, y_max), _nmerged))
+                    _members.append(other)
+        merged.append(((x_min, y_min, x_max, y_max), _nmerged, _members))
     return merged
 def propose_classical_boxes(img_np):
     # Vision batch item 2 (classical box proposer, learning-mode
@@ -272,7 +277,7 @@ def detect_and_ocr(pil_image: Image.Image):
     # Preliminary dominance for NMS-time score comparisons (final
     # dominance recomputed over survivors below; ranking input only).
     _dom_area = 0.0
-    for (_qx0, _qy0, _qx1, _qy1), _qn in merged_boxes:
+    for (_qx0, _qy0, _qx1, _qy1), _qn, _qm in merged_boxes:
         _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
         if _qa > _dom_area:
             _dom_area = _qa
@@ -288,7 +293,7 @@ def detect_and_ocr(pil_image: Image.Image):
         for (_px0, _py0, _px1, _py1, _ps) in propose_classical_boxes(img_np):
             _beaten = []
             _skipped_cls = False
-            for _mi, ((_qx0, _qy0, _qx1, _qy1), _qn) in enumerate(merged_boxes):
+            for _mi, ((_qx0, _qy0, _qx1, _qy1), _qn, _qm) in enumerate(merged_boxes):
                 if _mi in _drop:
                     continue
                 _ix0, _iy0 = max(_px0, _qx0), max(_py0, _qy0)
@@ -317,18 +322,18 @@ def detect_and_ocr(pil_image: Image.Image):
     # Computed over detector survivors (classical carries its own
     # rectangularity score, never the dom share).
     _dom_area = 0.0
-    for (_qx0, _qy0, _qx1, _qy1), _qn in _survivors:
+    for (_qx0, _qy0, _qx1, _qy1), _qn, _qm in _survivors:
         _qa = float((_qx1 - _qx0) / det_scale) * float((_qy1 - _qy0) / det_scale)
         if _qa > _dom_area:
             _dom_area = _qa
     _raw_n = len(raw_boxes)
     _skipped = 0
-    _work = [(_b, _n, None) for (_b, _n) in _survivors] + _cls_kept
+    _work = [(_b, _n, None, _mem) for (_b, _n, _mem) in _survivors] + [(_cb, _cn, _cs, None) for (_cb, _cn, _cs) in _cls_kept]
     _t_rec0 = time.time()
     _crop_px = 0
     blocks = []
     _beam_divs = []  # per-crop beam string-diversity for [rec-beam]
-    for (_wb, _nmerge, _cls) in _work:
+    for (_wb, _nmerge, _cls, _members) in _work:
         (x_min, y_min, x_max, y_max) = _wb
         orig_x_min = x_min / det_scale
         orig_y_min = y_min / det_scale
@@ -385,7 +390,7 @@ def detect_and_ocr(pil_image: Image.Image):
                 _conf = _det_conf(orig_width, orig_height, _dom_area)
             except Exception:
                 _conf = 0.0
-        blocks.append({
+        _blk = {
             "text": text,
             "box": [int(orig_x_min), int(orig_y_min), int(orig_width), int(orig_height)],
             "area": orig_width * orig_height,
@@ -399,7 +404,55 @@ def detect_and_ocr(pil_image: Image.Image):
             # Absent in old frames -> [] -> never blocks.
             # Revert: delete the beams line.
             "beams": [str(s)[:120] for s in (list(_beams) if _beams else [])[:4]],
-        })
+        }
+        # D-SUB decision sub-lines (revert: revert decision-sublines):
+        # the recognizer is a single-LINE model - a chain-merged
+        # multi-line box loses lines inside the merged crop (measured
+        # live 2026-10-23: the gambler box n=3 read as question + one
+        # option, its second option dropped, so the DECISION minted
+        # short; the shop box merged question+options into one row and
+        # never minted). Question-bearing multi-line blocks are exactly
+        # the decision-prompt shape, so rec each detector sub-box too
+        # and ship per-line rows; the host builds decision rows from
+        # real lines. Cost is scoped: single-line and non-question
+        # blocks never pay a crop. Absent key -> host path unchanged.
+        try:
+            if _members and len(_members) >= 2 and orig_height >= 40 and ("?" in text or "？" in text):
+                _sub_lines = []
+                for _sb in sorted(_members, key=lambda _m: _m[1]):
+                    _sx0, _sy0 = _sb[0] / det_scale, _sb[1] / det_scale
+                    _sx1, _sy1 = _sb[2] / det_scale, _sb[3] / det_scale
+                    _sw, _sh = _sx1 - _sx0, _sy1 - _sy0
+                    if _sw < MIN_BOX_WIDTH or _sh < MIN_BOX_HEIGHT:
+                        continue
+                    # whole-box echo (a member spanning the merge) is not a line
+                    if _sh > orig_height * 0.9:
+                        continue
+                    _sc = pil_image.crop((_sx0, _sy0, _sx1, _sy1))
+                    _sc = _sc.resize(
+                        (
+                            max(1, int(_sc.width * RECOGNITION_UPSCALE_FACTOR)),
+                            max(1, int(_sc.height * RECOGNITION_UPSCALE_FACTOR)),
+                        ),
+                        Image.LANCZOS,
+                    )
+                    try:
+                        _st = mocr(_sc)
+                    except Exception:
+                        continue
+                    if not _st or not _st.strip():
+                        continue
+                    _sub_lines.append({"t": _st.strip(), "box": [int(_sx0), int(_sy0), int(_sw), int(_sh)]})
+                if len(_sub_lines) >= 2:
+                    _blk["lines"] = _sub_lines[:6]
+                    try:
+                        _esc = "|".join("".join(("\\u%04x" % ord(c)) if ord(c) > 126 else c for c in l2["t"]) for l2 in _blk["lines"])
+                        print(f"[sublines] box_y={int(orig_y_min)} lines={len(_blk['lines'])} texts={_esc}", flush=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        blocks.append(_blk)
     _rec_ms = (time.time() - _t_rec0) * 1000.0
     try:
         print(f"[ocr-timing] det={_det_ms:.0f}ms rec={_rec_ms:.0f}ms raw={_raw_n} merged={len(merged_boxes)} kept={len(blocks)} skip={_skipped} scal={det_scale:.2f} px={_crop_px}")

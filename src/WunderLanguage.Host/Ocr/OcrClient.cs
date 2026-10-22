@@ -13,7 +13,13 @@ namespace WunderLanguage.Host.Ocr
     // Vision batch item 2: Src tags the proposer ("detector" or
     // "classical"). Host unions classical only in learning mode
     // (empty item vocab) — the tuned path never sees them.
-    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1, string Src = "detector", double Div = 0.0, List<string>? Beams = null);
+    public record OcrBlock(string Text, int X, int Y, int Width, int Height, double Area, double Conf = 1.0, int NMerge = 1, string Src = "detector", double Div = 0.0, List<string>? Beams = null, List<OcrSubLine>? Lines = null);
+
+    // D-SUB decision sub-lines (revert: revert decision-sublines): per
+    // detector-sub-box reads the sidecar ships for question-bearing
+    // multi-line blocks. Absent in old sidecars/corpora -> null -> the
+    // decision path joins merged text exactly as before.
+    public record OcrSubLine(string Text, int X, int Y, int Width, int Height);
 
     public class OcrClient
     {
@@ -156,7 +162,28 @@ namespace WunderLanguage.Host.Ocr
                         // vocab; vocab games never see them (tuned path
                         // byte-identical).
                         if (src == "classical" && !includeClassical) continue;
-                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge, src, div, beams));
+                        // D-SUB decision sub-lines (revert: revert
+                        // decision-sublines): per-line reads for
+                        // question-bearing multi-line boxes. Absent in old
+                        // sidecars/corpora -> null -> never fires.
+                        List<OcrSubLine>? subLines = null;
+                        if (item.TryGetProperty("lines", out var lns) && lns.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var li in lns.EnumerateArray())
+                            {
+                                string lt = li.TryGetProperty("t", out var ltx) ? (ltx.GetString() ?? "") : "";
+                                if (string.IsNullOrWhiteSpace(lt)) continue;
+                                int lx = 0, ly = 0, lw = 0, lh = 0;
+                                if (li.TryGetProperty("box", out var lb) && lb.ValueKind == JsonValueKind.Array && lb.GetArrayLength() >= 4)
+                                {
+                                    lx = lb[0].GetInt32(); ly = lb[1].GetInt32();
+                                    lw = lb[2].GetInt32(); lh = lb[3].GetInt32();
+                                }
+                                (subLines ??= new List<OcrSubLine>()).Add(new OcrSubLine(lt, lx, ly, lw, lh));
+                                if (subLines.Count >= 6) break;
+                            }
+                        }
+                        blocks.Add(new OcrBlock(bt, x, y, w, h, area, conf, nmerge, src, div, beams, subLines));
                     }
                     catch { }
                 }
