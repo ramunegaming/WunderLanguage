@@ -4657,7 +4657,85 @@ namespace WunderLanguage.Host.Capture
                 if (p < 0) p = texts[i].t.IndexOf('?');
                 if (p >= 0) { qi = i; qpos = p; break; }
             }
-            if (qi < 0) return false;
+            if (qi < 0)
+            {
+                // D1 options-only decisions (revert: revert d1-decisions):
+                // selector pickers WITHOUT a question row (measured
+                // 2026-10-22: the start-point picker reads
+                // あいつの家からスタート / 教会からスタート - no ？ anywhere; the
+                // selector arrow is a sprite the OCR never sees). Row-shape
+                // only, no per-game strings, no game branches.
+                //
+                // v1 was row-shape ALONE (2-4 rows, each 2-14 short JA chars,
+                // no sentence punctuation) and minted 186 false DECISIONs on
+                // the full 433-corpus sweep (gate/catstats_d1_v1_new2.log).
+                // Every one reduced to two structural families, each killed by
+                // a universal rule below:
+                //   (a) FFVI battle command window たたかうひっさつわざ | アイテム -
+                //       really is 2-4 short unpunctuated JA rows, so only
+                //       battle geometry separates it (party-status cell).
+                //   (b) one real row paired with chrome - 経験値１５９ポイントかくとく |
+                //       マッシュ… , ロック「ん？ | 気がついたのか , これ以上の |
+                //       神々のトライフォス. Family (b) is the majority of the 66
+                //       survivors (120 total mints), and the length-spread rule
+                //       below does NOT kill it: マッシュ… is 5 chars beside a
+                //       6-char row, under the 2x spread. The row-count rule
+                //       does, see texts.Count < 3 below.
+                // Cost of any residual mislabel is a label, never a suppressed
+                // line (safety valve) - the row still posts as IN-GAME TEXT.
+                //
+                // D1 row-count rule (revert: revert d1-decisions): a decision is
+                // a question plus OPTIONS, so a no-question picker needs at
+                // least 3 comparable rows before any chrome drops out. Every
+                // family-(b) frame measured exactly 2 candidate rows - one
+                // content row plus one name/status/title-marker cell - so the
+                // 2-row case is chrome pairing and never a decision. This also
+                // retires the FFVI command window たたかう | ひっさつわざ | アイテム
+                // (3 rows, 1 chrome), which the battle veto cannot see: it sits
+                // at y=994 h=160 on a 780px frame and IsPartyStatusBlock needs
+                // nh<0.13 (~102px), so its cells never match.
+                // Trade runs the right way for the real fixtures: はい/いいえ
+                // stays a 2-row DECISION because the ？ keeps it on the question
+                // branch, and the Zelda shop box どうするあるよ？ mints via its
+                // question row, not its option count. A 2-row no-question
+                // PICKER stays MENU/dialogue - labelled late, never suppressed.
+                //
+                // Flattened single-block pickers (rows concatenated by the
+                // OCR, n>1, no separator) cannot split without sub-line
+                // geometry - they stay MENU/dialogue until the OCR layer
+                // delivers line splits (named residual).
+                if (texts.Count < 3 || texts.Count > 4) return false;
+                var onlyRows = new List<(int y, string t)>();
+                foreach (var tx in texts)
+                {
+                    string o = tx.t.Trim();
+                    if (o.Length < 2 || o.Length > 12) return false;
+                    if (!HasJapanese(o)) return false;
+                    if (IsJunkOcr(o) || IsEllipsisOnly(o)) return false;
+                    if (o.Contains('。') || o.Contains('！') || o.Contains('!')
+                        || o.Contains('？') || o.Contains('?') || o.Contains('、')) return false;
+                    string fixedOnly = NormalizePunctForStability(ApplyZeldaOcrFixups(o));
+                    if (fixedOnly.Length == 0) continue;
+                    onlyRows.Add((tx.y, fixedOnly));
+                }
+                if (onlyRows.Count < 2) return false;
+                // Chrome pairing: a real picker is a COLUMN of comparable
+                // choices (しょうぶする 7 / 逃げだす 4, はい 2 / いいえ 3, あいつの家から
+                // スタート 11 / 教会からスタート 8 - all under a 2x spread). A lone
+                // long row beside a short one is a dialogue line plus a name
+                // or status cell (経験値１５９ポイントかくとく 13 | マッシュ… 5). Kills
+                // family (b) without naming a game. Revert: revert d1-decisions.
+                int maxLen = 0, minLen = int.MaxValue;
+                foreach (var r in onlyRows)
+                {
+                    if (r.t.Length > maxLen) maxLen = r.t.Length;
+                    if (r.t.Length < minLen) minLen = r.t.Length;
+                }
+                if (maxLen >= minLen * 2) return false;
+                foreach (var r in onlyRows)
+                    decision.Add((r.y, r.t, HasJapanese(r.t)));
+                return decision.Count >= 2;
+            }
             var qparts = new List<string>();
             for (int i = 0; i < qi; i++)
             {
@@ -4668,6 +4746,43 @@ namespace WunderLanguage.Host.Capture
             qparts.Add(texts[qi].t.Substring(0, qpos + 1).Trim());
             string question = string.Join(" ", qparts).Trim();
             if (question.Length < 2) return false;
+            // D1 question-length gate (revert: revert d1-decisions): a real
+            // decision prompt is short and self-contained; a dialogue LINE
+            // carrying a ？is long. Measured on the 433-corpus sweep
+            // (gate/catstats_d1_v3.log, 41 mints): the 9 real questions ran
+            // 8-17 chars, while the 6 longest FP dialogue questions ran
+            // 27-41 chars, so 20 sits between the two populations. It only
+            // trims the tail only - the short FPs (そうですか？ 6, ロック「ん？ 6) die
+            // to the option-side gate below, not here.
+            // NOT a punctuation gate: さあ、どうする？ (gambler) has 、and
+            // 『どっちに行くんだ！？ (crossroads) has ！, so a punctuation bar
+            // would kill two of the nine real questions. Length plus the
+            // option-side gate is the whole gate. A prompt over 20 stays
+            // IN-GAME TEXT - mislabelled late (safety valve), never suppressed.
+            if (question.Length > 20) return false;
+            // D1 prompt-shape gate (revert: revert d1-decisions): the prompt
+            // region (RAW row up to and including the ？) must be one unbroken
+            // phrase with no speaker bracket:
+            //   「 - Japanese speaker attribution, so a dialogue LINE
+            //     (ティナ「帝国……？ ロック「ん？ １ドガー「住民の様子は？) never a prompt.
+            //     No measured real question carries it; the one real prompt
+            //     with a quote, 『どっちに行くんだ！？, uses 『 (different code
+            //     point) and passes.
+            //   space - the OCR read separate cells. This also catches the
+            //     detached-？battle rows (たたかう ティナ ？, シビーラビット ？, whose ？
+            //     floats after a space) and the cell-pair reads (●ケアル…ファイア
+            //     ！？, ユーまどう ウェッジビックス？). All 9 real prompts are unbroken
+            //     (仲間にしますか？ さあ、どうする？ イカダに乗りますか？).
+            // Measured on gate/catstats_d1_v4.log (23 mints): together they
+            // kill 10 of the 14 false mints and keep 9/9 real. The 4 left
+            // are the Zelda hermit Q + hiragana-callout pair (named
+            // residual). A bracketed or spaced prompt falls to IN-GAME TEXT
+            // - mislabelled late (safety valve), never suppressed. Checked on
+            // the RAW row, not the joined question (the join itself inserts
+            // spaces between pre-rows).
+            string prompt = texts[qi].t.Substring(0, qpos + 1);
+            if (prompt.IndexOf('「') >= 0) return false;
+            if (prompt.IndexOf(' ') >= 0 || prompt.IndexOf('　') >= 0) return false;
             var tails = new List<string>();
             string tail = texts[qi].t.Substring(qpos + 1);
             if (!string.IsNullOrWhiteSpace(tail)) tails.Add(tail);
@@ -4692,11 +4807,56 @@ namespace WunderLanguage.Host.Capture
                     options.Add(o);
                 }
             }
+            // D1 (revert: revert d1-decisions): a ？-bearing piece is question
+            // text echoed into the tail by a flattened/merged block - never a
+            // real option. Skip it instead of rejecting the whole screen (the
+            // old reject is exactly what killed the shop box, whose tail
+            // carried the echoed どうするあるよ？). Real dialogue sentences still
+            // die to 。！and the length bar; same-reading dupes (a row + its
+            // cls mirror) collapse.
+            options.RemoveAll(o => o.Contains('？') || o.Contains('?'));
+            options = options.Distinct().ToList();
             if (options.Count < 1 || options.Count > 6) return false;
             foreach (var o in options)
             {
                 if (o.Length > 12) return false;
-                if (o.Contains('。') || o.Contains('！') || o.Contains('!') || o.Contains('？') || o.Contains('?')) return false;
+                if (o.Contains('。') || o.Contains('！') || o.Contains('!')) return false;
+            }
+            // D1 option-nature gate (revert: revert d1-decisions): with the
+            // ？-echo skip above, a battle MENU cell whose row is
+            // たたかう ティナ ？ leaves no options and dies to the count bar. What
+            // still needs judging is the pair that survives - dialogue
+            // question + NAME, e.g. そうですか？ | ウェッジビックス - where the "option"
+            // is a speaker NAME echoed by a merged cell, not a choice.
+            // Structural, measured against all 9 real fixtures on the 433-
+            // corpus sweep: a real option row is hiragana-bearing (はい / いいえ /
+            // しょうぶする / きいく / やっぱり やめる), a pure digit pick (１ / ２ / ３ from
+            // PLAYER SELECT - fullwidth, so hiragana alone rejected them), or
+            // bracket-led (〈乗る〉〈乗らない〉 / 〈左〉 （右） - kanji inside brackets).
+            // A NAME is katakana (ウェッジビックス / マッシュ / アイテム) or kanji without
+            // hiragana (魔導アーマー…) and dies here. Known residual: a name
+            // trailing hiragana (魔導アーマー」の) slips through. A name-only pair
+            // falls to IN-GAME TEXT - mislabelled late (safety valve), never
+            // suppressed.
+            foreach (var o in options)
+            {
+                string oc = o.Trim('〈', '〉', '(', ')', '（', '）', '　', ' ');
+                if (oc.Length < 2) continue;
+                bool hasHira = false;
+                foreach (char c in oc)
+                {
+                    if (c >= 'ぁ' && c <= 'ん') { hasHira = true; break; }
+                }
+                if (hasHira) continue;
+                if (o.Length > 0 && (o[0] == '〈' || o[0] == '（' || o[0] == '(')) continue;
+                bool digit = oc.Length > 0;
+                foreach (char c in oc)
+                {
+                    if ((c >= '0' && c <= '9') || (c >= '０' && c <= '９')) continue;
+                    digit = false; break;
+                }
+                if (digit) continue;
+                return false;
             }
             // Same pipeline as dialogue display: fixups + normalize, so the
             // DECISION bubble matches dialogue spelling (せんぜん→ぜんぜん).
@@ -4850,8 +5010,51 @@ namespace WunderLanguage.Host.Capture
                 joined = System.Text.RegularExpressions.Regex.Replace(joined, @"\s+[0-9０-９ ]{2,}\s*$", "");
                 rows.Add((ln.y, joined, ja));
             }
-            if (blocks.Count < 3) { _menuStableCount = 0; _menuSignature = ""; return; }
-            if (!rows.Any(a => a.ja)) { _menuStableCount = 0; _menuSignature = ""; return; }
+            // D1 decision shape check FIRST (revert: revert d1-decisions):
+            // decision boxes measure total=2 blocks (the flattened box block
+            // n=2/3 + its tall cls mirror), which the blocks.Count<3 fragment
+            // gate below silently dropped - measured 2026-10-22 live: gambler
+            // (さあ、どうする？) + start-point picker, zero tracker engagement.
+            // The tall cls mirror ALSO arrived both Y-grouped into lines and
+            // re-attached, so its ？-bearing merge landed in the options
+            // bucket and the question check rejected the shop box. New
+            // contract: tall JA blocks never join a grouped line, and appear
+            // exactly once as their own row. decHit gates only the two
+            // fragment gates below; every later site is unchanged.
+            var decLines = new List<(int y, List<OcrBlock> parts)>();
+            foreach (var ln in lines)
+            {
+                if (ln.parts.Any(p => p.Height > 150 && HasJapanese(p.Text))) continue;
+                decLines.Add(ln);
+            }
+            foreach (var b in blocks)
+            {
+                if (b.Height > 150 && HasJapanese(b.Text))
+                    decLines.Add((b.Y, new List<OcrBlock> { b }));
+            }
+            bool decHit = TryBuildDecisionRows(decLines, out var decRows);
+            // D1 battle veto (revert: revert d1-decisions): the FFVI command
+            // window たたかうひっさつわざ | アイテム is structurally a 2-4 row short-JA
+            // picker, so the shape test cannot separate it from a real
+            // picker - only battle geometry can. A party-status cell is
+            // BattleFrame's own JA cell predicate (ny>=0.65, nx>=0.38,
+            // nw<0.25, nh<0.13), pure geometry, no pack strings. Battle
+            // owns BATTLE, never DECISION. Frame state lives here, not in
+            // the static builder.
+            // CORRECTION 2026-10-22: this veto does NOT fire on the current
+            // corpora. FFVI command rows measured y=994 h=160 on a 780px
+            // frame (nh=0.21) while the predicate needs nh<0.13 (~102px),
+            // so the earlier "killed 94 of 186" attribution was wrong -
+            // the row-count rule (texts.Count < 3) retires the options-only
+            // battle rows and the ？-attachment + option-nature gates retire
+            // the ？-bearing command rows. Kept as a guard: if battle
+            // geometry ever does match, battle still owns its frame.
+            if (decHit)
+                foreach (var b in blocks)
+                    if (BattleFrame.IsPartyStatusBlock(b, _battleFrameW, _battleFrameH, HasJapanese))
+                    { decHit = false; break; }
+            if (blocks.Count < 3 && !decHit) { _menuStableCount = 0; _menuSignature = ""; return; }
+            if (!rows.Any(a => a.ja) && !decHit) { _menuStableCount = 0; _menuSignature = ""; return; }
             // Single blank line between sections only (header/numbers/modes).
             var jaRows = new List<(int y, string t, bool ja)>();
             for (int i = 0; i < rows.Count; i++)
@@ -4893,16 +5096,10 @@ namespace WunderLanguage.Host.Capture
             InsertMenuSectionBlank(jaRows);
             // In-text decisions claim priority over dialogue (choice screens
             // would otherwise dwell-post as merged dialogue, e.g. Zelda cell).
-            // Tall dialogue blocks skip Y-grouping (art filter), so re-attach
-            // them here - the question mark usually lives inside the big block.
+            // Shape check + tall-block contract computed above (D1), so the
+            // fragment gates could see it. Revert: revert d1-decisions.
             bool isDecision = false;
-            var decLines = lines.ToList();
-            foreach (var b in blocks)
-            {
-                if (b.Height > 150 && HasJapanese(b.Text))
-                    decLines.Add((b.Y, new List<OcrBlock> { b }));
-            }
-            if (TryBuildDecisionRows(decLines, out var decRows))
+            if (decHit)
             {
                 jaRows = decRows;
                 isDecision = true;
@@ -4998,7 +5195,14 @@ namespace WunderLanguage.Host.Capture
                 var markerRows = jaRows.Where(a => (a.t ?? "").Contains(Packs.PackRegistry.Current.TitleMarker)).ToList();
                 if (markerRows.Count > 0) jaRows = markerRows;
             }
-            FileLogger.Log($"[menu] publish {kind} lines={jaRows.Count}");
+            // D1 observability (revert: revert d1-decisions): decision mints
+            // log their rows so the offline sweep + live gate can audit WHAT
+            // was tagged (line-count-only lines cannot be attributed to
+            // frames; the first sweep's 186 unattributable DECISION publishes
+            // proved it).
+            FileLogger.Log(kind == "DECISION"
+                ? $"[menu] publish {kind} lines={jaRows.Count} rows={string.Join(" | ", jaRows.ConvertAll(o => o.t))}"
+                : $"[menu] publish {kind} lines={jaRows.Count}");
             _ = TranslateAndPublishMenuAsync(kind, jaRows);
         }
 

@@ -1940,9 +1940,13 @@ fewer. Forensics chain: iterations 18-30 = "[loop N] frame unchanged,
 skipping OCR" while mockup #2 covered the screen (correct skips, no
 logo reads exist for them - corpus rows confirm loop 17 = mockup,
 not logo); when the mockup cleared (~20:27:26) the logo was up only
-~2-4s before the user clicked through into the intro crawl (loop 40+
-already reads crawl fragments) = ZERO to two settled full-title reads
-< 3. The second visit lingered (copyright phase settled loops 158-171,
+~2-4s before the game AUTO-ADVANCED into the intro crawl - user
+correction 2026-10-22: the title->intro transition is the game's own
+timer, NOT user input (the click-through theory was wrong). The
+window is therefore game-determined and identical for every player:
+the fastpath is the correct UNIVERSAL fix, and the live gate needs no
+input at all - cold boot, watch (loop 40+ already reads crawl
+fragments) = ZERO to two settled full-title reads < 3. The second visit lingered (copyright phase settled loops 158-171,
 logo evidence 174/175/176 = 3 hits -> publish 20:28:57). NOT pack lag:
 RefreshGameSession healed zelda at iteration 20 (20:27:17, one second
 after the logo appeared) via the window-title path, and ScoreContent
@@ -2021,9 +2025,10 @@ backstop; first-fire evidence still unobserved. C2 = CLOSED with this
 note.
 
 LIVE GATES OWED. T3: cold boot posts the title on the FIRST visit
-even through a fast click-through ([title] episode evidence ... strong
--> episode publish), and the return visit still posts exactly once per
-visit. C3: a replayed session shows zero re-posts of overlay content
+even at the game's own auto-advance speed (no input needed - the
+title->intro transition is a timer; [title] episode evidence ...
+strong -> episode publish), and the return visit still posts exactly
+once per visit. C3: a replayed session shows zero re-posts of overlay content
 ([publish] history-parked lines carry the mutation class) with NO
 real dialogue missing (safety valve - corpus audit says none, live is
 the final gate) and title/intro/menu flows unchanged. While awaiting
@@ -2039,3 +2044,61 @@ window. No measured discriminator exists yet; frame-diff/scroll state
 for loops 555-573 was never logged. Next move: capture frame-motion
 state during weak-hold windows, then gate a motion-abort rule on that
 data. Do NOT retune weakHold bars without it.
+
+D1 (DECISIONS) CODED + OFFLINE-GATED 2026-10-23, live gate owed
+(revert: revert d1-decisions). Root causes from the 6 troubleshoot
+fixtures (forensics 2026-10-22/23): (a) the blocks.Count<3 gate dropped
+2-block decision frames; (b) tall cls-mirror blocks arrive BOTH
+Y-grouped into lines AND re-attached, so ？-bearing merged text landed
+in the options bucket and the question check rejected the box (this is
+what killed the shop fixture); (c) TryBuildDecisionRows hard-required a
+？ (qi<0 -> false), so no-？pickers were impossible; (d) OCR flattens
+multi-line boxes into one NMerge block with no separator - flattened
+pickers cannot split without sub-line geometry (stays a named
+residual). Design, all universal structure, zero per-game strings:
+tall-block contract (tall JA blocks appear exactly once as their own
+row); decision check runs FIRST (decHit gates the two fragment gates);
+？-bearing option pieces SKIPped, not rejected + options.Distinct();
+options-only branch for no-？pickers (texts.Count 3-4, maxLen<2*minLen
+length spread - a real picker is a comparable column, family-(b) chrome
+pairs are not - sentence punctuation rejected); question gates: length
+<=20 (real prompts 8-17, FP dialogue questions 27-41), no speaker
+bracket 「 (dialogue attribution; the one real quoted prompt uses 『),
+no space anywhere in the prompt (all 9 real prompts are unbroken
+phrases; also catches the detached-？battle rows たたかう ティナ ？ and the
+cell-pair reads ウェッジビックス?); option-nature gate: each option must
+be hiragana-bearing, pure digit (fullwidth １/２/３ - hiragana-only
+rejected them at first, caught by the fixture check before ship), or
+bracket-led (〈左〉 （右）), else it is a name cell (ウェッジビックス /
+マッシュ / 魔導アーマー…). Measured ladder, 433-corpus --catstats sweep
+(deterministic): 186 -> 120 -> 41 -> 23 -> 13 mints. Final 13 audited
+line-by-line: 9/9 REAL fixtures (イカダに乗りますか？ 〈乗る〉〈乗らない〉,
+『どっちに行くんだ！？ まっすぐ 〈左〉（右）, status, 仲間にしますか？ はいいいえ,
+save-point x2, 説明を聞きますか？, PLAYER SELECT どのデーターをけしますか？ with
+7 rows, gambler さあ、どうする？ しょうぶする) + 4 named FPs = the Zelda
+hermit dialogue (ちゃんと、きこえましたか？ | わっうーんぜん family -
+question+hiragana callout, label-only under the safety valve).
+A/B vs base (base = 5c95072, sweep catstats_c3_v1_new.log): the
+checkpoint claim "base mints ZERO DECISION" was WRONG - base mints 8.
+All 8 identified via publish-context extraction: 152248 x2 (ユーまどう
+そうそうですウェッジビックス, ハイウェイス…ティナ ？ | まほうアイテム), 144032 x2
+(シビーラビット ？ | マッシュ … battle pair), 161344 x1 (まほうアイテム battle),
+155310 x1 (…？ウェッジビックス …。おその) = all battle/name-pair FPs, 4 of
+them followed by the pre-existing [menu] ERROR NRE (391 in BOTH C3
+logs - not D1's; D1 actually reduced it 601->444 by minting fewer
+menus); 202619 x1 = PLAYER SELECT (real, kept); 203005 x1 = hermit as a
+7-row decision (now reshaped to 2-row). Zero real decisions lost.
+MENU 301->300: two FFVI MENU(3)->DECISION swaps with content intact
+(question + flattened はいいいえ vs はい/いいえ rows) + the Zelda hermit
+re-shape; TITLE 16=16, gameover 17=17, [publish] history-parked
+615->613. CORRECTED: the battle-veto comment claimed IsPartyStatusBlock
+"killed 94 of 186" - WRONG, the predicate never fires (FFVI command
+rows sit at y=994 h=160 on a 780px frame = nh 0.21; it needs nh<0.13 =
+~102px). The row-count + prompt-shape + option-nature gates do the
+killing; the veto stays as a geometry guard with a corrected comment.
+Residuals: shop sweep frame merges question+options into one row so the
+option length bar (>12) rejects it - fixture path works, sweep path
+needs sub-line splits; hermit 4 FP; flattened no-？pickers; battle
+question rows whose OCR drops the space (none observed - watch).
+Live gate owed: the 6 mockups + gambler/PLAYER SELECT tag DECISIONS,
+dialogue path byte-identical.
