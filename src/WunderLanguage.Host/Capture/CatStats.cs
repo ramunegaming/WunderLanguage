@@ -178,6 +178,7 @@ namespace WunderLanguage.Host.Capture
             long rMenuT = 0, rMenuD = 0, rMenuM = 0, rMenuUpd = 0, rBattle = 0, rDd = 0, rDf = 0, rDu = 0;
             long rPub = 0, rPubStable = 0, rPubTransient = 0, rPubBattle = 0, rPubBoth = 0, rPubNoFrame = 0, rPubUnstamped = 0;
             long rUpdPub = 0, rUpdStable = 0, rUpdTransient = 0, rUpdBattle = 0, rUpdBoth = 0;
+            long tBProbe = 0;
             int corporaDone = 0, corporaErr = 0;
 
             foreach (var file in files)
@@ -267,6 +268,15 @@ namespace WunderLanguage.Host.Capture
                     // ingame (priority order for the joint buckets).
                     var catAtLoop = new Dictionary<int, (bool battle, bool stable, bool transient)>();
                     int stableLoops = 0, transientLoops = 0, battleLoops = 0, bothLoops = 0, ingameLoops = 0, bTrackLoops = 0;
+                    // C2 Part-2 probe: on non-FFVI packs the label-driven
+                    // Classify is blind (universal battleLoops=0 across 244
+                    // corpora - no weapon labels = no battle rows). Re-run
+                    // the SAME detector with FFVI's labels to measure
+                    // unknown-game battle-shaped frames at all - with C1's
+                    // false-positive caveat on file (date-stamped text
+                    // screens read as battle rows).
+                    var ffviLabels = Packs.FFVI.FfviPack.WeaponLabels;
+                    int bFfviProbe = 0;
                     foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja) in fed)
                     {
                         try
@@ -287,6 +297,11 @@ namespace WunderLanguage.Host.Capture
                         {
                             try { bclass = BattleFrame.Classify(blocks, sesW, sesH, hasJa, weaponLabels, out _, itemOpen); }
                             catch { bclass = 0; }
+                        }
+                        if (pack != "ffvi" && blocks.Count > 0)
+                        {
+                            try { if (BattleFrame.Classify(blocks, sesW, sesH, hasJa, ffviLabels, out _, itemOpen) > 0) bFfviProbe++; }
+                            catch { }
                         }
                         bool menu = menuSig.Length > 0;
                         bool stable = menu && menuStable >= 2;
@@ -371,6 +386,7 @@ namespace WunderLanguage.Host.Capture
                     tFBattle += fBattle; tFBoth += fBoth;
                     tUpd += updates; tUIngame += uIngame; tUStable += uStable; tUTransient += uTransient;
                     tUBattle += uBattle; tUBoth += uBoth;
+                    tBProbe += bFfviProbe;
                     corporaDone++;
 
                     if (!byGame.TryGetValue(pack, out var ag)) { ag = new Agg(); byGame[pack] = ag; }
@@ -390,7 +406,7 @@ namespace WunderLanguage.Host.Capture
 
                     topLeak.Add((name, recJunk, fLeak + uLeak, fires, stableLoops, battleLoops + bothLoops));
 
-                    FileLogger.Log($"[catstats] corpus={name} pack={pack} fed={fed.Count} stableLoops={stableLoops} transientLoops={transientLoops} battleLoops={battleLoops} bothLoops={bothLoops} ingameLoops={ingameLoops} bTracker={bTrackLoops} | simFires={fires} onIngame={fIngame} onStableMenu={fStable} onTransientMenu={fTransient} onBattle={fBattle} onBoth={fBoth} | simUpdates={updates} onIngame={uIngame} onStableMenu={uStable} onTransientMenu={uTransient} onBattle={uBattle} onBoth={uBoth} | recPub={recPub} junkStableMenu={recPubStable} junkBattle={recPubBattle} junkBoth={recPubBoth} okTransient={recPubTransient} noFrame={recPubNoFrame} unstamped={recPubUnstamped} | recUpdPub={recUpdPub} updJunk={recUpdStable + recUpdBattle + recUpdBoth} | recDlgDec={recDd} recDlgFire={recDf} recDlgUpd={recDu} recMenuT={recMenuT} recMenuD={recMenuD} recMenuM={recMenuM} recMenuUpd={recMenuUpd} recBattle={recBattle}");
+                    FileLogger.Log($"[catstats] corpus={name} pack={pack} fed={fed.Count} stableLoops={stableLoops} transientLoops={transientLoops} battleLoops={battleLoops} bothLoops={bothLoops} ingameLoops={ingameLoops} bTracker={bTrackLoops} bFfviProbe={bFfviProbe} | simFires={fires} onIngame={fIngame} onStableMenu={fStable} onTransientMenu={fTransient} onBattle={fBattle} onBoth={fBoth} | simUpdates={updates} onIngame={uIngame} onStableMenu={uStable} onTransientMenu={uTransient} onBattle={uBattle} onBoth={uBoth} | recPub={recPub} junkStableMenu={recPubStable} junkBattle={recPubBattle} junkBoth={recPubBoth} okTransient={recPubTransient} noFrame={recPubNoFrame} unstamped={recPubUnstamped} | recUpdPub={recUpdPub} updJunk={recUpdStable + recUpdBattle + recUpdBoth} | recDlgDec={recDd} recDlgFire={recDf} recDlgUpd={recDu} recMenuT={recMenuT} recMenuD={recMenuD} recMenuM={recMenuM} recMenuUpd={recMenuUpd} recBattle={recBattle}");
                 }
                 catch (Exception ex)
                 {
@@ -406,7 +422,7 @@ namespace WunderLanguage.Host.Capture
             long recJunkT = rPubStable + rPubBattle + rPubBoth;
             double junkPct = rPub > 0 ? 100.0 * recJunkT / rPub : 0;
             double simJunkPct = tFires > 0 ? 100.0 * simJunkF / tFires : 0;
-            FileLogger.Log($"[catstats] SUMMARY corpora={corporaDone} err={corporaErr} fed={tFed} stableMenuLoops={tStable} transientMenuLoops={tTransient} battleLoops={tBattle} bothLoops={tBoth} ingameLoops={tIngame} bTrackerLoops={tBTrack}");
+            FileLogger.Log($"[catstats] SUMMARY corpora={corporaDone} err={corporaErr} fed={tFed} stableMenuLoops={tStable} transientMenuLoops={tTransient} battleLoops={tBattle} bothLoops={tBoth} ingameLoops={tIngame} bTrackerLoops={tBTrack} bFfviProbeLoops(non-ffvi,labels-on)={tBProbe}");
             var kindsSb = new System.Text.StringBuilder();
             int kindsShown = 0;
             var leakSorted = new List<KeyValuePair<string, int>>(leakKinds);

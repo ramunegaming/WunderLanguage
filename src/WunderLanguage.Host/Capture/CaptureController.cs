@@ -86,6 +86,33 @@ namespace WunderLanguage.Host.Capture
                 }
             }
             catch { }
+            // C2 menu-garbage hold (revert: revert c2-menu-hold): C1's
+            // content spot-checks convicted the class - menu rows
+            // (save options, date/number screens, stationary spell lists)
+            // published as DIALOGUE on stable-menu frames (Zelda loop
+            // 3593, PM loop 357, FFVI 895/2299). The menu tracker mints
+            // MENU for those screens, but the dialogue roads fire
+            // straight through the same rows. Hold sits at the single
+            // choke AFTER the sim record (sim keeps measuring the attempt
+            // class, B4-style) and BEFORE RecordFire (a held text must
+            // never poison fire-history - the release would self-block
+            // via the history guard above). Omission-only, mirrors
+            // hold-anchor/title-guard: candidate stays, fires after the
+            // menu exits (release) or dies by its own staleness. Safety
+            // valve: delayed label, never a suppressed line - only
+            // STABLE menus (tracker mint-eligibility, >=2 loops same
+            // signature) hold, so crawls/moving text (transient
+            // menu-shaped) keep publishing, and updates are excluded
+            // (not new dialogue - same rule as the recency stamp).
+            try
+            {
+                if (!_simMode && HeldByStableMenu(ja))
+                {
+                    FileLogger.Log($"[publish] menu-hold for \"{Truncate(ja)}\" (stable menu owns these rows)");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch { }
             try { RecordFire(ja, ev, loop); } catch { }
             try { _lastFireParked = false; } catch { }
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
@@ -106,6 +133,35 @@ namespace WunderLanguage.Host.Capture
             // gap + corpus evidence. Revert: delete ProposeVocab call.
             try { ProposeVocab(ja, kind); } catch { }
             return TranslateAndPublishAsync(ja);
+        }
+        // C2 menu-garbage hold predicate (revert: revert c2-menu-hold):
+        // does this fired JA live inside the current STABLE menu's rows?
+        // The menu signature and the dialogue candidate come from the
+        // SAME OCR read, so real junk matches by identity or containment
+        // both ways. Length floors keep real dialogue safe: a >=4-char
+        // candidate cannot be held by a trivial row, and the merged-rows
+        // direction needs a >=8-char WHOLE row inside the candidate
+        // (short-row containment would hold sentences that merely
+        // mention a menu word). Transient signatures (count<2 - crawls,
+        // cursor moves) never hold: C1 proved their publishes correct.
+        private bool HeldByStableMenu(string ja)
+        {
+            try
+            {
+                if (_menuStableCount < 2 || string.IsNullOrEmpty(_menuSignature) || string.IsNullOrEmpty(ja)) return false;
+                string j = ja.Trim();
+                if (j.Length < 4) return false;
+                foreach (string row in _menuSignature.Split('\n'))
+                {
+                    string r = row.Trim();
+                    if (r.Length < 4) continue;
+                    if (r == j) return true;                                    // whole menu row as dialogue
+                    if (r.Length > j.Length && r.Contains(j, StringComparison.Ordinal)) return true; // growing fragment of a menu row
+                    if (r.Length >= 8 && j.Length > r.Length && j.Contains(r, StringComparison.Ordinal)) return true; // merged menu rows
+                }
+            }
+            catch { }
+            return false;
         }
         private void ProposeVocab(string ja, string kind)
         {

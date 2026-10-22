@@ -1868,3 +1868,58 @@ but garbage content - the ~0.6% is a FLOOR); recBattle=22 on Zelda +
 (corpus rotates on window title, pack switches on detection - minor,
 noted); title category re-measured only via tracker mints (episode
 detector = live-provable only, T2 already gated).
+
+## C2 MENU-GARBAGE CLASS FIX - CODED + OFFLINE-GATED 2026-10-22 (live gate owed)
+Tier-1 universal engine fix for C1's one content-verified junk class:
+menu rows (save options, date/number screens, stationary spell lists)
+published as DIALOGUE on stable-menu frames. Revert: `revert c2-menu-hold`.
+Files: CaptureController.cs (the hold), CatStats.cs (Part-2 probe).
+Build GREEN 0/17.
+
+DESIGN (single choke, omission-only): the STABLE-DECISION ladder already
+has hold precedents (hold-anchor, title-guard) but flush/growth roads
+bypass the ladder, so the hold sits INSIDE PublishDecisionAsync at the
+true single choke - AFTER the sim record (sim keeps measuring the
+attempt class, B4-style - catstats A/B confirmed identical) and BEFORE
+RecordFire (a held text must never poison fire-history or the release
+would self-block via the history guard). Live-only (`!_simMode`).
+Predicate HeldByStableMenu: candidate matches a row of _menuSignature
+by identity / fragment-of-row / merged-rows containment - same-frame
+OCR identity makes real junk match reliably. Safety floors: candidate
+>=4 chars, fragment direction needs the ROW longer, merged direction
+needs a WHOLE >=8-char row inside the candidate (short-row containment
+would hold sentences that merely mention a menu word). Only STABLE
+menus hold (tracker mint-eligibility >=2 loops same signature):
+transient menu-shaped text = crawls keep publishing (C1 proved those
+23 publishes correct). Updates excluded (not new dialogue - same rule
+as the recency stamp). Held fires do NOT stamp _lastDialogueFireLoop
+(titles unaffected) and leave the candidate alive: it fires later or
+dies by its own staleness = delayed label, never a suppressed line.
+
+GATES: replay A/B ZERO DELTA (stash -> rebuild -> replay -> pop ->
+rebuild -> replay, identical extraction both sides - live-only hold
+proven inert offline); catstats full-sweep A/B ZERO DELTA across all
+431 corpus lines + SUMMARY on every v3 column (sim untouched as
+designed). Artifact: gate\catstats_c2_v1.log.
+
+PART-2 RE-SCOPE (evidence-based, replaces loose BattleFrame
+"label-independence"): loosening Classify would ship exactly the
+false-positive class C1 convicted (14/16 publish-truth battle flags =
+correct dialogue on date-stamped text screens) into a path that feeds
+routing/suppression - the safety valve forbids it. What shipped
+instead: an observe-only harness probe (CatStats bFfviProbe = Classify
+with FFVI weapon labels on non-FFVI corpora). Result: 102 probe loops
+total - concentrated in the two Zelda sessions with real battles
+(59/23 = cross-detection of actual battle screens), universal corpora
+~1-2 boundary frames each. Unknown-game battle prevalence by the
+FFVI-shape detector is therefore NEAR-ZERO outside real battle
+sessions: a label-free shape detector remains FUTURE work and must
+pass the Zelda date-screen test before any engine use.
+
+LIVE GATE OWED (user): stable menu screens show zero dialogue bubbles
+of their rows ([publish] menu-hold lines in app.log prove the hold);
+MENU tracker mints unchanged; dialogue after menu exit fires normally;
+round-7 title/intro behavior unchanged. NAMED RESIDUAL: cursor-moving
+menus (FFVI spell lists mid-page-turn) reset tracker stability each
+move and stay transient = NOT held by v1; overlaps F2x battle-UI
+scope or a future tier-2 content guard.
