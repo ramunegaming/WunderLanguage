@@ -2322,3 +2322,81 @@ today (fresh state for the next gate). The next AV death now
 auto-records module+offset AND the pre-death memory timeline in ONE
 forensics block - "was it pressure / why now" becomes answerable at
 the next streak onset instead of retroactively.
+
+ERROR-CODE FEED BUILT + GATED — 2026-10-23 (revert: revert error-codes)
+Same parked/uncommitted batch as cat-reliability (App.xaml.cs, AppShell.cs,
+SidecarProcessManager.cs parked) plus uncommitted SidePanelWindow.xaml.cs
+and new untracked Diagnostics/ErrorCodes.cs — nothing committed until W1b
+unparks, per protocol. User-approved spec: compact "Error Code N" chips in
+the translation feed, clickable -> popup, wording "slightly more detailed"
+than the starter set. Build: ONE central registry (ErrorCodes.cs: code ->
+chip line / popup title / What-happened / What-to-do) so chip text and
+popup text can never drift apart; ONE amber chip row per session that
+updates IN PLACE as state worsens (E1 retrying -> E2 spent -> E4) - amber
+border + hint line, visually distinct from dialogue, chrome like
+ShowNotice (never in _history; copy-all and the corpus miner never see
+it). Click opens a non-modal dark-theme popup (amber title, What happened
+/ What to do sections, "Error code: N" footer, accent OK, Escape closes,
+centered on the panel, closes-and-reopens per click so stale E1 text can
+never sit over an E2 state). Registry carries all six codes:
+E1 translator failed to start (CAT death inside the load window, retries
+running), E2 translator stopped (budget spent, relaunch to resume), E3
+OCR stopped, E4 game window lost (reconnect), E5 low-VRAM and E6 no
+translation source - E5/E6 are registry-complete but NOT wired: their
+triggers need a signal the host does not yet surface (a VRAM reading -
+the existing nvidia-smi pressure tick in App is the likely hook - and a
+provider-health probe); wire them through the same two events, do not
+re-word them. Wiring: E1 = first CAT death with InLoadWindow() (<=45s;
+measured load is 15-25s) via the new ErrorCodeNotice event - makes a
+retrying burst visible instead of silent; E2/E3 = budget exhaustion via
+EngineDown, which now carries the CODE instead of free text (role
+resolves to E2/E3 inside the manager - the registry owns all wording);
+E4 = OnCaptureWindowLost, where the blocking MessageBox was REPLACED by
+the chip (no focus steal; flagged to the user - object and it comes
+back). PENDING-SIGNAL REPLAY (closes a pre-existing hole): all three
+signals are one-shot, but the only subscriber (AppShell
+BuildCaptureController) exists from Connect onward - an error fired
+while sitting at the Connect window used to be lost forever and the
+connected session would start silently broken, the exact class this
+feature exists to kill. SetPendingError(code, role) keeps the last
+signal; a healthy restart of THAT role clears it (role-guarded so an
+OCR restart can never wipe a pending CAT error); AppShell replays it at
+capture build. GATE SURFACE: --errortest [code] (App.xaml.cs) shows a
+bare SidePanelWindow + the real ShowError path (no emulator, no sidecar,
+no GPU); chip and popup render to PNGs OFF THE VISUAL TREE
+(RenderTargetBitmap) after a REAL handler click (TestClickChip ->
+OnChipClicked - the exact path a mouse click takes). Why tree-dumps
+instead of screen capture: the first gate attempt used screen
+coordinates and THE USER'S EMULATOR WAS RUNNING with a game open - the
+test panel opened behind their fullscreen game and the synthetic click
+landed IN THE GAME (harmless miss on a dialog, but coordinate-based
+clicks/screenshots on a live desktop are now banned; the visual-tree
+dump is immune and needs no focus). En-route bug: chip position
+logging moved to DispatcherPriority.ApplicationIdle and re-logged on
+every call - a Loaded-priority PointToScreen on an ownerless window
+returns PRE-CASCADE coordinates the panel then moves away from (878,233
+logged vs true 942,297); and the MaxWidth-capped chip Border needed
+HorizontalAlignment.Left (a capped Stretch resolves to CENTER in WPF).
+Gates: GREEN 0 err/17 warn through the builds; --errortest sequence
+PASSED 8/8 (E1 posted, E2 in-place update, popup via real handler
+click, panel_e2/popup_e2/panel_e4 PNGs, E4 in-place update, unknown
+'E9' dropped with a log line); PNGs eyeballed - popup = amber title +
+What happened / What to do + full detailed wording + code footer +
+accent OK button; chip = amber-bordered row + "(click for details)",
+placeholder cleared; manager side on a REAL host (induced mid-load
+taskkill): "[job:cat] load-window death - error chip E1 signaled
+(retrying, budget 0/3)" then "[job] restart healthy" (pending signal
+cleared). NOT live-gated (accepted, noted): E4 trigger (WindowLost
+needs a real window death), pending-replay at Connect (connecting
+would attach to the user's live game), panel-side E2/E3 (emission
+background-gated; rendering is the same ShowError path gated via
+--errortest). Known cosmetic: in the unsized test panel the chip
+floats mid-feed; the real 380px panel left-anchors it.
+
+Update, same day: full exhaustion background gate PASSED - 4 induced
+kills spaced by the 10s/60s/240s backoff; death 1 logged "load-window
+death - error chip E1 signaled (retrying, budget 0/3)", death 4 logged
+"restart budget exhausted - engine stays down until relaunch (error chip
+E2)" - the EngineDown payload change is live-verified end to end on the
+manager side; panel-side E2 rendering is the same ShowError path gated
+via --errortest.
