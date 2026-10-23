@@ -2198,3 +2198,55 @@ caps (no-question = no relative reference, by design). Live gate:
 same session as D1 pass 2 - gambler BOTH options, shop tag, FFVI
 ？-dialogue FP watch + tail-gate behavior on live sub-line rows (a
 sub-line dialogue row with mid-？ must NOT mint).
+
+CAT-RELIABILITY (translator crash class) INVESTIGATED + HARDENED
+2026-10-23, live gate owed (revert: revert cat-reliability; NOTE: the
+fix LIVES in the parked uncommitted files SidecarProcessManager.cs +
+AppShell.cs per the W1b protocol - a git checkout of those files
+would silently drop it). The user's post-D2 live session
+(09:18:19-09:25:08) posted ONLY the title; every other line died at
+translation. Forensics: the CAT sidecar (port 8001, translator)
+segfaulted (exit -1073741819 = 0xC0000005) 4x during safetensors
+4-bit shard reads (faulthandler stack: torch/storage.py __getitem__
+<- transformers _load_state_dict_into_meta_model <- main.py
+_load_cat_stage), initial + 3 restarts, ALL inside a ~105s window
+(09:18:53-09:20:28); the restart budget (3, 25s apart) burned inside
+the window; per the old policy exhaustion was log-only = silent.
+Detection was healthy the whole session: 9 [sublines] events, and the
+gambler box split LIVE as さあ、どうする？ | しょうぶする | 逃げだす - BOTH
+options, the first live proof of D-SUB's value; every publish then
+died at [translate] ERROR ...127.0.0.1:8001 (connection refused).
+Title posted from the translation cache. Class history: this is the
+2026-10-14 + 2026-10-17 convicted family (cat_service.py header +
+SidecarProcessManager W1 note "CAT 4-bit weight load segfaults...
+on 6GB VRAM"; the 10-17 fix was the process split) in its CROSS-
+PROCESS form: the process was clean, but the CAT load window
+overlapped the OCR model load + the user's emulator/game = transient
+system pressure on the mmap'd shard reads. Verified transient:
+standalone loads succeeded 2/2 outside the window (09:37 pre-fix and
+the mmap-off gate below). No drift anywhere: cat_service.py unchanged
+since 10-17, venv pinned since 10-17 (transformers 4.57.6 / torch
+2.13.0+cu126 / bnb 0.50.2), the D-SUB main.py diff touched only
+detector/rec lines (82-455), the CAT path (630-682) is byte-
+identical to the 03:36 session that loaded fine. Hardening, all
+engine-class universal: (1) HF_HUB_DISABLE_MMAP=1 on the CAT spawn -
+mmap'd safetensors reads ARE the segfault mechanism under system
+pressure; plain reads are the documented Windows mitigation (+~1s on
+the one-time load). (2) CAT restart backoff 10s/60s/240s (was 3x25s)
+so a transient window gets outlasted - the 09:18 window (~105s)
+would have been cleared by attempt 3; OCR keeps its fast 5s. (3)
+budget exhaustion raises the EngineDown panel notice for BOTH roles
+with role-specific wording ("Translation engine stopped..." vs the
+OCR line) - the old "fallback covers" assumption is FALSE for the
+Offline provider (measured: 5 silent minutes, zero bubbles, no
+visible sign). Verification: build GREEN 0 err/17 warn; Gate A =
+standalone CAT load with HF_HUB_DISABLE_MMAP=1 (gate/
+cat_load_mmap_off.log): ready on cuda, weights 14.5s (vs 24.3s
+without - no cost, possibly faster). Gate B = induced-death
+restart-spacing on the live host: death1 09:53:23.9 -> attempt=1 ->
+respawn 09:53:35.9 (~12s), death2 09:54:14.6 -> attempt=2 -> respawn
+09:55:16.6 (~62s) - both backoff steps measured, the third (240s)
+shares the code path.
+Live gate owed: next user session loads CAT and translations flow;
+if a crash window recurs, watch [job:cat] attempt= spacing and the
+panel notice on exhaustion (no more silent dead sessions).
