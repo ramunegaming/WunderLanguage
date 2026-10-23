@@ -4644,7 +4644,7 @@ namespace WunderLanguage.Host.Capture
             out List<(int y, string t, bool ja)> decision)
         {
             decision = new List<(int y, string t, bool ja)>();
-            var texts = new List<(int y, string t)>();
+            var texts = new List<(int y, string t, bool fromLine)>();
             foreach (var ln in lines.OrderBy(l => l.y))
             {
                 // D-SUB (revert: revert decision-sublines): a question-
@@ -4677,14 +4677,14 @@ namespace WunderLanguage.Host.Capture
                 }
                 if (subRows.Count > 0)
                 {
-                    foreach (var sr in subRows.OrderBy(s => s.y)) texts.Add(sr);
+                    foreach (var sr in subRows.OrderBy(s => s.y)) texts.Add((sr.y, sr.t, true));
                     // chrome riders sharing the box line keep their join
-                    if (plainParts.Count > 0) texts.Add((ln.y, string.Join(" ", plainParts)));
+                    if (plainParts.Count > 0) texts.Add((ln.y, string.Join(" ", plainParts), false));
                 }
                 else
                 {
                     string j = string.Join(" ", plainParts);
-                    if (!string.IsNullOrWhiteSpace(j)) texts.Add((ln.y, j));
+                    if (!string.IsNullOrWhiteSpace(j)) texts.Add((ln.y, j, false));
                 }
             }
             texts = texts.OrderBy(t => t.y).ToList();
@@ -4795,9 +4795,11 @@ namespace WunderLanguage.Host.Capture
             // NOT a punctuation gate: さあ、どうする？ (gambler) has 、and
             // 『どっちに行くんだ！？ (crossroads) has ！, so a punctuation bar
             // would kill two of the nine real questions. Length plus the
-            // option-side gate is the whole gate. A prompt over 20 stays
-            // IN-GAME TEXT - mislabelled late (safety valve), never suppressed.
-            if (question.Length > 20) return false;
+            // option-side gate is the whole gate. A prompt over the cap
+            // stays IN-GAME TEXT - mislabelled late (safety valve), never
+            // suppressed. The cap itself moved to the tiered D2 gate below
+            // (it needs the option cluster first): 20 for a weak cluster,
+            // 40 for a strong one.
             // D1 prompt-shape gate (revert: revert d1-decisions): the prompt
             // region (RAW row up to and including the ？) must be one unbroken
             // phrase with no speaker bracket:
@@ -4821,6 +4823,26 @@ namespace WunderLanguage.Host.Capture
             string prompt = texts[qi].t.Substring(0, qpos + 1);
             if (prompt.IndexOf('「') >= 0) return false;
             if (prompt.IndexOf(' ') >= 0 || prompt.IndexOf('　') >= 0) return false;
+            // D2 ？-tail prompt gate (revert: revert decision-tiering): a
+            // question row that came from a SUB-LINE is a reliable single-
+            // line read, so its prompt must be a complete interrogative -
+            // the row's last char is ？. Dialogue lines carry the ？ mid-row
+            // ("ロック「ん？ 気がついたのか" splits into a question fragment plus
+            // sentence text that reads option-shaped) and die here at any
+            // length - the strictness that pays for the relaxed tiered cap
+            // below: shape tight, length loose. Sub-line rows only: merged
+            // block rows keep the lenient first-？ split (unreliable
+            // geometry; replay path unchanged, sweep stays a valid
+            // surface). Dormant without D-SUB lines.
+            if (texts[qi].fromLine)
+            {
+                string qrow = texts[qi].t.Trim();
+                if (qrow.Length > 0)
+                {
+                    char qlast = qrow[qrow.Length - 1];
+                    if (qlast != '？' && qlast != '?') return false;
+                }
+            }
             var tails = new List<string>();
             string tail = texts[qi].t.Substring(qpos + 1);
             if (!string.IsNullOrWhiteSpace(tail)) tails.Add(tail);
@@ -4857,7 +4879,7 @@ namespace WunderLanguage.Host.Capture
             if (options.Count < 1 || options.Count > 6) return false;
             foreach (var o in options)
             {
-                if (o.Length > 12) return false;
+                // length caps moved to the tiered D2 gate below
                 if (o.Contains('。') || o.Contains('！') || o.Contains('!')) return false;
             }
             // D1 option-nature gate (revert: revert d1-decisions): with the
@@ -4896,6 +4918,41 @@ namespace WunderLanguage.Host.Capture
                 if (digit) continue;
                 return false;
             }
+            // D2 tiered length caps (revert: revert decision-tiering): the
+            // absolute 20/12 bars are era-calibrated proxies measured on the
+            // SNES-era corpora (real prompts 8-17 chars, dialogue-question
+            // FPs 27-41) - a verbose modern prompt would fail the cap and
+            // the whole screen would degrade to IN-GAME TEXT (late label,
+            // never suppressed, but the category is lost). Length was
+            // proxying for "prompt, not dialogue line"; the structural
+            // evidence for that is the OPTION CLUSTER, so the cap tiers on
+            // cluster strength:
+            //   STRONG = >=2 judgeable options (a stray single char can't
+            //     carry strength) and every option no longer than the
+            //     question itself (a choice is a LABEL beside its prompt,
+            //     not a second sentence) -> caps relax to 40/16. A long
+            //     prompt plus a real choice column is self-evidencing.
+            //   WEAK = anything else (merged replay rows read as ONE option
+            //     after the ？-split) -> exact D1 bars, 20/12.
+            // Merged/replay mints keep weak-tier behavior; live sub-line
+            // reads get the relaxed cap together with the ？-tail prompt
+            // gate above. A prompt over the cap stays IN-GAME TEXT -
+            // mislabelled late (safety valve), never suppressed.
+            int judgeable = 0;
+            foreach (var o in options) if (o.Length >= 2) judgeable++;
+            bool strongCluster = options.Count >= 2 && judgeable >= 2;
+            if (strongCluster)
+            {
+                foreach (var o in options)
+                {
+                    if (o.Length > question.Length) { strongCluster = false; break; }
+                }
+            }
+            int qCap = strongCluster ? 40 : 20;
+            int oCap = strongCluster ? 16 : 12;
+            if (question.Length > qCap) return false;
+            foreach (var o in options)
+                if (o.Length > oCap) return false;
             // Same pipeline as dialogue display: fixups + normalize, so the
             // DECISION bubble matches dialogue spelling (せんぜん→ぜんぜん).
             string fixedQ = NormalizePunctForStability(ApplyZeldaOcrFixups(question));

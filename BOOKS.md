@@ -2155,3 +2155,46 @@ all intro-crawl re-reads parked "covered by recent fire", zero overlay
 re-posts, no dialogue missing, 0 errors in the whole session. D1 live
 gate remaining: gambler DECISION with BOTH options + shop DECISION
 tag, dialogue path byte-identical.
+
+D2 (decision tiering) CODED + SWEEP-GATED 2026-10-23, live gate owed
+with D1 pass 2 (revert: revert decision-tiering). User-raised scaling
+hole: the D1 absolute length caps (question ≤20, option ≤12) were
+calibrated on SNES-era corpora (real prompts 8-17 chars, dialogue-
+question FPs 27-41) - a verbose modern prompt would fail the gate and
+the screen would degrade to IN-GAME TEXT (late label, never
+suppressed, but the category is lost). User constraints for the
+brainstorm: no new detector (sprites stay invisible), structure-only,
+universal. Design - length was proxying for "prompt, not dialogue
+line", so swap the proxy for structure. Three gates: (1) ？-tail
+prompt gate, applied to SUB-LINE-sourced question rows only: the
+row's last char must be ？/?. Dialogue lines carry ？ mid-row
+("ロック「ん？ 気がついたのか" splits into a question fragment plus
+sentence text that reads option-shaped) and die here at any length -
+the strictness that pays for the relaxed caps below (shape tight,
+length loose). Merged/replay rows keep the lenient first-？ split
+(unreliable geometry; the sweep surface stays valid). (2) tiered
+question cap: STRONG cluster = >=2 judgeable options (len>=2 - a
+stray single char can't carry strength) AND every option no longer
+than the question itself (a choice is a LABEL beside its prompt, not
+a second sentence) -> cap relaxes 20->40. (3) tiered option cap
+12->16 under the same strong tier. WEAK cluster (anything else,
+including merged replay rows that read as one option after the
+？-split) keeps the exact D1 bars. All universal, no per-game
+strings. Verification: GREEN 0 err / 17 warn. Sweep A/B (435
+corpora, gate/catstats_d2_v1.log + v2 vs the dsub_v2 baseline): base
+== r1 == r2, DECISION=14 / MENU=302 / TITLE=18, 12 distinct row-sets,
+byte-count identical (13,861,900) - zero delta BY DESIGN: no SNES
+prompt exceeds 17 chars and no FP dialogue question carries a strong
+option cluster, so the relaxed tier admits nothing new, and the
+？-tail gate is dormant on replay (corpus schema strips lines - same
+caveat as D-SUB). The bundle's value is the future path: a long
+modern prompt with a real choice column mints instead of degrading;
+mid-？ dialogue rows die live at any length. Residuals: tail gate +
+tier numbers (40/16) tuned on SNES corpora only - re-measure when
+modern-game corpora exist (R2-R4 add them); rhetorical dialogue
+mimicking question+options still mints (hermit family, unchanged,
+label-only); the options-only picker branch keeps its absolute 2-12
+caps (no-question = no relative reference, by design). Live gate:
+same session as D1 pass 2 - gambler BOTH options, shop tag, FFVI
+？-dialogue FP watch + tail-gate behavior on live sub-line rows (a
+sub-line dialogue row with mid-？ must NOT mint).
