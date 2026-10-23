@@ -2250,3 +2250,75 @@ shares the code path.
 Live gate owed: next user session loads CAT and translations flow;
 if a crash window recurs, watch [job:cat] attempt= spacing and the
 panel notice on exhaustion (no more silent dead sessions).
+
+CRASH-DIAG LOGGER + WINDOWS EVENT-LOG FORENSICS (the "why NOW" set)
+2026-10-23, after the run-2/run-3 analysis (user order: analyze
+first, then "improve the logger to find the information you need to
+sus the problem"; revert: revert crash-diag-logger; NOTE both files
+are again UNCOMMITTED by protocol - SidecarProcessManager.cs parked
+W1b, cat_service.py untracked - this entry is the revert map).
+Findings, in order:
+(1) WINDOWS HAD THE ANSWERS ALL ALONG: Application log EventID=1000
+records every unhandled crash - 56 python.exe events in 7 days:
+10-16 x2 (19:03, 23:32), 10-17 x46 storm (00:03:38-01:09:20 - the
+night the W1 split was born), 10-19 x2 (03:57, 03:58), 10-23 x6
+(run 2 x4, run 3 x2). Modules/offsets: 55x torch_cpu.dll+0x8e4a279
+(stamp 0x6a48329e) + 1x c10.dll+0x90514 - 56 of 56 at a FIXED
+instruction, exception 0xC0000005 throughout. Consequences: this is a
+deterministic fixed fault site, not scattered pressure corruption; the
+class is 8 DAYS OLD (predates the W1 split, predates D-SUB/D1/D2 and
+all 10-23 fixes - none of them caused it); it moves in STREAKS (two
+storms, 2 events, FOUR quiet days full of good sessions incl. the
+03:36 run, then today's 6) - the quiet days were state, not a fix.
+(2) ENVIRONMENT CLEAN: torch_cpu.dll 27/08/2026; venv newest edits
+17/10 01:19 (hf_xet/transformers/hf-hub installed DURING the 10-17
+storm); GPU driver 30/09/2026 - nothing changed before today's
+streaks. The 10-17 header conviction ("manga-OCR residency poisons
+safetensors reads") is WEAKENED: today's 6 crashes are the clean CAT
+process with no OCR model resident - if poisoning is the mechanism it
+cannot be in-process (cross-process/system state instead, or the
+split never removed the real trigger).
+(3) EXACT-INSTRUCTION EVIDENCE PRESERVED: 6 minidumps at
+%LOCALAPPDATA%\CrashDumps\python.exe.{24028,30876,31136,32128,36080,
+40932}.dmp + 6 WER ReportArchive\AppCrash_python.exe_* reports (today,
+09:19/09:20/10:09) + the host's own [wer] localdumps dir
+Roaming\WunderLanguage\dumps (exists, empty - dumps land in
+LOCALAPPDATA\CrashDumps instead). Optional next step: disassemble a
+dump's exception thread for the torch_cpu function at 0x8e4a279.
+(4) THE LOGGER GAP (user's point, confirmed): total RAM was logged at
+boot, available RAM/commit/VRAM NEVER at death; stderr ring truncated
+faulthandler to 3KB (run-3 torch frames lost); the event log was never
+read. Built (engine-class, revert: revert crash-diag-logger): [C#]
+death forensics now = exit + system-snapshot (GlobalMemoryStatusEx:
+availPhys/freeCommit/load%) + windows-fault (EventID=1000 last-60min,
+pid match else newest-python, compact module=/offset=/exc=) +
+loader-timeline (tail of the python sampler CSV) + a 12KB/40-line
+ring (was 3KB/15); spawn passes WUNDER_LOGDIR to both roles.
+[python] cat_service arms all-threads faulthandler ->
+Roaming\WunderLanguage\cat_crash_full.log (append - a restart never
+erases a death dump) and a 1s sampler -> diag_cat_load.csv
+(availPhys/totalPhys/freeCommit/commitLimit/load%/rss/vramFree +
+boot marker with interpreter pid; ~80KB/hour of runtime), armed
+BEFORE import main so the whole import+load timeline is captured.
+Known caveat: the host's _process pid is the venv LAUNCHER pid
+(46208-style) while WER records the interpreter child (49108-style) -
+pid match usually misses and the newest-python fallback carries
+attribution (harmless: module/offset are constant in this class).
+Gates: GREEN 0 err/17 warn; XPath validated against the live
+Application log (syntax OK, empty-window OK); fault regexes validated
+against a real EventID=1000 message; live induced-death gate (taskkill
+exit=1, distinguishable from AV -1073741819): forensics block showed
+system-snapshot availPhysMB=12236/32620 freeCommitMB=15286/49004
+load%=62, windows-fault empty-window line, 15-row loader-timeline
+(rss 30->1112MB during load, vramFree 910 at ready), armed line in
+the 12KB ring; 0 leftover pythons after cleanup. HEALTHY-LOAD
+BASELINE for comparison against the next streak: availPhys
+~11.4-12.1GB free, load 62-65%, freeCommit ~10.1GB, vramFree
+~900MB post-load. Also observed, unresolved: BOTH crash sessions
+opened by sweeping 2 stray pythons at startup (run 2 pids 9136/10408
+@09:18:22; run 3 pids 17864/28132 @10:08:36/50) while the verified-
+healthy Gate B run left none; and the machine was REBOOTED 11:47:53
+today (fresh state for the next gate). The next AV death now
+auto-records module+offset AND the pre-death memory timeline in ONE
+forensics block - "was it pressure / why now" becomes answerable at
+the next streak onset instead of retroactively.
