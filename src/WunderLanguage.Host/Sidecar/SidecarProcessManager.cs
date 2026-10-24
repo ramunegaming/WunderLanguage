@@ -1,13 +1,32 @@
 using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 
 namespace WunderLanguage.Host.Sidecar
 {
     // Launches and owns the Python OCR/translation service as a background
     // process with no visible window.
+    //
+    // W1 service split (2026-10-17): this manager is role-parameterized
+    // ("ocr" = capture service on :8000, "cat" = translator service on
+    // :8001). One role per instance; the App owns one of each. OCR keeps
+    // every legacy behavior (adopt/kill sweep, nocatfb retry, EngineDown
+    // popup on exhausted budget). CAT always retries WITH the translator
+    // (loads are reliable in a clean process); exhaustion shows the
+    // terminal panel notice for BOTH roles (revert: revert
+    // cat-reliability) — the old "fallback covers" assumption is false
+    // for the Offline provider.
+    // Revert: delete role plumbing (single OCR instance).
     public class SidecarProcessManager
     {
+        private readonly string _role;
+        private readonly string _module;
+        private readonly int _port;
+        private readonly string _readyStage;
+        private readonly bool _restartWithCat;
+        private string HealthUrl => $"http://127.0.0.1:{_port}/health";
         private Process? _process;
         private string? _pythonExe;
         private readonly List<string> _recentOutput = new();
@@ -17,16 +36,50 @@ namespace WunderLanguage.Host.Sidecar
 
         // Auto-restart (item 1 close-out): the job's active-process-zero is
         // the restart signal. Requested deaths suppress it; unrequested
-        // ones get 3 quiet respawns (5s apart, log-only — never a popup
-        // mid-game), then the engine stays down until relaunch.
+        // ones get 3 quiet respawns (OCR 5s apart; CAT backoff 10s/60s/240s
+        // to outlast transient load windows, revert: revert
+        // cat-reliability), then the terminal panel notice fires once.
         private bool _stopRequested;
         private int _restarts;
         // Terminal-state notice (2026-10-13): when the budget is spent
         // the panel must say the engine died — 30 min of silent nothing
         // reads as policy failure. Static event (manager instance lives
         // in App, panel in AppShell); silent restarts unchanged, only
-        // the terminal state notifies, once. Revert: delete event + invoke.
-        public static event Action? EngineDown;
+        // the terminal state notifies, once. Payload carries the ERROR
+        // CODE ("E2"/"E3" by role) since 2026-10-23 — the registry in
+        // Diagnostics/ErrorCodes.cs owns the wording (chip + popup), so
+        // panel text and popup text can never drift. ErrorCodeNotice is
+        // the informational sibling (E1: first load-window death, the
+        // retrying burst becomes visible instead of silent).
+        // Revert: revert error-codes (EngineDown goes back to carrying
+        // the role-specific message text).
+        public static event Action<string>? EngineDown;
+        public static event Action<string>? ErrorCodeNotice;
+        // Pending error replay (2026-10-23; revert: revert error-codes):
+        // signals are one-shot, but the ONLY subscriber
+        // (AppShell.BuildCaptureController) exists from Connect onward -
+        // an error fired while sitting at the Connect window would be
+        // lost and the connected session would start silently broken
+        // (exactly the class this feature exists to kill). Keep the last
+        // signal + its role: a healthy restart of THAT role clears it,
+        // AppShell replays it when it subscribes. One slot shared by both
+        // manager instances (last error wins; role-guarded clear so an
+        // OCR restart can never wipe a pending CAT error).
+        public static string? PendingErrorSignal;
+        private static string? _pendingErrorRole;
+        public static void SetPendingError(string code, string role)
+        {
+            PendingErrorSignal = code;
+            _pendingErrorRole = role;
+        }
+        public static void ClearPendingError(string role)
+        {
+            if (_pendingErrorRole == role)
+            {
+                PendingErrorSignal = null;
+                _pendingErrorRole = null;
+            }
+        }
         private bool _restarting;
         private CancellationTokenSource? _restartCts;
         // W1 root cause (2026-10-14, convicted): CAT 4-bit weight load
@@ -40,8 +93,15 @@ namespace WunderLanguage.Host.Sidecar
         private bool _wasHealthy;
         private bool _noCatAfterCrash;
 
-        public SidecarProcessManager()
+        public SidecarProcessManager(string role = "ocr")
         {
+            _role = role == "cat" ? "cat" : "ocr";
+            _module = _role == "cat" ? "cat_service" : "main";
+            _port = _role == "cat" ? 8001 : 8000;
+            _readyStage = _role;
+            // OCR: legacy nocatfb policy (healthy death ⇒ OCR-only retry).
+            // CAT: its whole job is the translator — always retry with it.
+            _restartWithCat = _role == "cat";
             _job.TreeDied += OnTreeDied;
         }
 
@@ -51,6 +111,7 @@ namespace WunderLanguage.Host.Sidecar
             {
                 string uptime = "?";
                 string code = "?";
+                int? deadPid = null;
                 try
                 {
                     var p = _process;
@@ -58,6 +119,11 @@ namespace WunderLanguage.Host.Sidecar
                     {
                         try { uptime = (DateTime.UtcNow - p.StartTime.ToUniversalTime()).ToString(@"hh\:mm\:ss"); } catch { }
                         try { if (p.HasExited) code = p.ExitCode.ToString(); else code = "still-running"; } catch { }
+                        // crash-diag-logger: needed to attribute the Windows
+                        // fault event to THIS death (rapid storms have 3
+                        // python crashes within a minute). Revert: revert
+                        // crash-diag-logger.
+                        try { deadPid = p.Id; } catch { }
                     }
                     else code = "no-process";
                 }
@@ -67,15 +133,162 @@ namespace WunderLanguage.Host.Sidecar
                 {
                     lock (_recentOutput)
                     {
-                        int from = Math.Max(0, _recentOutput.Count - 15);
+                        int from = Math.Max(0, _recentOutput.Count - 40);
                         tail = string.Join("\n", _recentOutput.Skip(from));
                     }
                 }
                 catch { }
-                if (tail.Length > 3000) tail = tail.Substring(tail.Length - 3000);
-                FileLogger.Log($"[job] death forensics restarts={_restarts} uptime={uptime} exit={code} tail:\n{(string.IsNullOrWhiteSpace(tail) ? "(ring empty)" : tail)}");
+                if (tail.Length > 12000) tail = tail.Substring(tail.Length - 12000);
+                // crash-diag-logger (2026-10-23, revert: revert
+                // crash-diag-logger): the Windows Application log holds a
+                // post-mortem receipt for every crash (EventID 1000:
+                // faulting module + offset + exception code) - 56 records
+                // over 8 days all say torch_cpu.dll+0x8e4a279 / 0xC0000005
+                // during weight reads, and we never once read them. The
+                // stderr ring also truncated the faulthandler torch frames
+                // to 3KB (lost on 2026-10-23). A death now records: the
+                // system memory snapshot (never logged before - the
+                // "was the machine under pressure" question was
+                // unanswerable), the Windows fault event for this pid, the
+                // python-side 1s memory/VRAM sampler tail (pre-death
+                // timeline), and a 12KB ring instead of 3KB.
+                string snapshot = SystemMemorySnapshot();
+                string fault = QueryWindowsFaultEvent(deadPid);
+                string loader = DiagLoaderTail(15);
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"[job:{_role}] death forensics restarts={_restarts} uptime={uptime} exit={code}");
+                sb.Append($"\n[job:{_role}] death system-snapshot {snapshot}");
+                sb.Append($"\n[job:{_role}] death windows-fault {fault}");
+                if (!string.IsNullOrWhiteSpace(loader))
+                    sb.Append($"\n[job:{_role}] death loader-timeline (diag_cat_load.csv tail):\n{loader}");
+                sb.Append($"\ntail:\n{(string.IsNullOrWhiteSpace(tail) ? "(ring empty)" : tail)}");
+                FileLogger.Log(sb.ToString());
             }
             catch { }
+        }
+
+        // --- crash-diag-logger helpers (revert: revert crash-diag-logger) ---
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        private static long Mb(long bytes) => bytes / (1024 * 1024);
+
+        private static string SystemMemorySnapshot()
+        {
+            try
+            {
+                var m = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX)) };
+                if (!GlobalMemoryStatusEx(ref m)) return "(GlobalMemoryStatusEx failed)";
+                return $"availPhysMB={Mb((long)m.ullAvailPhys)}/{Mb((long)m.ullTotalPhys)} freeCommitMB={Mb((long)m.ullAvailPageFile)}/{Mb((long)m.ullTotalPageFile)} load%={m.dwMemoryLoad}";
+            }
+            catch (Exception ex) { return "(snapshot failed: " + ex.Message + ")"; }
+        }
+
+        // Windows post-mortem receipt: Application log EventID 1000 =
+        // faulting application + module + offset + exception code. Match
+        // by faulting PID (exact); fall back to the newest python fault
+        // in the window (event-write lag makes exact pairing ambiguous
+        // during rapid storms, pid never is). Revert: revert crash-diag-logger.
+        private static string QueryWindowsFaultEvent(int? pid)
+        {
+            try
+            {
+                var q = new EventLogQuery("Application", PathType.LogName,
+                    "*[System[(EventID=1000) and TimeCreated[timediff(@SystemTime) <= 3600000]]]");
+                string? newestPython = null;
+                string? pidMatch = null;
+                using (var reader = new EventLogReader(q))
+                {
+                    EventRecord rec;
+                    while ((rec = reader.ReadEvent()) != null)
+                    {
+                        using (rec)
+                        {
+                            string? msg = null;
+                            try { msg = rec.FormatDescription(); } catch { }
+                            if (msg == null || !msg.Contains("python.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                            string compact = CompactFault(msg);
+                            newestPython = compact;
+                            if (pidMatch == null && pid.HasValue &&
+                                msg.Contains($"Faulting process id: 0x{pid.Value:X}", StringComparison.OrdinalIgnoreCase))
+                                pidMatch = compact;
+                        }
+                    }
+                }
+                if (pidMatch != null) return "match=pid " + pidMatch;
+                if (newestPython != null) return "match=newest-python " + newestPython;
+                return "no EventID=1000 for python in last 60min";
+            }
+            catch (Exception ex) { return "(event log query failed: " + ex.Message + ")"; }
+        }
+
+        private static string CompactFault(string msg)
+        {
+            try
+            {
+                string module = FaultField(msg, @"Faulting module name: ([^\r\n]+)");
+                string offset = FaultField(msg, @"Fault offset: (\S+)");
+                string exc = FaultField(msg, @"Exception code: (\S+)");
+                return $"module={module} offset={offset} exc={exc}";
+            }
+            catch { return "(fault parse failed)"; }
+        }
+
+        private static string FaultField(string input, string pattern)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(input, pattern);
+            return m.Success ? m.Groups[1].Value : "?";
+        }
+
+        // Python-side 1s memory sampler tail (cat_service writes it via
+        // WUNDER_LOGDIR) - the RAM/commit/VRAM timeline BEFORE the death.
+        // Revert: revert crash-diag-logger.
+        private static string DiagLoaderTail(int maxLines)
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage");
+                string file = Path.Combine(dir, "diag_cat_load.csv");
+                if (!File.Exists(file)) return "";
+                var lines = File.ReadAllLines(file);
+                int from = Math.Max(0, lines.Length - maxLines);
+                return string.Join("\n", lines.Skip(from));
+            }
+            catch { return ""; }
+        }
+
+        // True when the dead process died young enough to be a LOAD
+        // failure rather than a runtime one: the CAT weight load is
+        // 15-25s (measured), so anything under 45s is "it never got to
+        // the ready state". StartTime survives HasExited (cached) and
+        // is permission-safe here (same user); any doubt -> false, which
+        // just means no E1 chip. Revert: revert error-codes.
+        private bool InLoadWindow()
+        {
+            try
+            {
+                var p = _process;
+                if (p is null) return false;
+                double sec = (DateTime.UtcNow - p.StartTime.ToUniversalTime()).TotalSeconds;
+                return sec >= 0 && sec <= 45;
+            }
+            catch { return false; }
         }
 
         private void OnTreeDied()
@@ -89,10 +302,35 @@ namespace WunderLanguage.Host.Sidecar
                 // the call.
                 try { LogDeathForensics(); } catch { }
                 if (_stopRequested || _restarting) return;
+                // Error chip E1 (2026-10-23; revert: revert error-codes):
+                // a CAT death INSIDE the load window is the "failed to
+                // start" class - post once so a retrying burst is visible
+                // on the panel instead of silent (restarts otherwise stay
+                // silent by policy; only the terminal E2 announces).
+                // CAT only: OCR has no known load-window death class.
+                if (_role == "cat" && _restarts == 0 && InLoadWindow())
+                {
+                    FileLogger.Log($"[job:{_role}] load-window death - error chip E1 signaled (retrying, budget {_restarts}/3)");
+                    try { SetPendingError("E1", _role); } catch { }
+                    try { ErrorCodeNotice?.Invoke("E1"); } catch { }
+                }
                 if (_restarts >= 3)
                 {
-                    FileLogger.Log("[job] restart budget exhausted — engine stays down until relaunch");
-                    try { EngineDown?.Invoke(); } catch { }
+                    // Terminal state must show on the panel (AppShell
+                    // 2026-10-13 conviction: a spent budget that stays
+                    // silent reads as policy failure). CAT included
+                    // (revert: revert cat-reliability): the "fallback
+                    // covers" assumption is false for the Offline
+                    // provider - the 2026-10-23 session sat through5
+                    // silent minutes after CAT's budget burned inside a
+                    // crash window: detection ran, every publish died at
+                    // translation, no bubbles, no visible sign of why.
+                    // Since 2026-10-23 the panel row is an error-code CHIP
+                    // (registry owns the wording; popup has the detail).
+                    string downCode = _role == "cat" ? "E2" : "E3";
+                    FileLogger.Log($"[job:{_role}] restart budget exhausted - engine stays down until relaunch (error chip {downCode})");
+                    try { SetPendingError(downCode, _role); } catch { }
+                    try { EngineDown?.Invoke(downCode); } catch { }
                     // One-shot: don't spam every future death (there are no
                     // future trees, but a second zero can't be ruled out).
                     _restarts++;
@@ -100,11 +338,15 @@ namespace WunderLanguage.Host.Sidecar
                 }
                 _restarting = true;
                 bool nocatRetry = false;
-                try { nocatRetry = _wasHealthy; } catch { }
+                try { nocatRetry = !_restartWithCat && _wasHealthy; } catch { }
                 if (nocatRetry)
                 {
                     try { _noCatAfterCrash = true; } catch { }
                     try { FileLogger.Log("[job] healthy-period death: retrying OCR-only (nocatfb, CAT spike convicted)"); } catch { }
+                }
+                else if (_role == "cat")
+                {
+                    try { FileLogger.Log("[job:cat] translator death: retrying WITH translator (clean-process loads are reliable)"); } catch { }
                 }
                 _restartCts = new CancellationTokenSource();
                 var token = _restartCts.Token;
@@ -114,10 +356,26 @@ namespace WunderLanguage.Host.Sidecar
                     {
                         _restarts++;
                         FileLogger.Log($"[job] restart attempt={_restarts}");
-                        await Task.Delay(5000, token);
+                        // CAT backoff (revert: revert cat-reliability): the
+                        // 2026-10-23 incident burned all 3 attempts ~25s
+                        // apart inside a ~105s transient crash window (CAT
+                        // weight load overlapping the OCR model load +
+                        // emulator/game) and the translator then stayed
+                        // down all session - a load minutes later succeeded
+                        // first try. CAT retries now space out 10s/60s/240s
+                        // so a window gets outlasted; OCR keeps the fast
+                        // 5s (its death class is different).
+                        int delayMs = 5000;
+                        if (_role == "cat") delayMs = _restarts == 1 ? 10_000 : _restarts == 2 ? 60_000 : 240_000;
+                        await Task.Delay(delayMs, token);
                         lock (_recentOutput) _recentOutput.Clear();
                         await StartAsync(null);
                         FileLogger.Log("[job] restart healthy");
+                        // A healthy start makes any pending signal for THIS
+                        // role stale (E1 "failed to start" clearly didn't
+                        // stick); role-guarded so OCR's health can't clear
+                        // a pending CAT error. Revert: revert error-codes.
+                        try { ClearPendingError(_role); } catch { }
                     }
                     catch (OperationCanceledException) { }
                     catch (Exception ex)
@@ -137,7 +395,7 @@ namespace WunderLanguage.Host.Sidecar
 
             string? sidecarDir = FindSidecarDirectory();
             _pythonExe = sidecarDir is null ? null : Path.Combine(sidecarDir, "venv", "Scripts", "python.exe");
-            string? runningVersion = await GetRunningVersionAsync();
+            string? runningVersion = await GetRunningVersionAsync(_port);
             string? diskVersion = GetDiskVersion(sidecarDir);
             if (runningVersion is not null && runningVersion == diskVersion)
             {
@@ -170,12 +428,23 @@ namespace WunderLanguage.Host.Sidecar
             }
             if (runningVersion is not null)
             {
-                FileLogger.Log($"Stale sidecar detected running={runningVersion} disk={diskVersion} - killing python.exe.");
-                foreach (var p in Process.GetProcessesByName("python"))
+                // Stale sweep is OCR-owned (unit approach): the App starts
+                // OCR first, which reaps every venv python when stale; the
+                // CAT manager never mass-kills (it would fight the OCR
+                // manager over shared interpreter processes).
+                if (_role == "ocr")
                 {
-                    try { p.Kill(); } catch { }
+                    FileLogger.Log($"Stale sidecar detected running={runningVersion} disk={diskVersion} - killing python.exe.");
+                    foreach (var p in Process.GetProcessesByName("python"))
+                    {
+                        try { p.Kill(); } catch { }
+                    }
+                    await Task.Delay(2000);
                 }
-                await Task.Delay(2000);
+                else
+                {
+                    FileLogger.Log($"Stale CAT sidecar detected running={runningVersion} disk={diskVersion} - spawning fresh (OCR sweep owns kills).");
+                }
             }
             FileLogger.Log($"Sidecar directory resolved to: {sidecarDir ?? "NOT FOUND"}");
             if (sidecarDir is null)
@@ -203,7 +472,7 @@ namespace WunderLanguage.Host.Sidecar
                 var psi = new ProcessStartInfo
                 {
                     FileName = pythonExe,
-                    Arguments = "-m uvicorn main:app --host 127.0.0.1 --port 8000",
+                    Arguments = $"-m uvicorn {_module}:app --host 127.0.0.1 --port {_port}",
                     WorkingDirectory = sidecarDir,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -212,6 +481,26 @@ namespace WunderLanguage.Host.Sidecar
                 };
                 if (cpuFallback || _noCatAfterCrash)
                     psi.Environment["WUNDER_NO_CAT"] = "1";
+                // crash-diag-logger (revert: revert crash-diag-logger):
+                // the python side writes full all-threads faulthandler
+                // dumps + a 1s memory/VRAM sampler into the app log dir.
+                psi.Environment["WUNDER_LOGDIR"] = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage");
+                if (_role == "cat")
+                {
+                    psi.Environment["WUNDER_ROLE"] = "cat";
+                    // CAT crash class (revert: revert cat-reliability):
+                    // 2026-10-23, exit 0xC0000005 during safetensors shard
+                    // reads - the 2026-10-17 "weight reads segfault" family
+                    // in its CROSS-PROCESS form (clean process, load
+                    // overlap window + emulator pressure). mmap'd shard
+                    // reads fault under system load; HF_HUB_DISABLE_MMAP
+                    // forces plain reads - the documented Windows
+                    // mitigation. Cost ~+1s on the one-time load.
+                    psi.Environment["HF_HUB_DISABLE_MMAP"] = "1";
+                }
+                else
+                    psi.Environment["WUNDER_ROLE"] = "ocr";
 
                 _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
                 _process.OutputDataReceived += (_, e) =>
@@ -263,14 +552,31 @@ namespace WunderLanguage.Host.Sidecar
 
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
-                FileLogger.Log($"Sidecar process started, PID: {_process.Id} (OCR-only fallback: {cpuFallback || _noCatAfterCrash})");
+                FileLogger.Log($"[{_role}] process started, PID: {_process.Id} (OCR-only fallback: {cpuFallback || _noCatAfterCrash})");
+
+                if (_role == "cat")
+                {
+                    // Load-before-serve (convicted 2026-10-17: concurrent
+                    // server activity during weight load segfaults): HTTP
+                    // binds only after weights load, so readiness waiting
+                    // would block app startup ~60s. Never block on the
+                    // translator — warm-watch covers readiness, TreeDied
+                    // covers early death. Brief liveness check catches
+                    // stillborn spawns for the degraded-start log.
+                    await Task.Delay(3000);
+                    if (_process is { HasExited: true })
+                        throw new InvalidOperationException($"CAT sidecar exited during startup (code {_process.ExitCode}).");
+                    FileLogger.Log($"[startup] stage=cat-spawn-accepted port={_port}");
+                    StartCatWatcher();
+                    return;
+                }
 
                 try
                 {
                     await WaitForHealthyAsync(statusProgress);
-                    FileLogger.Log($"[startup] stage=sidecar-spawn-healthy ms={spawnSw.ElapsedMilliseconds} fallback={cpuFallback}");
+                    FileLogger.Log($"[startup] stage=sidecar-spawn-healthy role={_role} port={_port} ms={spawnSw.ElapsedMilliseconds} fallback={cpuFallback}");
                     try { _wasHealthy = true; } catch { }
-                    StartCatWatcher();
+                    if (_role == "cat") StartCatWatcher();
                     return;
                 }
                 catch (InvalidOperationException ex) when (!cpuFallback && ex.Message.Contains("exited unexpectedly"))
@@ -346,7 +652,7 @@ namespace WunderLanguage.Host.Sidecar
 
                 try
                 {
-                    var response = await http.GetAsync("http://127.0.0.1:8000/health");
+                    var response = await http.GetAsync(HealthUrl);
                     if (response.IsSuccessStatusCode)
                     {
                         // Staged readiness: HTTP up means the API is bound,
@@ -449,7 +755,7 @@ namespace WunderLanguage.Host.Sidecar
                             string cat = "unknown";
                             try
                             {
-                                var resp = await http.GetAsync("http://127.0.0.1:8000/health", token);
+                                var resp = await http.GetAsync(HealthUrl, token);
                                 if (resp.IsSuccessStatusCode)
                                 {
                                     string body = await resp.Content.ReadAsStringAsync(token);
@@ -472,12 +778,12 @@ namespace WunderLanguage.Host.Sidecar
             catch { }
         }
 
-        private static async Task<string?> GetRunningVersionAsync()
+        private static async Task<string?> GetRunningVersionAsync(int port)
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             try
             {
-                var response = await http.GetAsync("http://127.0.0.1:8000/health");
+                var response = await http.GetAsync($"http://127.0.0.1:{port}/health");
                 if (!response.IsSuccessStatusCode) return null;
                 using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 if (doc.RootElement.TryGetProperty("code_version", out var v))

@@ -177,6 +177,63 @@ namespace WunderLanguage.Host.Windows
                 }
                 bool wasAtBottom = HistoryScroller.VerticalOffset >= HistoryScroller.ScrollableHeight - AtBottomThresholdPx;
                 string stamp = System.DateTime.Now.ToString("HH:mm:ss");
+                // JP-first fill (revert: revert jp-first): the controller posts
+                // the menu/decision JA immediately (EN = pending marker), then
+                // re-invokes with the same JA and the real EN. That second call
+                // fills THIS block in place instead of appending a duplicate.
+                // Captured element refs so later appends can't misdirect the
+                // fill. Duplicate pending fire of the same JA drops.
+                if (!string.IsNullOrEmpty(japanese)
+                    && _pendingMenuJa is not null
+                    && NormalizeEllipsisForDisplay(_pendingMenuJa) == NormalizeEllipsisForDisplay(japanese))
+                {
+                    if (IsPendingEn(english))
+                    {
+                        FileLogger.Log("[panel] menu jp-first pending-dupe (same JA already pending)");
+                        return;
+                    }
+                    try
+                    {
+                        if (MenuDisplayMode == "Ascii")
+                        {
+                            if (_pendingMenuAsciiEnHost is not null)
+                                RefreshAsciiRows(_pendingMenuAsciiEnHost, SplitMenuLines(english), 13);
+                        }
+                        else if (_pendingMenuEnBlock is not null)
+                        {
+                            // Growth-update may have rewritten the bubble between
+                            // fire and EN-landing; a rewritten JA means this EN
+                            // is stale - drop instead of poisoning the bubble.
+                            if (_pendingMenuJaBlock is not null
+                                && NormalizeEllipsisForDisplay(_pendingMenuJaBlock.Text) != NormalizeEllipsisForDisplay(_pendingMenuJa))
+                            {
+                                FileLogger.Log("[panel] menu jp-first fill dropped (bubble rewritten since fire)");
+                                _pendingMenuJa = null; _pendingMenuEnBlock = null; _pendingMenuAsciiEnHost = null; _pendingMenuJaBlock = null;
+                                return;
+                            }
+                            _pendingMenuEnBlock.Text = english;
+                        }
+                        if (_history.Count > 0)
+                            _history[^1] = (_history[^1].time, kind + "\n" + japanese, english);
+                        FileLogger.Log("[panel] menu jp-first fill (EN refreshed in place)");
+                        _pendingMenuJa = null;
+                        _pendingMenuEnBlock = null;
+                        _pendingMenuAsciiEnHost = null;
+                        _pendingMenuJaBlock = null;
+                        if (wasAtBottom)
+                            Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                        return;
+                    }
+                    catch { }
+                    _pendingMenuJa = null;
+                    _pendingMenuEnBlock = null;
+                    _pendingMenuAsciiEnHost = null;
+                    _pendingMenuJaBlock = null;
+                }
+                _pendingMenuJa = IsPendingEn(english) ? japanese : null;
+                _pendingMenuEnBlock = null;
+                _pendingMenuAsciiEnHost = null;
+                _pendingMenuJaBlock = null;
                 _battleIsLast = false;
                 if (MenuDisplayMode == "Ascii")
                 {
@@ -186,6 +243,7 @@ namespace WunderLanguage.Host.Windows
                     _lastMenuRawJa = japanese;
                     _lastJapaneseBlock = null;
                     _lastEnglishBlock = null;
+                    _pendingMenuAsciiEnHost = _lastMenuAsciiEnHost;
                     _history.Add((stamp, kind + "\n" + japanese, english));
                     if (wasAtBottom)
                         Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
@@ -195,6 +253,8 @@ namespace WunderLanguage.Host.Windows
                 HistoryPanel.Children.Add(entry);
                 _lastJapaneseBlock = jaBlock;
                 _lastEnglishBlock = enBlock;
+                _pendingMenuEnBlock = enBlock;
+                _pendingMenuJaBlock = jaBlock;
                 _lastMenuRawJa = null;
                 _lastMenuAsciiEntry = null;
                 _lastMenuAsciiJaHost = null;
@@ -204,6 +264,14 @@ namespace WunderLanguage.Host.Windows
                     Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
             });
         }
+
+        // JP-first (revert: revert jp-first): pending-menu state - the JA text
+        // posted with a pending EN marker, plus the exact EN element to fill
+        // (refs captured at append so later bubbles can't steal the fill).
+        private string? _pendingMenuJa;
+        private TextBox? _pendingMenuEnBlock;
+        private TextBox? _pendingMenuJaBlock;
+        private StackPanel? _pendingMenuAsciiEnHost;
 
         // Menu growth: edit in place on match, DROP on mismatch (never appends,
         // so menus can never duplicate dialogue).
@@ -657,6 +725,45 @@ namespace WunderLanguage.Host.Windows
                 try
                 {
                     string incomingStripped = ConFold(StripOverlapPunct(StripSpaces(japanese)));
+                    // JP-first fill (revert: revert jp-first): the EN refresh for
+                    // a bubble posted at fire time. Exact raw-JA match against
+                    // the ring (the pending bubble's JA is verbatim the fired
+                    // text), EXEMPT from the 15s gap window (measured EN
+                    // latency 8-18s under load, live 2026-10-24), fills only
+                    // while the shown EN is still pending and the incoming EN
+                    // is real. A duplicate pending fire of the same JA drops.
+                    // Display-only: capture/translation/sim untouched.
+                    if (!string.IsNullOrEmpty(japanese))
+                    {
+                        for (int pi = _bubbleRing.Count - 1; pi >= 0; pi--)
+                        {
+                            var pb = _bubbleRing[pi];
+                            if (!string.Equals(pb.jaRaw, japanese, System.StringComparison.Ordinal)) continue;
+                            bool shownPending = IsPendingEn(pb.en.Text);
+                            if (shownPending && !IsPendingEn(english))
+                            {
+                                pb.en.Text = english;
+                                ReplaceHistoryRow(pb.time, pb.jaRaw, stamp, pb.jaRaw, english);
+                                _lastJapaneseBlock = pb.ja;
+                                _lastEnglishBlock = pb.en;
+                                try { _bubbleRing.RemoveAt(pi); } catch { }
+                                try { _bubbleRing.Add((pb.entry, pb.ja, pb.en, stamp, pb.jaRaw)); } catch { }
+                                TrimBubbleRing();
+                                FileLogger.Log("[panel] jp-first fill (EN refreshed in place)");
+                                if (wasAtBottom)
+                                    Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                                return;
+                            }
+                            if (shownPending && IsPendingEn(english))
+                            {
+                                FileLogger.Log("[panel] jp-first pending-dupe (same JA already pending)");
+                                return;
+                            }
+                            // shown EN already real: fall through to the
+                            // absorption logic below (drop-eq collapses it).
+                            break;
+                        }
+                    }
                     for (int ri = _bubbleRing.Count - 1; ri >= 0; ri--)
                     {
                         var rb = _bubbleRing[ri];
@@ -720,6 +827,17 @@ namespace WunderLanguage.Host.Windows
         // One-shot per session; no focus steal (no popup mid-game).
         // Revert: delete method + subscription.
         private bool _noticeShown;
+        // Error-code chip (2026-10-23; revert: revert error-codes): ONE
+        // amber row per session that updates in place as state worsens
+        // (E1 retrying -> E2 spent), chrome like ShowNotice - never in
+        // _history, never seen by copy-all or the corpus miner. Click ->
+        // detail popup (the compact chip line can't hold cause + fix;
+        // the registry in Diagnostics/ErrorCodes.cs owns all wording).
+        private Border? _errorChip;
+        private TextBlock? _errorChipLabel;
+        private string? _errorCodeShown;
+        private Window? _errorPopup;
+
         public void ShowNotice(string text)
         {
             Dispatcher.Invoke(() =>
@@ -748,9 +866,212 @@ namespace WunderLanguage.Host.Windows
             });
         }
 
+        // Error-code chip (2026-10-23; revert: revert error-codes). One
+        // row per session, text updated in place as state worsens;
+        // unknown codes log and drop (a bad code must never break the
+        // feed path). The chip's screen position is logged once layout
+        // settles so UI-automation gates (and support shots) can find it.
+        public void ShowError(string code)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var info = Diagnostics.ErrorCodes.Get(code);
+                    if (info is null)
+                    {
+                        FileLogger.Log($"[error] unknown code '{code}' - no chip posted");
+                        return;
+                    }
+                    if (_placeholderShown)
+                    {
+                        HistoryPanel.Children.Clear();
+                        _placeholderShown = false;
+                    }
+                    if (_errorChip is null)
+                    {
+                        var label = new TextBlock
+                        {
+                            TextWrapping = System.Windows.TextWrapping.Wrap,
+                            FontSize = 12.5,
+                            FontWeight = FontWeights.SemiBold,
+                            Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC9, 0x4D)),
+                        };
+                        var hint = new TextBlock
+                        {
+                            Text = "(click for details)",
+                            FontSize = 10,
+                            Margin = new Thickness(0, 3, 0, 0),
+                            Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x9A, 0x4F)),
+                        };
+                        var stack = new StackPanel();
+                        stack.Children.Add(label);
+                        stack.Children.Add(hint);
+                        var chip = new Border
+                        {
+                            Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x21, 0x0C)),
+                            BorderBrush = new SolidColorBrush(Color.FromRgb(0xC8, 0x99, 0x2E)),
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(5),
+                            Padding = new Thickness(9, 6, 9, 6),
+                            Margin = new Thickness(0, 6, 0, 6),
+                            Child = stack,
+                            Cursor = Cursors.Hand,
+                            // Left, not Stretch: a MaxWidth-capped stretch
+                            // resolves to CENTER (WPF), which would float the
+                            // chip mid-feed in any panel wider than 336px.
+                            HorizontalAlignment = HorizontalAlignment.Left,
+                            MaxWidth = 336,
+                        };
+                        chip.MouseLeftButtonUp += (_, _) => OnChipClicked();
+                        _errorChip = chip;
+                        _errorChipLabel = label;
+                        HistoryPanel.Children.Add(chip);
+                    }
+                    bool first = _errorCodeShown != code;
+                    _errorCodeShown = code;
+                    if (_errorChipLabel != null && _errorChipLabel.Text != info.Chip)
+                        _errorChipLabel.Text = info.Chip;
+                    FileLogger.Log($"[error] chip {(first ? code + " posted" : code + " refreshed (in place)")}");
+                    HistoryScroller.ScrollToEnd();
+                    // Re-logged on EVERY post/update, at ApplicationIdle:
+                    // pre-render positions are stale (an ownerless window
+                    // gets its cascade position only after the first
+                    // layout pass - a Loaded-priority read returned a
+                    // coordinate the panel then moved away from), so
+                    // gates must always trust the NEWEST line. Panel's own
+                    // position included for diagnosis.
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            if (_errorChip is not Border visible) return;
+                            var p = visible.PointToScreen(new Point(0, 0));
+                            FileLogger.Log($"[error] chip {code} at screen L{(int)p.X} T{(int)p.Y} (panel L{(int)Left} T{(int)Top})");
+                        }
+                        catch { }
+                    }, DispatcherPriority.ApplicationIdle);
+                }
+                catch (Exception ex) { FileLogger.Log("[error] ShowError failed: " + ex.Message); }
+            });
+        }
+
+        // One seam for two callers: the real chip MouseLeftButtonUp and
+        // the --errortest gate (TestClickChip) - the gate then exercises
+        // the exact handler a user's click takes, with no screen
+        // coordinates anywhere (the panel can sit behind a fullscreen
+        // emulator and the popup still renders for the PNG dump).
+        // Revert: revert error-codes.
+        private void OnChipClicked()
+        {
+            if (_errorCodeShown is string open) OpenErrorPopup(open);
+        }
+
+        internal Window? TestClickChip()
+        {
+            OnChipClicked();
+            return _errorPopup;
+        }
+
+        // Click-through popup: what happened + what to do for one code.
+        // Non-modal, closed-then-reopened per click so stale E1 text can
+        // never sit over an E2 state; Escape or OK closes; centered on
+        // the panel (owner), no topmost games, no focus steal beyond the
+        // user's own click. Revert: revert error-codes.
+        private void OpenErrorPopup(string code)
+        {
+            try
+            {
+                var info = Diagnostics.ErrorCodes.Get(code);
+                if (info is null) return;
+                try { _errorPopup?.Close(); } catch { }
+                _errorPopup = null;
+
+                var root = new StackPanel { Margin = new Thickness(16), MaxWidth = 440 };
+                root.Children.Add(new TextBlock
+                {
+                    Text = info.Title,
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    TextWrapping = System.Windows.TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC9, 0x4D)),
+                });
+                root.Children.Add(ErrorSectionLabel("What happened"));
+                root.Children.Add(ErrorBody(info.Detail));
+                root.Children.Add(ErrorSectionLabel("What to do"));
+                root.Children.Add(ErrorBody(info.Fix));
+                root.Children.Add(new TextBlock
+                {
+                    Text = $"Error code: {info.Code}  \u00B7  this row stays in the feed, app.log holds the full details",
+                    FontSize = 10.5,
+                    TextWrapping = System.Windows.TextWrapping.Wrap,
+                    Foreground = (Brush)FindResource("SubtleTextBrush"),
+                    Margin = new Thickness(0, 12, 0, 0),
+                });
+                var ok = new Button
+                {
+                    Content = "OK",
+                    Width = 76,
+                    Padding = new Thickness(0, 6, 0, 6),
+                    Margin = new Thickness(0, 14, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Background = (Brush)FindResource("AccentBrush"),
+                    Foreground = Brushes.White,
+                };
+                ok.Click += (_, _) => { try { _errorPopup?.Close(); } catch { } };
+                root.Children.Add(ok);
+
+                var win = new Window
+                {
+                    Title = "WunderLanguage \u2014 " + info.Title,
+                    Content = new ScrollViewer
+                    {
+                        Content = root,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        Padding = new Thickness(0, 0, 4, 0),
+                    },
+                    Width = 486,
+                    MaxHeight = 640,
+                    SizeToContent = SizeToContent.Height,
+                    ResizeMode = ResizeMode.NoResize,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    Background = (Brush)FindResource("BackgroundBrush"),
+                    ShowInTaskbar = false,
+                };
+                win.KeyDown += (_, e) => { if (e.Key == Key.Escape) { try { win.Close(); } catch { } } };
+                _errorPopup = win;
+                win.Show();
+                FileLogger.Log($"[error] popup {code} opened at L{(int)win.Left} T{(int)win.Top} {win.Width:F0}x{win.ActualHeight:F0}");
+            }
+            catch (Exception ex) { FileLogger.Log("[error] popup failed: " + ex.Message); }
+        }
+
+        private static TextBlock ErrorSectionLabel(string text) => new()
+        {
+            Text = text,
+            FontSize = 11.5,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x9A, 0x4F)),
+            Margin = new Thickness(0, 14, 0, 0),
+        };
+
+        private static TextBlock ErrorBody(string text) => new()
+        {
+            Text = text,
+            FontSize = 12.5,
+            TextWrapping = System.Windows.TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xED)),
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+
         public void ClearHistory()
         {
             _noticeShown = false;
+            // Error chip is session chrome like the notice row.
+            _errorCodeShown = null;
+            _errorChip = null;
+            _errorChipLabel = null;
             Dispatcher.Invoke(() =>
             {
                 HistoryPanel.Children.Clear();
@@ -1033,6 +1354,15 @@ namespace WunderLanguage.Host.Windows
         }
 
         private readonly List<(FrameworkElement entry, TextBox ja, TextBox en, string time, string jaRaw)> _bubbleRing = new();
+
+        // JP-first (revert: revert jp-first): pending-EN marker. Must match
+        // CaptureController.PendingTranslationMarker - a bubble whose EN is
+        // this (or blank) is "awaiting translation" and gets filled in place
+        // by the fill branch in ShowTranslation / ShowMenu.
+        internal const string PendingEnMarker = "…";
+
+        private static bool IsPendingEn(string? en) =>
+            string.IsNullOrWhiteSpace(en) || en == PendingEnMarker;
 
         private void TrimBubbleRing()
         {

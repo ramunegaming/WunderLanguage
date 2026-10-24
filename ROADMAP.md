@@ -274,3 +274,28 @@ before + after intro, all intro blocks posted, healthy-path behavior
 byte-compatible with round-7. NEXT (2026-10-22 evening update): C2 live gate evaluated on the 20:25–20:35 run = **outcome MET** (zero menu-row dialogue bubbles; the hold was pre-empted by upstream guards every instance) → **C2 CLOSED**; same evening, the user's run exposed two defects whose root causes are on file in the BOOKS T3+C3 entry — the first-visit title failure (**T3** fastpath, revert `revert title-fastpath`) and four overlay self-readback "hallucinations" (**C3** run-guard, revert `revert readback-run-guard`) — both coded + offline-gated (catstats A/B, 321 audited parks), commits this file. Live gates owed: (T3) cold boot — no input needed, the title→intro transition is the game's own timer — must post the title on the first visit; (C3) zero overlay re-reads with no real dialogue missing. Build work while awaiting that play session: **D1 decisions**.
 
 - **2026-10-23 pm — error-code feed** (revert: `revert error-codes`; parked/uncommitted batch + new `Diagnostics/ErrorCodes.cs`): ONE central registry (code -> chip line + detailed What-happened/What-to-do popup) so chip and popup wording can never drift; ONE amber chip per session updated in place, clickable (popup, no focus steal). E1 = CAT load-window death (retrying burst now visible instead of silent), E2/E3 = budget exhaustion (EngineDown now carries the code, role resolves in the manager), E4 = window lost (chip REPLACES the blocking MessageBox — flagged to user), pending-signal replay closes the fired-before-Connect hole (one-shot errors used to be lost forever; healthy restart of the same role clears the pending code). E5/E6 registry-ready, unwired: need a VRAM reading (nvidia-smi pressure tick is the likely hook) and a provider-health probe. Gated: `--errortest` 8/8 incl. real-click popup + visual-tree PNG dumps (coordinate screenshots/clicks banned — user's emulator was live behind the test panel), real-host E1 emission + pending clear. Details: BOOKS ERROR-CODE FEED entry.
+
+2026-10-24 - every-block-post batch landed (code uncommitted, build
+pending): dwell-sight1 + salvage-starved (starvation class dead:
+95 starved replacements measured, [loss] ledger now logs every
+candidate death), kana-bar10 (pure-kana speech no longer
+second-class), decision-echo-split (gambler yes/no mints through
+its echoed tail), dec-probe ([dec-probe] names every silent decision
+gate - next live run pins decision 3's blocker), jp-first (JA posts
+at fire with a pending marker, EN refreshes the same bubble in
+place - kills the measured 8-18s empty-panel class). Reverts:
+revert dwell-sight1, revert salvage-starved, revert kana-bar10,
+revert dec-probe, revert decision-echo-split, revert jp-first.
+Next: GREEN -> catstats A/B (salvage/kana/decision deltas expected
+and explained) -> live run as the final gate - [loss]/[dec-probe]
+lines plus JP-within-1s on every line as the acceptance test.
+
+2026-10-24 - every-block-post batch GATED GREEN (catstats A/B pass):
+simFires 2636->4149 (+1513, 291 corpora up / 149 flat / 1 dedup-down /
+0 lost), all record-side counters identical, salvage 1774 publishes /
+6494 reasoned discards (already-fired park = double-fire impossible),
+1191 unique salvaged texts sampled clean, dec-probe histogram live
+(18 gate tags counted). Uncommitted -> committed this date. Only the
+live session remains as the final gate. Reverts: revert dwell-sight1,
+revert salvage-starved, revert kana-bar10, revert dec-probe,
+revert decision-echo-split, revert jp-first.

@@ -170,7 +170,10 @@ namespace WunderLanguage.Host.Windows
             DeepLProvider? deepL = !string.IsNullOrWhiteSpace(_settings.DeepLApiKey)
                 ? new DeepLProvider(_settings.DeepLApiKey!)
                 : null;
-            var offline = new OfflineTranslationProvider();
+            // W1 split (2026-10-17): offline translation lives in the
+            // dedicated CAT process on :8001 (clean address space).
+            // Revert: default endpoint.
+            var offline = new OfflineTranslationProvider("http://127.0.0.1:8001");
             var providerPreference = _settings.TranslationProvider == "DeepL"
                 ? TranslationProviderPreference.DeepL
                 : TranslationProviderPreference.Offline;
@@ -186,12 +189,36 @@ namespace WunderLanguage.Host.Windows
             controller.WindowLost += OnCaptureWindowLost;
             // Terminal-state notice (2026-10-13): engine restarts stay
             // silent, but a SPENT budget must show on the panel — 30 min
-            // of silent nothing reads as policy failure. In-panel row
-            // (no popup, no focus steal); never translation data.
-            // Revert: delete subscription.
-            Sidecar.SidecarProcessManager.EngineDown += () =>
+            // of silent nothing reads as policy failure. Since 2026-10-23
+            // the row is an error-code CHIP (compact, amber, clickable ->
+            // what-happened/what-to-do popup; registry in
+            // Diagnostics/ErrorCodes.cs owns all wording — EngineDown now
+            // carries the CODE, role resolves to E2/E3 inside the
+            // manager). ErrorCodeNotice posts the informational E1 (first
+            // load-window death, retries running).
+            // Revert: revert error-codes (EngineDown back to text + delete
+            // ErrorCodeNotice subscription).
+            Sidecar.SidecarProcessManager.EngineDown += code =>
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                    _sidePanel.ShowNotice("OCR engine stopped after repeated failures — relaunch the program to resume. Your game is unaffected."));
+                    _sidePanel.ShowError(code));
+            Sidecar.SidecarProcessManager.ErrorCodeNotice += code =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    _sidePanel.ShowError(code));
+            // Replay the last signal: it may have fired while nobody was
+            // subscribed (subscriptions exist only from Connect onward),
+            // and losing it would let a broken session start silently -
+            // the exact failure class this system exists to kill.
+            // Revert: revert error-codes.
+            try
+            {
+                string? pending = Sidecar.SidecarProcessManager.PendingErrorSignal;
+                if (pending != null)
+                {
+                    FileLogger.Log($"[error] replaying pending code {pending} at capture build");
+                    _sidePanel.ShowError(pending);
+                }
+            }
+            catch { }
             return controller;
         }
 
@@ -200,18 +227,15 @@ namespace WunderLanguage.Host.Windows
         // genuinely dead. Previously this failure mode just spun silently
         // in the background log forever with no visible sign anything was
         // wrong - translation would simply stop with no explanation.
+        // 2026-10-23: the blocking MessageBox (focus steal, easy to miss
+        // behind the game) is now the E4 chip — compact, amber, in the
+        // feed where the user already looks; click opens the reconnect
+        // steps. Revert: revert error-codes (restores the MessageBox).
         private void OnCaptureWindowLost()
         {
             FileLogger.Log("OnCaptureWindowLost: notifying and stopping.");
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                System.Windows.MessageBox.Show(
-                    "Lost the connection to the emulator window - it may have closed or crashed. " +
-                    "Translation has stopped. Reconnect from the Connect window to resume.",
-                    "WunderLanguage",
-                    System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Warning);
-            });
+                _sidePanel.ShowError("E4"));
         }
 
         public void Start()

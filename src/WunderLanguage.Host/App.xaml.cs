@@ -10,6 +10,11 @@ namespace WunderLanguage.Host
     public partial class App : Application
     {
         private readonly SidecarProcessManager _sidecar = new();
+        // W1 split (2026-10-17): dedicated translator process (clean
+        // address space — OCR residency poisons weight reads). Non-fatal:
+        // OCR works without it (per-line fallback covers translations).
+        // Revert: delete field + start/stop calls.
+        private readonly SidecarProcessManager _catSidecar = new("cat");
 
         public App()
         {
@@ -27,6 +32,7 @@ namespace WunderLanguage.Host
             AppDomain.CurrentDomain.ProcessExit += (_, _) =>
             {
                 try { _sidecar.Stop(); } catch { }
+            try { _catSidecar.Stop(); } catch { }
             };
         }
 
@@ -100,6 +106,20 @@ namespace WunderLanguage.Host
                         Shutdown(rc == 0 ? 0 : 1);
                         return;
                     }
+                    // Error-code chip/popup offline gate (2026-10-23):
+                    // --errortest [code] shows a bare side panel with the
+                    // chip posted (no code = E1 -> E2 -> E4 in-place
+                    // sequence + unknown-code guard; a code = that one,
+                    // e.g. E5/E6 to eyeball registry-only wording) then
+                    // just sits there - no emulator, no sidecar, no GPU;
+                    // the gate screenshots/clicks and taskkills it.
+                    // Revert: revert error-codes (delete this block).
+                    if (args[i] == "--errortest")
+                    {
+                        FileLogger.ReplayMode = true;
+                        ErrorCodeTestRun(i + 1 < args.Length && args[i + 1].StartsWith("E") ? args[i + 1] : null);
+                        return;
+                    }
                 }
             }
             catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
@@ -146,6 +166,18 @@ namespace WunderLanguage.Host
                 FileLogger.Log("Sidecar reported healthy");
                 FileLogger.Log($"[startup] stage=sidecar-healthy ms={sw.ElapsedMilliseconds}");
                 StartPressureLog();
+                // CAT translator: best-effort. A failed CAT start must not
+                // kill the app (OCR + fallback cover function); the CAT
+                // manager retries per its own policy and warm-watches.
+                try
+                {
+                    await _catSidecar.StartAsync(null);
+                    FileLogger.Log("CAT sidecar start accepted (warming behind)");
+                }
+                catch (Exception cex)
+                {
+                    FileLogger.Log($"CAT sidecar start failed (degraded, OCR continues): {cex.Message.Split('\n')[0]}");
+                }
             }
             catch (Exception ex)
             {
@@ -290,6 +322,7 @@ namespace WunderLanguage.Host
             FileLogger.Log("App exiting - stopping sidecar");
             StopPressureLog();
             try { _sidecar.Stop(); } catch { }
+            try { _catSidecar.Stop(); } catch { }
             base.OnExit(e);
         }
 
@@ -365,6 +398,79 @@ namespace WunderLanguage.Host
         private void StopPressureLog()
         {
             try { _pressureTimer?.Dispose(); _pressureTimer = null; } catch { }
+        }
+        // --errortest gate surface (revert: revert error-codes): a bare
+        // SidePanelWindow + the real ShowError path, sequenced so a gate
+        // can verify every state (new post, in-place update, click ->
+        // popup via the SAME handler a mouse click takes, unknown-code
+        // guard). Windows render to PNGs off the visual tree, so a
+        // fullscreen emulator covering the screen can't blind the gate
+        // (coordinate screenshots/clicks would land in the user's game).
+        // Deliberately never returns to the normal startup flow; exits by
+        // taskkill. PNGs land in Roaming\WunderLanguage\gate_errortest.
+        private static void ErrorCodeTestRun(string? code)
+        {
+            FileLogger.Log($"[error] --errortest start (code={code ?? "sequence"})");
+            var panel = new Windows.SidePanelWindow();
+            panel.Show();
+            string dumpDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "WunderLanguage", "gate_errortest");
+            System.IO.Directory.CreateDirectory(dumpDir);
+            if (code != null)
+            {
+                panel.ShowError(code);
+                DumpWindowPng(panel, System.IO.Path.Combine(dumpDir, $"panel_{code}.png"));
+                return;
+            }
+            panel.ShowError("E1");
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                step++;
+                if (step == 1)
+                {
+                    // In-place update: same chip row, E2 text.
+                    panel.ShowError("E2");
+                }
+                else if (step == 2)
+                {
+                    var popup = panel.TestClickChip();
+                    DumpWindowPng(panel, System.IO.Path.Combine(dumpDir, "panel_e2.png"));
+                    if (popup != null)
+                        DumpWindowPng(popup, System.IO.Path.Combine(dumpDir, "popup_e2.png"));
+                }
+                else if (step == 3)
+                {
+                    // Second in-place update (E4) + unknown-code guard.
+                    panel.ShowError("E4");
+                    DumpWindowPng(panel, System.IO.Path.Combine(dumpDir, "panel_e4.png"));
+                    panel.ShowError("E9");
+                    t.Stop();
+                }
+            };
+            t.Start();
+        }
+        // --errortest PNG dump: renders a window straight off the visual
+        // tree. Revert: revert error-codes.
+        private static void DumpWindowPng(System.Windows.Window w, string path)
+        {
+            try
+            {
+                w.UpdateLayout();
+                int wpx = Math.Max(1, (int)Math.Ceiling(w.ActualWidth));
+                int hpx = Math.Max(1, (int)Math.Ceiling(w.ActualHeight));
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    wpx, hpx, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(w);
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                using var fs = System.IO.File.Create(path);
+                enc.Save(fs);
+                FileLogger.Log($"[error] dump {path} {wpx}x{hpx}");
+            }
+            catch (System.Exception ex) { FileLogger.Log("[error] dump failed: " + ex.Message); }
         }
         // One nvidia-smi query, best-effort ("" on any failure). Split out
         // so the pressure tick reads top-down; 10s cap each.

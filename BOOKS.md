@@ -2400,3 +2400,141 @@ death - error chip E1 signaled (retrying, budget 0/3)", death 4 logged
 E2)" - the EngineDown payload change is live-verified end to end on the
 manager side; panel-side E2 rendering is the same ShowError path gated
 via --errortest.
+
+2026-10-24, batch: every-block-post (miss-fix + jp-first + loss-ledger)
+(revert: revert dwell-sight1, revert salvage-starved, revert kana-bar10,
+ revert dec-probe, revert decision-echo-split, revert jp-first)
+
+Root causes proven from the 2026-10-24 live run (03:23:59-03:41:44,
+app.log + 3 troubleshoot shots) and fixed here:
+
+1. STARVATION (block 11 lost, かけたルビー lost): frame-hash-equal
+   loops skip OCR and never increment stableCount, and the dwell
+   publisher only engaged at sc>=2 - a single-sighting text on a
+   static frame froze at sc=1 and died on screen change. Measured:
+   324 candidate sightings, 180 at sc=1, 95 replaced while sc<3.
+   Fix A (revert dwell-sight1): dwell accrues from sighting 1 - an
+   unchanged frame hash IS stability. Fix B (revert salvage-starved):
+   snapshot the candidate at observation entry; when it dies below
+   RequiredStableReadings, TrySalvageStarved fires it through
+   PublishDecisionAsync(kind=salvage) or logs a [loss] discard line
+   with the reason. FireHistoryCovers parks anything an existing road
+   (dwell/flush/pageturn/growth/weakhold) already fired synchronously
+   - double-fire impossible by construction. Guards mirror the dwell
+   gate (junk/ellipsis/blend/no-JA/anchorless/menu/title/short/
+   shown-dup).
+
+2. WEAK-CHALLENGER DISCARD (そういえば、そうですね。 lost): 98
+   hold-weak-challenger events vs 12 publish-new; a pure-hiragana
+   line under 12 chars was judged non-substantial and discarded
+   while a stale line held 19 loops. Fix C (revert kana-bar10):
+   HasAnchorSubstance long-kana bar 12 -> 10. Grunts peak at ~8,
+   so 10 still separates speech from noise; all downstream gates
+   unchanged.
+
+3. DECISIONS (2 of 3 unrecognized):
+   a. Decision 2 (gambler yes/no): its tail "♪じゃない どうするあるよ？"
+      carried the question echoed by the flattened box read; the old
+      RemoveAll dropped the WHOLE ？-bearing piece -> 0 options ->
+      return false -> suppressed. Fix D1 (revert decision-echo-split):
+      split ？-bearing pieces on ？, drop fragments equal to the
+      question minus its trailing ？ (structural echo test, no game
+      strings), keep the rest. Label over omission: a residual
+      mislabel is a label, never a suppressed line.
+   b. Decision 3 (tall single-block box, blocks=2): failed to an
+      unnamed silent gate - offline simulation of TryBuildDecisionRows
+      returns TRUE for its row, so the blocker is a caller gate that
+      leaves no trace. Fix D2 (revert dec-probe): [dec-probe] logs
+      inputs (rows L/B prefixed) + every silent return in
+      UpdateMenuTracker (inputgrid/battle-owned/battle-remnant/
+      blocks<3/no-ja-rows/content/dialogue-owned-exact/
+      dialogue-owned/menu-stable/dup-sig) + every gate inside
+      TryBuildDecisionRows (question-short/prompt-bracket/
+      prompt-space/subline-qrow-not-qterminated/options-count-N/
+      option-sentence-punct/option-nature/question-cap-N/
+      option-cap-N) + the decHit outcome. Gate-only: no publish
+      change. Next live run names the blocker exactly.
+
+4. JP-FIRST POSTING (user doctrine: 1:1 Japanese at minimum, every
+   block, every NPC): the panel used to wait for translation - 8-18s
+   under GPU load (block 10: fire 03:26:46 -> post 03:27:04 = 18.2s).
+   Fix E (revert jp-first): TranslateAndPublishAsync posts the JA
+   immediately with a pending marker (const PendingTranslationMarker
+   "…", must match SidePanelWindow.PendingEnMarker) right after the
+   [translate-fire] log - every guard above it already ran, so what
+   posts is exactly what the old code posted after the wait. The EN
+   refresh fills the SAME bubble in place when it lands (panel fill
+   branch: exact raw-JA match against the bubble ring, exempt from
+   the 15s gap window since EN latency exceeds it, fills only while
+   the shown EN is pending). staleCovered exempts jp-first posts
+   (refresh, never append). Menu path: TranslateAndPublishMenuAsync
+   posts JA-first (skip TITLE - synchronous fixup) then re-invokes
+   with the real EN; ShowMenu tracks _pendingMenuJa + captured
+   element refs (en/ja blocks + ascii host) so the fill lands on the
+   right bubble even after later appends, drops on pending-dupe, and
+   drops the fill if a growth-update rewrote the JA since fire.
+   Sim/replay invisible: PublishDecisionAsync returns pre-translate
+   in sim mode; corpus records at completion unchanged.
+
+Expected catstats A/B diffs (publish-path surface): salvage adds
+publishes for starved candidates (kind=salvage); kana-bar10 lets
+10-11 kana lines past anchorless gates; decision-echo-split can mint
+DECISION where the tail was previously emptied. JP-first itself is
+invisible to replay (pre-translate return in sim).
+
+Verification plan: GREEN build, --catstats A/B with the deltas
+explained, then a live session - [loss]/[dec-probe]/[menu] jp-first
+lines + the user's eyeball on the feed (JP within ~1s of every line,
+EN filling in place).
+
+2026-10-24, every-block-post batch GATES: GREEN + catstats A/B PASS
+(revert: revert dwell-sight1, revert salvage-starved, revert kana-bar10,
+ revert dec-probe, revert decision-echo-split, revert jp-first)
+
+GREEN both sides: base (HEAD CaptureController.cs stashed) and new
+(batch restored, hash-verified byte-identical to pre-stash backup)
+each 0 err / 17 warn = exact baseline. A/B = --catstats full sweep
+over %APPDATA%\WunderLanguage\corpus (441 corpora, exit 0 both,
+artifacts Temp\opencode\catstats_base.log 172,581 lines +
+catstats_new.log 190,514 lines):
+
+- ALL record-side counters IDENTICAL (recPub 646, recUpdPub 83,
+  recDlgDec 1549, recDlgFire 1823, recMenuT/D/M 64/15/108,
+  junkStableMenu 5, junkBattle 15): the recorded corpora are
+  inputs, so equality here proves the harness saw the same data
+  and every delta below is publish-side only.
+- simFires 2636 -> 4149 (+1513, +57%): the fix-class delta.
+  Per-corpus: 291 up, 149 unchanged, ONE down by 2 (FFVI
+  20261001_155940 8->6, a recPub=0 unlabeled corpus - kana-bar10
+  lets a 10-kana line hold the slot, so a weaker duplicate fire it
+  used to displace no longer fires: dedup, not loss; matches
+  simUpdates 491->489). Zero corpora lost.
+- Salvage accounting (new log): 1774 SALVAGE-publish, 6494
+  starved-discard with reasons (already-fired 1765 = the
+  FireHistoryCovers park doing its double-fire-impossible job,
+  junk 1436, menu-or-title-owns 1272, continuation 846,
+  anchorless 717, blend 313, already-shown 72, too-short 48,
+  non-ja 24, incomplete-sacrifice 1). 1191 unique salvaged texts,
+  30-random sample eyeballed = real FFVI/Paper Mario dialogue
+  (ケフカ lines, たすけて…たすけてください, しかし、それらのでき事が
+  伝説となったころ！) - no junk artifacts.
+- STABLE-DECISION variant shifts all trace to the fixes:
+  hold-weak-challenger 8497->8397 (-100 = kana lines now publish),
+  subpart-suppressed -55, scroll-line -41, flush-on-pageturn +37,
+  hold-stained +16, hold-continuation +18; every other variant
+  within +-4.
+- dec-probe live in replay: 2399 decHit outcome lines + gate
+  histogram naming every silent gate (blocks<3 919, content 726,
+  options-count-0 654, prompt-bracket 545, option-nature 461,
+  prompt-space 317, dialogue-owned-exact 234, battle-owned 139,
+  question-short 128, menu-stable 90, question-cap-20 63,
+  battle-remnant 40, dialogue-owned 28, option-sentence-punct 26,
+  dup-sig 22, no-ja-rows 21, question-cap-40 18, option-cap-12 15;
+  decHit=True 156). The probe is the instrument that names
+  decision 3's blocker on the next live run.
+- jp-first: 319 MENU/DECISION pending-post lines in replay (menu
+  path has no sim gate; MenuTranslated has no replay subscriber -
+  display-only, publish surface unaffected by design).
+
+Remaining gate: live session (JP within ~1s of every line, EN fills
+in place, [loss]/[dec-probe] lines present, decision-3 blocker named).
