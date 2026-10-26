@@ -41,6 +41,10 @@ namespace WunderLanguage.Host.Capture
         private static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("dwmapi.dll")]
         private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         // Screen-copy path (flicker-free). Reads DWM-composited pixels, never forces a redraw.
         [DllImport("user32.dll")]
         private static extern IntPtr GetDC(IntPtr hWnd);
@@ -64,6 +68,7 @@ namespace WunderLanguage.Host.Capture
         private const uint CAPTURE_FLAGS = PW_RENDERFULLCONTENT;
         private const int SW_RESTORE = 9;
         private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+        private const int DWMWA_CLOAKED = 14;
         private const uint SRCCOPY = 0x00CC0020;
         private static readonly HashSet<string> ExcludedClassNames = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -135,6 +140,79 @@ namespace WunderLanguage.Host.Capture
             }
             bounds = Rectangle.Empty;
             return false;
+        }
+        // Occlusion probe (revert: revert occlusion-hold): the hot path
+        // BitBlts the SCREEN at the game's rect, so whatever is composited
+        // ABOVE the game there is what capture actually reads - proven live
+        // 2026-10-24 10:34/10:39-10:42: a foreign browser page covered the
+        // region for ~45s and its text reached the pipeline as candidate
+        // dialogue (the phantom-post class). EnumWindows walks top-down
+        // Z-order, so every window enumerated BEFORE the target sits above
+        // it. An occluder must be: visible, not minimized, not DWM-cloaked
+        // (UWP/virtual-desktop ghosts keep their Z-order while invisible -
+        // catching those would hold forever on an invisible window), owned
+        // by ANOTHER process (our own chrome is companion policy; the focus
+        // gate already allows it), and intersecting the capture rect by at
+        // least 2% of its area (an edge kiss below that cannot hold text
+        // inside the frame). Uses the same bounds source as the capture
+        // rect on both sides, so the coordinate spaces always match.
+        // Returns false when the target handle is never seen: without the
+        // stop point the walk cannot know which side of the game it is on.
+        public static bool IsCapturedRegionOccluded(IntPtr hWnd, GameRegion gameRegion, out IntPtr occluder, out string occluderTitle)
+        {
+            occluder = IntPtr.Zero;
+            occluderTitle = string.Empty;
+            if (!IsWindow(hWnd)) return false;
+            if (!TryGetWindowBounds(hWnd, out var winBounds)) return false;
+            var rel = gameRegion.GetScaledCropRect(winBounds);
+            var screenRect = new Rectangle(
+                winBounds.Left + rel.Left,
+                winBounds.Top + rel.Top,
+                rel.Width,
+                rel.Height);
+            if (screenRect.Width <= 0 || screenRect.Height <= 0) return false;
+            long minOverlap = Math.Max(4096L, (long)screenRect.Width * screenRect.Height / 50);
+            GetWindowThreadProcessId(hWnd, out uint selfPid);
+            bool found = false, sawTarget = false;
+            IntPtr occ = IntPtr.Zero;
+            string occTitle = string.Empty;
+            try
+            {
+                EnumWindows((h, _) =>
+                {
+                    if (h == hWnd) { sawTarget = true; return false; }
+                    if (found) return false;
+                    try
+                    {
+                        if (!IsWindowVisible(h) || IsIconic(h)) return true;
+                        int hr = DwmGetWindowAttribute(h, DWMWA_CLOAKED, out int cloaked, sizeof(int));
+                        if (hr == 0 && cloaked != 0) return true;
+                        if (!TryGetWindowBounds(h, out var r) || r.Width <= 0 || r.Height <= 0) return true;
+                        if (!r.IntersectsWith(screenRect)) return true;
+                        var inter = Rectangle.Intersect(r, screenRect);
+                        if ((long)inter.Width * inter.Height < minOverlap) return true;
+                        GetWindowThreadProcessId(h, out uint pid);
+                        if (pid == selfPid) return true;
+                        occ = h;
+                        var sb = new StringBuilder(256);
+                        GetWindowText(h, sb, sb.Capacity);
+                        occTitle = sb.ToString();
+                        if (string.IsNullOrWhiteSpace(occTitle))
+                        {
+                            var cb = new StringBuilder(256);
+                            GetClassName(h, cb, cb.Capacity);
+                            occTitle = cb.ToString();
+                        }
+                        found = true;
+                    }
+                    catch { }
+                    return !found;
+                }, IntPtr.Zero);
+            }
+            catch { }
+            occluder = occ;
+            occluderTitle = occTitle;
+            return found && sawTarget;
         }
         public static Bitmap CaptureWindow(IntPtr hWnd)
         {

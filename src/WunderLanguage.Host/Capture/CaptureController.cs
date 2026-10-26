@@ -231,6 +231,13 @@ namespace WunderLanguage.Host.Capture
         private int _successorCount;
         private int _weakHoldCount;
         private string _weakHoldFor = string.Empty;
+        // Challenger salvage (revert: revert challenger-salvage): the latest
+        // qualifying read that never became the candidate, its sighting
+        // count, and the last string already judged (one attempt per string
+        // so alternating reads cannot spam the ledger).
+        private string _challText = string.Empty;
+        private int _challSc;
+        private string _challTried = string.Empty;
         // Provenance window-stability (bottleneck-2 metric, observe-only):
         // mean adjacent-read similarity over the trailing window. Offline
         // it separates smooth-glide tiling zones (med 0.54) from flicker
@@ -351,6 +358,7 @@ namespace WunderLanguage.Host.Capture
         private int _lastOcrContent;
         private int _lastOcrTotal;
         private bool _focusHoldActive;
+        private bool _occlHoldActive;
 
         public event Action<string, string>? TextTranslated;
         public event Action<string, string, string>? MenuTranslated; // (kind TITLE/MENU, jaJoined, enJoined)
@@ -1136,6 +1144,20 @@ namespace WunderLanguage.Host.Capture
                         && !(_itemBoxOpen && BattleFrame.IsBattleRemnant(ocrBlocks, _battleFrameW, _battleFrameH, HasJapanese)))
                     {
                         FileLogger.Log($"[loop {iteration}] chart-suppressed (kana input grid)");
+                        // Chart-clear salvage (revert: revert chart-clear-salvage):
+                        // this clear used to run with NO salvage and no [loss]
+                        // line: the branch returns before the starvation
+                        // snapshot at the method tail, so a candidate held when
+                        // the grid appeared was wiped silently (live 2026-10-24
+                        // 10:35:13 -> 10:35:40: the ！-ended wanted-poster line
+                        // held at sc=1, chart gate fired next observation - the
+                        // run's ONLY silent death, exactly the '!' miss class).
+                        // Capture the pre-clear candidate and judge it here,
+                        // exactly like the tail does; state is already cleared
+                        // below, so the helper's menu/title gate sees this
+                        // screen, not the one the candidate came from.
+                        string chartPrior = _candidateText;
+                        int chartPriorSc = _candidateStableCount;
                         _menuStableCount = 0;
                         _menuSignature = "";
                         _candidateText = string.Empty;
@@ -1143,6 +1165,13 @@ namespace WunderLanguage.Host.Capture
                         _candidateStableCount = 0;
                         _candidateGrewThisRead = false;
                         _flashFired = false;
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(chartPrior)
+                                && chartPriorSc < RequiredStableReadings)
+                                TrySalvageStarved(iteration, chartPrior, chartPriorSc);
+                        }
+                        catch { }
                         if (!_simMode) await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token); // sim: no wall wait; clock already injected (slice v1)
                         return false;
                     }
@@ -2126,6 +2155,65 @@ namespace WunderLanguage.Host.Capture
                     TrySalvageStarved(iteration, salvPrior, salvPriorSc);
             }
             catch { }
+            // Challenger salvage (revert: revert challenger-salvage): a read
+            // that never becomes the candidate holds no stableCount, so no
+            // road ever sees it and the block above only ever considers
+            // salvPrior - the silent class (live 2026-10-24: 30 OCR texts
+            // never reached candidateText, incl. real lines like ひとり、２００).
+            // Track the latest qualifying non-candidate read; when this
+            // observation shows a different text it died - judge it through
+            // the same helper. Fire history / already-shown park the ones
+            // that posted another way, every verdict logs a [loss] line:
+            // label over omission. One attempt per distinct string
+            // (_challTried) so alternating reads cannot spam the ledger;
+            // dead == salvPrior/candidate is skipped as double work the
+            // paths above already own.
+            try
+            {
+                bool challAlive = false;
+                if (!string.IsNullOrEmpty(_challText) && !string.IsNullOrEmpty(extractedText))
+                {
+                    challAlive = extractedText == _challText
+                        || extractedText.Contains(_challText, StringComparison.Ordinal)
+                        || _challText.Contains(extractedText, StringComparison.Ordinal)
+                        || HasCommonPrefix(extractedText, _challText, 10);
+                    if (challAlive)
+                    {
+                        if (extractedText.Length > _challText.Length) _challText = extractedText;
+                        _challSc++;
+                    }
+                }
+                if (!string.IsNullOrEmpty(_challText) && !challAlive)
+                {
+                    string dead = _challText;
+                    int deadSc = _challSc;
+                    _challText = string.Empty;
+                    _challSc = 0;
+                    if (dead != salvPrior && dead != _candidateText && dead != _challTried)
+                    {
+                        _challTried = dead;
+                        TrySalvageStarved(iteration, dead, deadSc < 1 ? 1 : deadSc);
+                    }
+                }
+                // Seed: only clean, non-candidate reads. Menu/title screens
+                // are excluded at seed time so a menu row churning in and
+                // out cannot mint a loss line per frame.
+                if (!string.IsNullOrEmpty(extractedText)
+                    && extractedText != _candidateText
+                    && extractedText != salvPrior
+                    && extractedText != _challText
+                    && HasJapanese(extractedText)
+                    && !IsEllipsisOnly(extractedText)
+                    && !IsJunkOcr(extractedText)
+                    && StripForOverlap(extractedText).Length >= 4
+                    && string.IsNullOrEmpty(_menuSignature)
+                    && !_frameIsTitle)
+                {
+                    _challText = extractedText;
+                    _challSc = 1;
+                }
+            }
+            catch { }
             return false;
         }
 
@@ -2218,6 +2306,40 @@ namespace WunderLanguage.Host.Capture
                         _lastFrameNovel = true;
                         _prevSmall = null;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
+                    }
+                    // Occlusion gate (revert: revert occlusion-hold): the focus
+                    // gate above checks WHO holds the foreground; this checks
+                    // who is PAINTED OVER the game. CaptureWindowRegion copies
+                    // the SCREEN at the game's rect, so a foreign window above
+                    // the emulator - always-on-top video/browser/chat - hands
+                    // OCR its pixels while focus still reads emulator (proven
+                    // live 2026-10-24: crowdfunding-page text posted as
+                    // dialogue at 10:34, 10:39-10:40, 10:41-10:42 - the phantom
+                    // class). Hold exactly like the focus gate; the first hold
+                    // of an episode names the occluder so the user can move or
+                    // close it, and clearing drops the stale frame hash the
+                    // same way refocus does.
+                    if (WindowCapture.IsCapturedRegionOccluded(_hWnd, _gameRegion, out IntPtr occWin, out string occTitle))
+                    {
+                        if (!_occlHoldActive)
+                            FileLogger.Log($"[loop {iteration}] occlusion-hold: 0x{occWin:X} \"{occTitle}\" composited over the game, holding");
+                        else if (iteration % 20 == 0)
+                            FileLogger.Log($"[loop {iteration}] occlusion-hold (\"{occTitle}\") still over the game, holding");
+                        _occlHoldActive = true;
+                        _costHolds++;
+                        _sessHolds++;
+                        await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
+                        continue;
+                    }
+                    if (_occlHoldActive)
+                    {
+                        _occlHoldActive = false;
+                        _lastFrameHash = null;
+                        _pendingFrameHash = null;
+                        _recentFrameHashes.Clear();
+                        _lastFrameNovel = true;
+                        _prevSmall = null;
+                        FileLogger.Log($"[loop {iteration}] occlusion-cleared (stale frame dropped, OCR now)");
                     }
                     // G1 circuit breaker (revert: revert g1-circuit-breaker):
                     // 3+ consecutive nested timeouts = the sidecar is wedged
@@ -4887,6 +5009,11 @@ namespace WunderLanguage.Host.Capture
             }
             qparts.Add(texts[qi].t.Substring(0, qpos + 1).Trim());
             string question = string.Join(" ", qparts).Trim();
+            // Subline prompt scaling input (revert: revert question-cap-scale):
+            // how many substantial rows the question was joined from - junk/
+            // ellipsis pre-rows never enter qparts, so this is 1 for a
+            // single-row question and 2+ for a wrapped prompt.
+            int promptRows = qparts.Count;
             if (question.Length < 2) return ProbeFail("question-short");
             // D1 question-length gate (revert: revert d1-decisions): a real
             // decision prompt is short and self-contained; a dialogue LINE
@@ -5076,6 +5203,21 @@ namespace WunderLanguage.Host.Capture
                 }
             }
             int qCap = strongCluster ? 40 : 20;
+            // Subline prompt scaling (revert: revert question-cap-scale): a
+            // prompt the OCR read as 2+ substantial rows joined into one
+            // question (gambler box 14+14+13 = 43 chars over 3 rows, live
+            // 2026-10-24 10:42:33 gate=question-cap-20) cannot be a single
+            // dialogue sentence, and its option (はい) is a choice column the
+            // scan only half-read (the いいえ row never arrived, so the
+            // strong-cluster >=2 bar misses it). Weak-tier 20 splits exactly
+            // there and the screen degrades to IN-GAME TEXT (late label,
+            // category lost). Cap scales with the join: 20 per joined row.
+            // Junk/ellipsis pre-rows never enter qparts, so a single-row
+            // question keeps the exact 20/12 bars - the master-sword box
+            // shape (junk pre-rows + 1 question row) is unchanged; option
+            // caps only relax on a strong cluster.
+            bool multiPrompt = promptRows >= 2 && options.Count >= 1 && judgeable >= 1;
+            if (multiPrompt) qCap = Math.Max(qCap, 20 + 20 * (promptRows - 1));
             int oCap = strongCluster ? 16 : 12;
             if (question.Length > qCap) return ProbeFail($"question-cap-{qCap}");
             foreach (var o in options)

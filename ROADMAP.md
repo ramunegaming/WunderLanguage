@@ -3,9 +3,10 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## HANDOVER STATE (2026-10-21 — read this first)
+## HANDOVER STATE (2026-10-26 — read this first)
 
-> Checkpoint of record: **`CHECKPOINT-2026-10-21.md`** (full session detail). Older `CHECKPOINT-2026-10-20.md` is superseded.
+> Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
+> Newest ledger entries: ROADMAP tail = 2026-10-26 F1-F4 occlusion/miss/decision batch (gated, committed); BOOKS tail = full root-cause chains + A/B numbers. **Live gate owed** (reopen emulator/app).
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -299,3 +300,31 @@ simFires 2636->4149 (+1513, 291 corpora up / 149 flat / 1 dedup-down /
 live session remains as the final gate. Reverts: revert dwell-sight1,
 revert salvage-starved, revert kana-bar10, revert dec-probe,
 revert decision-echo-split, revert jp-first.
+
+2026-10-26 - F1-F4 occlusion/miss/decision batch (committed this date).
+Post-run forensics on the 2026-10-24 10:29-10:43 run closed all three
+user complaint classes with evidence: (a) phantom posts = CAPTURE
+OCCLUSION - the hot path bitblts the SCREEN at the game rect, a
+persistent foreign window (webpage/video, cross-game, recurring since
+2026-10-07) covered it for ~45s while focus still read emulator; (b) the
+'!' miss = the run's ONE silent death - chart-suppressed clears the held
+candidate before the tail snapshot, returns, no [loss]; (c) 30
+never-candidate texts = challenger class (no stableCount -> no road ->
+no ledger); (d) gambler DECISION = weak-tier question-cap-20 on a 3-row
+joined prompt (43 chars) with a single はい option (strong needs >=2).
+Fixes: F1 occlusion-hold gate (Z-order walk, cloaked skipped, >=2%
+overlap, occluder NAMED in log, refocus-style hash reset on clear);
+F2 challenger salvage (every non-candidate death gets a [loss] verdict,
+one attempt per distinct string); F3 chart-clear salvage (inline in the
+chart branch); F4 question cap scales with joined prompt rows
+(20/row, single-row shapes untouched). Gates: build both sides 0 err /
+17 warn exact; catstats A/B 443 corpora record-side identical,
+simFires 4196->4310 (+114), +125 SALVAGE-publish, +510 already-fired
+labels, decHit 161->182 (+21), 103 gained salvage texts (102 clean),
+8 re-routed verified still-publishing, zero corpora lost. Reverts:
+revert occlusion-hold, revert challenger-salvage, revert chart-clear-
+salvage, revert question-cap-scale.
+Next: LIVE gate - reopen emulator/app: zero phantom posts while
+roaming, punctuation lines post, gambler box = DECISION (4 rows incl
+はい), and read the occlusion-hold log line to name any window sitting
+over the game.

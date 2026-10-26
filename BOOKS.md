@@ -2538,3 +2538,111 @@ catstats_new.log 190,514 lines):
 
 Remaining gate: live session (JP within ~1s of every line, EN fills
 in place, [loss]/[dec-probe] lines present, decision-3 blocker named).
+
+2026-10-26, post-run forensics + F1-F4 batch - GATES GREEN + catstats A/B
+PASS (revert: revert occlusion-hold, revert challenger-salvage, revert
+chart-clear-salvage, revert question-cap-scale)
+
+FORENSICS INPUT: live run 2026-10-24 10:29:03-10:43:11 (55 fires; log
+Temp\opencode\app_live_2026-10-24b.log; corpus Zelda 20261024_102851,
+483 records). User's three complaints: phantom posts while roaming; misses
+on '...'/'!'/'?'/'1' punctuation; decisions not recognized.
+
+PHANTOM CLASS - ROOT CAUSE PROVEN: capture occlusion (not OCR
+hallucination, not panel echo, not corrections injection).
+- WindowCapture.CaptureWindowRegion hot path = TryGetWindowBounds +
+  BitBlt of the SCREEN DC (GetDC(NULL) SRCCOPY) at the game rect;
+  PrintWindow only on BitBlt failure (zero fallback lines all run) ->
+  capture reads whatever is composited above the game.
+- Corrections refuted: phantom records are type=ocr with raw==extracted,
+  mined=false; mined=true fired ONCE all run (legit 城の兵達→あやつり
+  fixup) -> LookupMined injection out.
+- Panel echo refuted: first_ocr precedes first_publish for every phantom;
+  _history is in-memory only (SidePanelWindow.xaml.cs, no persistence);
+  panel starts empty each launch.
+- rec-beam refuted: real intro text has identical suspect/divmax.
+- Intruder = persistent FOREIGN window over the capture region: same
+  strings recur across many sessions AND two games (Zelda + FFVI) back to
+  >= 2026-10-07 (Ｗｅｂサイト, ファンディングサービス,
+  １日２０１８年１１月１１日); 10:39:17-10:40:01 (~45s) whole-frame
+  crowdfunding-page text at c=1.00 while the focus gate held emulator
+  (fg=emulator during foreign captures) -> occluder sits ABOVE the game,
+  foreground untouched. Frame census: 405 [blocks] frames, ZERO with both
+  real-inset and phantom-edge ja blocks (10 phantom-only, 229 real-only,
+  166 neither). Nothing garbage posted (menu/title/anchorless/len gates
+  ate every candidate) - the class is capture-side, not pipeline-side.
+- F1 = WindowCapture.IsCapturedRegionOccluded: EnumWindows top-down
+  Z-order, stop at target (enumerated-before = above); skip invisible,
+  iconic, DWM-cloaked (DWMWA_CLOAKED=14 - virtual-desktop/UWP ghosts keep
+  Z-order while invisible), same-PID (own chrome = companion policy);
+  overlap of the exact capture rect >= max(4096, area/50) (~2%); returns
+  false if the target handle is never seen. Controller gate sits right
+  after focus-release, mirrors the focus hold (cost/session holds,
+  transition log NAMES the occluder handle+title, %20 throttle) and on
+  clear drops the frame hashes exactly like refocus-catchup.
+
+'!' MISS - THE RUN'S ONLY SILENT DEATH: loop 717 chart-suppressed (kana
+input grid) cleared the held wanted-poster line おたずお者…。！ (sc=1,
+adopted 10:35:13) BEFORE the tail's starvation snapshot and returned at
+the branch -> no [loss], no salvage, candidate gone by 10:35:40. Every
+other candidate death this run got a [loss] line; phantom_deaths scan
+found exactly this one. F3 = capture chartPrior/chartPriorSc inside the
+chart branch, judge via TrySalvageStarved right after the clear (the
+branch already cleared _menuSignature, so the helper judges the current
+screen; sc guard matches the tail's < RequiredStableReadings).
+
+CHALLENGER CLASS: 30 OCR texts never became candidateText (23 non-junk)
+-> no stableCount, no road, no [loss] (ひとり、２００, そして今も、森の奥…,
+マスターソートは…). Cross-checked against fires: foreign garbage (F1 kills
+at source), 、-ending fragments (continuation labels), near-dup variants
+of posted lines, small genuine remainder. F2 = tail tracks the latest
+qualifying non-candidate read (_challText/_challSc/_challTried): alive =
+equal/Contains/HasCommonPrefix(10) lineage with the current read (grows to
+the longer form); death judged through TrySalvageStarved ONCE per distinct
+string, skipping dead==salvPrior/_candidateText (paths that already own
+it); seed = non-empty, != candidate, != salvPrior, HasJapanese, not
+ellipsis/junk, StripForOverlap>=4, menu/title excluded at seed (no
+per-frame menu-churn loss lines).
+
+DECISION MISS - question-cap: gambler box dec-probe rows=5
+L'かけたルビーがふえるかへるか' | L'２０ルビーで１はつしょうぶだ' |
+L'あんた、やってみないかい？' | L'はい' | B'．．．' -> gate=question-cap-20:
+3 substantial prompt rows joined = 43 chars > weak 20; strong cluster
+needs >=2 judgeable options and only はい arrived (the いいえ row never
+read). blocks=2 would NOT have blocked it (line 5285: blocks.Count<3 &&
+!decHit - decHit bypasses the fragment gate). F4 = promptRows =
+qparts.Count (junk/ellipsis pre-rows never enter qparts, so single-row
+questions keep the exact 20/12 bars); multiPrompt = promptRows>=2 &&
+options>=1 && judgeable>=1 -> qCap = max(tier, 20+20*(promptRows-1)) =
+60 here; oCap moves only with strongCluster. Unchanged: master-sword box
+(promptRows=1 -> 20/12, dies option-cap-12 as before), options-count-0
+screens (die before the cap as before). Expected live: DECISION with 4
+rows (question + はい) instead of the 10:42:34 merged IN-GAME TEXT, no
+double-post (probe-pass sets menuSignature, which suppresses the dwell
+road that fired it as dialogue).
+
+GATES (2026-10-26): build BOTH sides 0 err / 17 warn exact baseline
+(base = HEAD ccc5291 stashed; new restored hash-verified byte-identical).
+catstats A/B full sweep 443 corpora both sides (Temp\opencode\
+catstats_base.log 192,183 lines / catstats_new.log 194,422; prior-batch
+base preserved as catstats_base_prevbatch.log):
+- record-side IDENTICAL on all 443 (fed, recPub, recUpdPub, recDlgDec,
+  recDlgFire, recMenuT/D/M, recBattle, junk*, noFrame, unstamped);
+  lone okTransient 2->3 is runtime classification (ingame -4 /
+  transient +4 = F4 recognizing frames as menu/decision).
+- simFires 4196 -> 4310 (+114, +2.7%); simUpdates 489 = 489;
+  stableLoops/battleLoops/bTracker/bFfviProbe identical.
+- [loss] ledger: SALVAGE-publish 1800->1925 (+125), already-fired
+  1786->2296 (+510 = F2 labeling parked dupes - double-fire impossible),
+  already-shown +33, anchorless +1136, menu-or-title-owns +281,
+  blend +107, continuation +41, junk +7; too-short/non-ja/
+  incomplete-sacrifice flat. All labels, zero suppressed content.
+- decHit=True 161 -> 182 (+21 = F4 mints on the corpus surface).
+- gained 103 unique salvage texts (102 clean / 1 junk-like); the 8
+  lost-from-SALVAGE are re-routed: 3 of 4 sampled show already-fired in
+  the new log = they still publish, via a road + an F2 label instead.
+Remaining gate: LIVE run (emulator + app reopen) - acceptance: zero
+foreign/phantom posts while roaming; '!'/'?'/'...'/digit lines post
+([loss] SALVAGE-publish where salvaged); gambler box tagged DECISION with
+its はい row; occlusion-hold log line names the intruder if a window sits
+over the game.
