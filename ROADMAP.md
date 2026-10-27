@@ -328,3 +328,44 @@ Next: LIVE gate - reopen emulator/app: zero phantom posts while
 roaming, punctuation lines post, gambler box = DECISION (4 rows incl
 はい), and read the occlusion-hold log line to name any window sitting
 over the game.
+
+2026-10-27 - H1-H5 phantom-post batch (committed this date). Phantom
+posts RECURRED (10-27: そう思うほうがなかったのか / そういえば、そう
+ですね。; 10-24b: そういうことでしょうか / それでも、これからのサービス
+では / ファンディングサービス) with F1 occlusion-hold SILENT - forensics
+proved a SECOND cause: the rec-beam hallucinates fluent text from game
+GRAPHICS (cls classical-proposer blocks rotating at fixed rect
+(136,234,593,168) while real dialogue is on screen), not from a foreign
+window. Five universal fixes, all CaptureController.cs: H1 frame-level
+ja block-sanity veto (edge x<=0.02 / giant h>0.32 or n>=7 or area>0.40 /
+lowconf<0.95; all-ja-blocks-fail -> clear extracted + Diag
+"block-reject vetoed"; A-side skips mining under the same veto;
+lineheight rule dropped in tuning), H2 sticky source confirmation
+(birth-frame H1 pass sticky-OR'd -> Loss unconfirmed-source at salvage),
+H3 position-based hold-decay (rect unobserved >=3 loops ->
+STABLE-DECISION=hold-decayed, adopt fresh; string-staleness variant
+rejected in tuning), H4 decode disagreement (sticky max MatchingDiv
+> 0.25 -> Loss decode-disagree; falls open on the ~345/445 corpora
+without the `d` sidecar), H5 Diag per-publish frame dumps (publish-dumps\
+ring 80 + index.txt). Gates: build BOTH sides 0 err / 17 warn exact;
+catstats A/B 445 corpora (applog_catstats_base/new.log) - ALL known
+phantoms killed (そう思う 1->0, そういえば 3->0, そうで 2->0, web 1->0,
+今後は、おまえ 56->1, 時時時間終わり 39->2, このメニュー 6->0), 166 REAL
+salvage fires GAINED (朝までには戻ってくる +14, ブーメランだ！ +10,
+魔法の力 +8, MAP +4, アグニム intro +3 ...), net -131 salvages = junk
+killed with every real-looking loss attributed per [loss] line to
+PRE-existing gates (menu-or-title/blend/continuation/already-fired) or
+re-routed to another road (全知全能/７賢者/カンテラ/とにかく１Ｆ still
+SALVAGE-publish); NEW-gate real cost all-history = 4 clean lines +
+stutter variants at decode-disagree (oracle-flagged wrong reads) and 2
+unconfirmed-source; weak-hold 108->20 mostly redirected to salvage
+(same text, new road); hold-decayed 523; junk +1271 labels (first-gate
+kills, zero publishes); vetoed=0 in replay = Diag off in catstats (H1
+effect visible as phantom strings absent from OCR-result lines).
+Reverts: revert block-sanity, revert source-confirm, revert hold-decay,
+revert decode-agree, revert publish-dump.
+Next: LIVE gate - zero phantom posts while roaming WITH occlusion-hold
+silent (proves the graphics-hallucination path is dead); Diag on ->
+"[blocks] block-reject vetoed" + unconfirmed-source/decode-disagree
+loss lines present; publish-dumps\ files appear per publish; real
+item-get lines still post.

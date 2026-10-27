@@ -65,6 +65,39 @@ namespace WunderLanguage.Host.Capture
             _gameId = "sim";
             try { _costFlushAt = _clock.GetUtcNow(); } catch { }
         }
+        // H5 per-publish frame dump (revert: revert publish-dump): a
+        // full-frame PNG + one index line per publish that reaches
+        // RecordFire — the forensic pair for any phantom post (pixel source
+        // and posted text side by side). Diag-gated by construction
+        // (_dumpFrame only exists in Diag sessions), 80-file ring so a long
+        // session cannot fill the disk, lock-guarded because publishes can
+        // overlap async. Sim never dumps (no bitmap). Revert: delete this
+        // helper + its two call sites + the clone block before
+        // ProcessOcrObservationAsync + the _dumpFrame field block.
+        private void DumpPublishFrame(string text, int loop, string kind)
+        {
+            try
+            {
+                var bmp = _dumpFrame;
+                if (bmp is null) return;
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "publish-dumps");
+                Directory.CreateDirectory(dir);
+                string safeKind = Regex.Replace(kind ?? "fire", "[^A-Za-z0-9_-]", "");
+                int n;
+                lock (_dumpLock)
+                {
+                    n = _pubDumpSaved;
+                    _pubDumpSaved++;
+                    string fn = $"pub_{n % 80:00}_{loop}_{safeKind}.png";
+                    bmp.Save(Path.Combine(dir, fn), System.Drawing.Imaging.ImageFormat.Png);
+                    string flat = (text ?? "").Replace("\n", " ").Replace("|", "/");
+                    File.AppendAllText(Path.Combine(dir, "index.txt"), $"{fn}|{loop}|{flat}{Environment.NewLine}");
+                }
+                FileLogger.Log($"[dump] publish-frame fn=pub_{n % 80:00}_{loop}_{safeKind}.png loop={loop} kind={safeKind}");
+            }
+            catch { }
+        }
+
         private System.Threading.Tasks.Task PublishDecisionAsync(string ja, int loop = -1, string kind = "fire", int ev = 0)
         {
             // B19 fire-history (revert: revert fire-hist): cross-road
@@ -114,6 +147,10 @@ namespace WunderLanguage.Host.Capture
             }
             catch { }
             try { RecordFire(ja, ev, loop); } catch { }
+            // H5: dump the exact frame this publish decision was made on
+            // (revert: revert publish-dump). After history/menu parking, so
+            // dumps = genuine publish attempts.
+            try { DumpPublishFrame(ja, loop, kind); } catch { }
             try { _lastFireParked = false; } catch { }
             if (_simMode) { try { _simPublished.Add("fire:" + _simLoop + ":" + kind + ":" + ja); } catch { } return System.Threading.Tasks.Task.CompletedTask; }
             // Title-hardening clock (2026-10-11): every stability fire
@@ -500,6 +537,44 @@ namespace WunderLanguage.Host.Capture
         // the publish-weak-hold conjunct.
         private string _suspectStainedText = string.Empty;
         private string _lastTranslatedText = string.Empty;
+        // ---- H-batch 2026-10-27 (phantom-post gates H1-H5, universal:
+        // no game branches) --------------------------------------------
+        // Revert phrases: revert block-sanity (H1), revert source-confirm
+        // (H2), revert hold-decay (H3), revert decode-agree (H4),
+        // revert publish-dump (H5).
+        // H1: per-loop verdict of the current frame's ja blocks (true = at
+        // least one ja block passed every sanity rule). Set in B at entry;
+        // A skips mining when the same veto would fire.
+        private bool _loopJaPassing;
+        // H2: sticky source confirmation for the current candidate — born
+        // at adoption from the birth frame's _loopJaPassing, sticky-OR each
+        // unchanged loop; priors captured for the salvage paths.
+        private string _prevLoopCandidate = string.Empty;
+        private bool _candidateSourceOk;
+        // H3: source rect of the current candidate (best text-matching
+        // H1-passing ja block, else the largest passing one) + the last
+        // loop it was re-observed occupying; decay fires when a substantial
+        // candidate's rect stays unoccupied for HoldDecayLoops loops.
+        private bool _candidateSrcKnown;
+        private int _candidateSrcX, _candidateSrcY, _candidateSrcW, _candidateSrcH;
+        private int _candidateSrcSeenLoop;
+        // H4: decode-disagreement — sticky max of OcrBlock.Div over ja
+        // blocks text-matching the candidate across its lifetime (matches
+        // ALL ja blocks, not only H1-passing: phantom sources usually fail
+        // H1). Salvage gate at DecodeDisagreeDiv (0.25: kills every known
+        // phantom/web salvage, keeps every genuine real one — real peak
+        // 0.207 against the sidecar's 0.20 oracle; see h4_final.py v4).
+        private double _candidateSrcDiv;
+        private bool _challSourceOk;
+        private double _challSrcDiv;
+        // H5: per-publish full-frame dump — Diag-gated clone refreshed each
+        // settled OCR loop so the publish later in the same loop can save it.
+        private Bitmap? _dumpFrame;
+        private int _dumpLoop;
+        private int _pubDumpSaved;
+        private readonly object _dumpLock = new();
+        private const double DecodeDisagreeDiv = 0.25;
+        private const int HoldDecayLoops = 3;
         // Scroll-line tracker (Zelda intro unpostables, 2026-10-14):
         // line-granular scroll (typewriter rows scroll up whole) never
         // repeats one string 3x, so count-based roads starve. Track lines
@@ -1116,6 +1191,8 @@ namespace WunderLanguage.Host.Capture
             }
             catch { }
             try { CorpusRotate(); } catch { }
+            // H5 (revert: revert publish-dump): release the dump clone.
+            try { _dumpFrame?.Dispose(); _dumpFrame = null; } catch { }
             _cts?.Cancel();
             // Survival batch 4: session over, yield sleep back. Revert:
             // delete this line.
@@ -1131,6 +1208,27 @@ namespace WunderLanguage.Host.Capture
         // Revert: inline this body back into RunLoopAsync.
         internal async Task<bool> ProcessOcrObservationAsync(int iteration, string? extractedText, System.Collections.Generic.List<OcrBlock> ocrBlocks, CancellationToken token)
         {
+                    // ---- H1 frame veto (revert: revert block-sanity): a frame
+                    // whose ja blocks ALL fail sanity has no readable text
+                    // source on screen — rec-beam hallucination input — so the
+                    // whole decision machine sees an empty read. Block trackers
+                    // below (menu/title/battle/scroll/chart) read ocrBlocks and
+                    // stay untouched; only the extractedText dialogue path is
+                    // gated. Lives here (B) so SimReplay/CatStats measure it
+                    // exactly like live. fw/fh = _battleFrameW/H (A sets them
+                    // before the call; SetFrameDimsForSim wires replay).
+                    try
+                    {
+                        bool h1AllRejected = AllJaBlocksRejected(ocrBlocks, _battleFrameW, _battleFrameH, out int h1Ja, out string h1Detail);
+                        _loopJaPassing = h1Ja > 0 && !h1AllRejected;
+                        if (h1AllRejected && !string.IsNullOrEmpty(extractedText))
+                        {
+                            if (Settings.Diag.Enabled)
+                                FileLogger.Log($"[loop {iteration}] [blocks] block-reject vetoed ja={h1Ja} frame={_battleFrameW}x{_battleFrameH} {h1Detail}");
+                            extractedText = "";
+                        }
+                    }
+                    catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
                     // Suppresses whole screen in both tiers: header, arrows,
                     // END and blobs cost nothing and post nothing.
@@ -1158,6 +1256,11 @@ namespace WunderLanguage.Host.Capture
                         // screen, not the one the candidate came from.
                         string chartPrior = _candidateText;
                         int chartPriorSc = _candidateStableCount;
+                        // H2/H4 priors: the dying candidate's sticky source
+                        // state as of the last bookkeeping pass (revert:
+                        // revert source-confirm / revert decode-agree).
+                        bool chartPriorOk = _candidateSourceOk;
+                        double chartPriorDiv = _candidateSrcDiv;
                         _menuStableCount = 0;
                         _menuSignature = "";
                         _candidateText = string.Empty;
@@ -1169,7 +1272,7 @@ namespace WunderLanguage.Host.Capture
                         {
                             if (!string.IsNullOrEmpty(chartPrior)
                                 && chartPriorSc < RequiredStableReadings)
-                                TrySalvageStarved(iteration, chartPrior, chartPriorSc);
+                                TrySalvageStarved(iteration, chartPrior, chartPriorSc, chartPriorOk, chartPriorDiv);
                         }
                         catch { }
                         if (!_simMode) await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token); // sim: no wall wait; clock already injected (slice v1)
@@ -1186,6 +1289,11 @@ namespace WunderLanguage.Host.Capture
                     // parked by FireHistoryCovers - no double-fire possible.
                     string salvPrior = _candidateText;
                     int salvPriorSc = _candidateStableCount;
+                    // H2/H4 priors (same as chartPrior): the dying candidate's
+                    // sticky source state for the tail salvage below (revert:
+                    // revert source-confirm / revert decode-agree).
+                    bool salvPriorOk = _candidateSourceOk;
+                    double salvPriorDiv = _candidateSrcDiv;
                     // Phase 1b: menu/title tracker. Dialogue path below frozen.
                     // Scroll-line road (B12): shift-confirmed lines post
                     // independent of count-based roads; never touches
@@ -1721,6 +1829,35 @@ namespace WunderLanguage.Host.Capture
                             _weakHoldCount = 0;
                             _weakHoldFor = string.Empty;
                         }
+                        // H3 position-based hold-decay (revert: revert
+                        // hold-decay): the held candidate's source rect has
+                        // not been re-observed for HoldDecayLoops loops —
+                        // whatever pixels produced it are gone; a static hold
+                        // would keep the stale line alive on ghost reads.
+                        // Same shape as the weak-challenger guard below
+                        // (substantial held line, weak incoming, not
+                        // game-over), only position differs: fresh source →
+                        // fall through to hold, stale source → adopt the
+                        // fresh read now. String-staleness was measured
+                        // counterproductive offline (any age gate killed
+                        // 2-5x more real posts than phantoms) — position is
+                        // the signal. Requires a known source rect (never
+                        // born-decayed). Adopt mirrors the fresh-read block
+                        // below (line ~1985).
+                        else if (!string.IsNullOrEmpty(_candidateText)
+                            && IsSubstantialLine(_candidateText)
+                            && !IsSubstantialLine(extractedText)
+                            && !IsGameOverText(extractedText)
+                            && _candidateSrcKnown
+                            && iteration - _candidateSrcSeenLoop >= HoldDecayLoops)
+                        {
+                            FileLogger.Log($"[loop {iteration}] STABLE-DECISION=hold-decayed (source rect unobserved {iteration - _candidateSrcSeenLoop} loops)");
+                            _candidateText = extractedText;
+                            _suspectStainedText = string.Empty;
+                            _candidateStableCount = 1;
+                            _candidateGrewThisRead = false;
+                            _flashFired = false;
+                        }
                         // MILESTONE 4 (challenger guard): weak incoming
                         // (junk, anchorless, or fragment) can never evict a
                         // substantial held line. Tracked as successor so a
@@ -1920,6 +2057,82 @@ namespace WunderLanguage.Host.Capture
                             _flashFired = false;
                         }
                     }
+                    // ---- H2/H3/H4 source bookkeeping (revert: revert
+                    // source-confirm / revert hold-decay / revert
+                    // decode-agree), once per observation after all decision
+                    // branches: a candidate that CHANGED this loop re-inits
+                    // from THIS frame (birth evidence); an unchanged one
+                    // accumulates (sticky source-ok, source-rect occupancy,
+                    // sticky max decode-divergence). Salvage priors captured
+                    // at chartPrior/salvPrior read the previous loop's state
+                    // — one frame of evidence short by construction, which
+                    // only ever errs toward keeping a real post.
+                    try
+                    {
+                        if (!string.Equals(_candidateText, _prevLoopCandidate, StringComparison.Ordinal))
+                        {
+                            _prevLoopCandidate = _candidateText;
+                            _candidateSourceOk = _loopJaPassing;
+                            _candidateSrcKnown = false;
+                            _candidateSrcX = 0; _candidateSrcY = 0; _candidateSrcW = 0; _candidateSrcH = 0;
+                            _candidateSrcSeenLoop = iteration;
+                            _candidateSrcDiv = 0.0;
+                            if (!string.IsNullOrEmpty(_candidateText))
+                            {
+                                // rect = best text-matching H1-passing ja block,
+                                // else the largest H1-passing ja block (mixed
+                                // frames: a phantom read coexisting with the real
+                                // box still anchors on the real box).
+                                OcrBlock? bestMatch = null;
+                                OcrBlock? largestPass = null;
+                                long bestArea = -1, passArea = -1;
+                                foreach (var b in ocrBlocks)
+                                {
+                                    if (!HasJapanese(b.Text)) continue;
+                                    if (JaBlockRejected(b, _battleFrameW, _battleFrameH, out _)) continue;
+                                    long area = (long)b.Width * b.Height;
+                                    if (area > passArea) { passArea = area; largestPass = b; }
+                                    if (area > bestArea && SourceTextMatch(_candidateText, b.Text)) { bestArea = area; bestMatch = b; }
+                                }
+                                var pick = bestMatch ?? largestPass;
+                                if (pick != null)
+                                {
+                                    _candidateSrcX = pick.X; _candidateSrcY = pick.Y;
+                                    _candidateSrcW = pick.Width; _candidateSrcH = pick.Height;
+                                    _candidateSrcKnown = true;
+                                    _candidateSrcSeenLoop = iteration;
+                                }
+                                // H4: div over ALL ja blocks matching the
+                                // candidate (phantom sources usually FAIL H1
+                                // and are exactly the blocks to measure).
+                                _candidateSrcDiv = MatchingDiv(_candidateText, ocrBlocks);
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(_candidateText))
+                        {
+                            if (_loopJaPassing) _candidateSourceOk = true;
+                            if (_candidateSrcKnown)
+                            {
+                                // occupancy: an H1-passing ja block overlapping
+                                // the source rect (4% expansion) re-confirms it.
+                                int padX = (int)(0.04 * _battleFrameW);
+                                int padY = (int)(0.04 * _battleFrameH);
+                                int rx0 = _candidateSrcX - padX, ry0 = _candidateSrcY - padY;
+                                int rx1 = _candidateSrcX + _candidateSrcW + padX, ry1 = _candidateSrcY + _candidateSrcH + padY;
+                                foreach (var b in ocrBlocks)
+                                {
+                                    if (!HasJapanese(b.Text)) continue;
+                                    if (JaBlockRejected(b, _battleFrameW, _battleFrameH, out _)) continue;
+                                    if (b.X < rx1 && b.X + b.Width > rx0
+                                        && b.Y < ry1 && b.Y + b.Height > ry0)
+                                    { _candidateSrcSeenLoop = iteration; break; }
+                                }
+                            }
+                            double d = MatchingDiv(_candidateText, ocrBlocks);
+                            if (d > _candidateSrcDiv) _candidateSrcDiv = d;
+                        }
+                    }
+                    catch { }
                     FileLogger.Log($"[loop {iteration}] candidateText=\"{_candidateText}\" stableCount={_candidateStableCount}");
 
                     if (_candidateStableCount >= RequiredStableReadings)
@@ -2152,7 +2365,7 @@ namespace WunderLanguage.Host.Capture
                 if (!string.IsNullOrEmpty(salvPrior)
                     && salvPrior != _candidateText
                     && salvPriorSc < RequiredStableReadings)
-                    TrySalvageStarved(iteration, salvPrior, salvPriorSc);
+                    TrySalvageStarved(iteration, salvPrior, salvPriorSc, salvPriorOk, salvPriorDiv);
             }
             catch { }
             // Challenger salvage (revert: revert challenger-salvage): a read
@@ -2181,6 +2394,11 @@ namespace WunderLanguage.Host.Capture
                     {
                         if (extractedText.Length > _challText.Length) _challText = extractedText;
                         _challSc++;
+                        // H4: keep the challenger's source decode-disagreement
+                        // sticky-maxed across its lifetime (revert: revert
+                        // decode-agree).
+                        double cd = MatchingDiv(_challText, ocrBlocks);
+                        if (cd > _challSrcDiv) _challSrcDiv = cd;
                     }
                 }
                 if (!string.IsNullOrEmpty(_challText) && !challAlive)
@@ -2192,7 +2410,7 @@ namespace WunderLanguage.Host.Capture
                     if (dead != salvPrior && dead != _candidateText && dead != _challTried)
                     {
                         _challTried = dead;
-                        TrySalvageStarved(iteration, dead, deadSc < 1 ? 1 : deadSc);
+                        TrySalvageStarved(iteration, dead, deadSc < 1 ? 1 : deadSc, _challSourceOk, _challSrcDiv);
                     }
                 }
                 // Seed: only clean, non-candidate reads. Menu/title screens
@@ -2207,20 +2425,132 @@ namespace WunderLanguage.Host.Capture
                     && !IsJunkOcr(extractedText)
                     && StripForOverlap(extractedText).Length >= 4
                     && string.IsNullOrEmpty(_menuSignature)
-                    && !_frameIsTitle)
+                    && !_frameIsTitle
+                    // H2 (revert: revert source-confirm): seed only on a frame
+                    // carrying at least one sanity-passing ja block — an
+                    // all-rejected frame's read has no text source to confirm
+                    // against later, so it never enters the pipeline.
+                    && _loopJaPassing)
                 {
                     _challText = extractedText;
                     _challSc = 1;
+                    // H2/H4 seed state: the gate above just proved this frame
+                    // passes, so the challenger starts confirmed; div comes
+                    // from this frame's text-matching ja blocks.
+                    _challSourceOk = true;
+                    _challSrcDiv = MatchingDiv(extractedText, ocrBlocks);
                 }
             }
             catch { }
             return false;
         }
 
+        // ---- H1 block-sanity gate (2026-10-27, revert: revert
+        // block-sanity): rec-beam hallucinations read fluent Japanese off
+        // non-text graphics in interior rects with high confidence, so no
+        // single signal discriminates — the frame-level veto does: a frame
+        // whose ja blocks ALL fail sanity contributes no dialogue text at
+        // all. Tuned offline (hallu_replay.py v2: 9/9 known phantoms killed,
+        // 0 confirmed-real kills; the lineheight rule was dropped — it
+        // false-killed a real n=6 elder box and lowconf alone already
+        // covered those phantoms). Edge = within 2% of the frame border
+        // (rec-beam strips hug edges); giant = h > 32% of frame, n >= 7
+        // merged, or area > 40% (texture megablocks); lowconf = c < 0.95
+        // (every known phantom source dips). Guards fw/fh: without frame
+        // dims only lowconf applies (geometry rules would compare against
+        // zero). Menu/title/battle/scroll trackers read ocrBlocks directly
+        // and stay untouched — this only gates the extractedText dialogue
+        // path (both in live A and in SimReplay/CatStats via B).
+        private bool JaBlockRejected(OcrBlock b, int fw, int fh, out string reason)
+        {
+            reason = "";
+            try
+            {
+                if (fw > 0 && fh > 0)
+                {
+                    if (b.X <= 0.02 * fw || b.Y <= 0.02 * fh
+                        || b.X + b.Width >= 0.98 * fw || b.Y + b.Height >= 0.98 * fh)
+                    { reason = "edge"; return true; }
+                    if (b.Height > 0.32 * fh || b.NMerge >= 7
+                        || (double)b.Width * b.Height > 0.40 * fw * fh)
+                    { reason = "giant"; return true; }
+                }
+                if (b.Conf < 0.95) { reason = "lowconf"; return true; }
+            }
+            catch { reason = ""; }
+            return false;
+        }
+
+        // True when the frame carries at least one ja block and every one
+        // of them fails sanity. detail = per-block rejection string for the
+        // Diag ledger line.
+        private bool AllJaBlocksRejected(List<OcrBlock> blocks, int fw, int fh, out int jaCount, out string detail)
+        {
+            jaCount = 0;
+            int pass = 0;
+            var sb = new System.Text.StringBuilder();
+            try
+            {
+                foreach (var b in blocks)
+                {
+                    if (!HasJapanese(b.Text)) continue;
+                    jaCount++;
+                    if (JaBlockRejected(b, fw, fh, out var r))
+                    {
+                        if (sb.Length > 0) sb.Append(' ');
+                        string t = b.Text.Replace("\n", " ");
+                        if (t.Length > 16) t = t.Substring(0, 16) + "…";
+                        sb.Append($"({b.X},{b.Y},{b.Width},{b.Height}) c={b.Conf:0.00} n={b.NMerge} {r} \"{t}\"");
+                    }
+                    else pass++;
+                }
+            }
+            catch { }
+            detail = sb.ToString();
+            return jaCount > 0 && pass == 0;
+        }
+
+        // H4 source match: candidate text vs a block's text — containment
+        // either way or a >=6-char common prefix (fixups shift punctuation
+        // mid-string, so exact equality misses real sources; see
+        // HasCommonPrefix above).
+        private bool SourceTextMatch(string candidate, string blockText)
+        {
+            if (string.IsNullOrEmpty(candidate) || string.IsNullOrEmpty(blockText)) return false;
+            return candidate.Contains(blockText, StringComparison.Ordinal)
+                || blockText.Contains(candidate, StringComparison.Ordinal)
+                || HasCommonPrefix(candidate, blockText, 6);
+        }
+
+        // H4: max div over this frame's ja blocks text-matching `text`.
+        // Matches ALL ja blocks, not only H1-passing ones — the phantom's
+        // own source usually fails H1 (lowconf) and is exactly the block we
+        // need the div of. 0 when nothing matches or no div data: the gate
+        // falls open by design (label over omission).
+        private double MatchingDiv(string text, List<OcrBlock> blocks)
+        {
+            double max = 0.0;
+            try
+            {
+                foreach (var b in blocks)
+                {
+                    if (b.Div <= 0 || !HasJapanese(b.Text)) continue;
+                    if (SourceTextMatch(text, b.Text) && b.Div > max) max = b.Div;
+                }
+            }
+            catch { }
+            return max;
+        }
+
         // Starvation salvage (revert: revert salvage-starved): publish a
         // clean candidate that died below the stability bar, or log why
         // not. Universal - no game strings, no game branches.
-        private void TrySalvageStarved(int iteration, string old, int oldSc)
+        // sourceConfirmed/srcDiv (H2/H4, revert: revert source-confirm /
+        // revert decode-agree): the dying candidate's sticky source state —
+        // a candidate never once confirmed against a sanity-passing ja
+        // block, or whose source blocks' decodes disagree past
+        // DecodeDisagreeDiv, is a rec-beam hallucination, not a lost read.
+        private void TrySalvageStarved(int iteration, string old, int oldSc, bool sourceConfirmed, double srcDiv)
         {
             try
             {
@@ -2231,6 +2561,8 @@ namespace WunderLanguage.Host.Capture
                 if (IsEllipsisOnly(old)) { Loss("ellipsis"); return; }
                 if (!HasJapanese(old)) { Loss("non-ja"); return; }
                 if (!HasAnchorSubstance(old)) { Loss("anchorless"); return; }
+                if (!sourceConfirmed) { Loss("unconfirmed-source"); return; }
+                if (srcDiv > DecodeDisagreeDiv) { Loss("decode-disagree"); return; }
                 if (IsScrollBlend(old) || IsZeldaTransitionBlend(old)) { Loss("blend"); return; }
                 if (EndsWithContinuation(old)) { Loss("continuation"); return; }
                 if (IsIncompleteSacrifice(old)) { Loss("incomplete-sacrifice"); return; }
@@ -2537,7 +2869,16 @@ namespace WunderLanguage.Host.Capture
                     // first box that approaches it. Revert: delete this block.
                     if (extractedText.Length > 150)
                         FileLogger.Log($"[loop {iteration}] [longbox] len={extractedText.Length} \"{Truncate(extractedText, 60)}\"");
-                    try { MineCorrection(rawTrim, extractedText); } catch { }
+                    // H1 (revert: revert block-sanity): B vetoes an
+                    // all-rejected frame's read anyway — don't let MineCorrection
+                    // learn the phantom pair in the meantime (mined lookups key
+                    // on raw, and raw of a texture frame recurs every loop).
+                    try
+                    {
+                        if (!AllJaBlocksRejected(ocrBlocks, bitmap.Width, bitmap.Height, out _, out _))
+                            MineCorrection(rawTrim, extractedText);
+                    }
+                    catch { }
                     // B19 blank-corrob trailing ring (revert: revert blank-corrob):
                     // every loop's finalized extraction, for flush corroboration.
                     try
@@ -2705,6 +3046,22 @@ namespace WunderLanguage.Host.Capture
                             }
                         }
                         if (extractedText != _settleLastText) _settleLastText = extractedText ?? "";
+                    }
+                    catch { }
+                    // H5 publish-frame dump source (revert: revert
+                    // publish-dump): Diag-gated full-frame clone kept fresh
+                    // each settled OCR loop so the publishes later in the
+                    // same loop (decision + menu) can save their exact input
+                    // frame. ~2.8MB LOH churn per loop, Diag sessions only;
+                    // sim has no bitmap and skips by construction.
+                    try
+                    {
+                        if (Settings.Diag.Enabled && bitmap is not null)
+                        {
+                            _dumpFrame?.Dispose();
+                            _dumpFrame = bitmap.Clone(new Rectangle(0, 0, bitmap.Width, bitmap.Height), bitmap.PixelFormat);
+                            _dumpLoop = iteration;
+                        }
                     }
                     catch { }
                     // M7c slice v2 seam: one step per observation (see ProcessOcrObservationAsync).
@@ -7393,6 +7750,10 @@ namespace WunderLanguage.Host.Capture
         private async Task TranslateAndPublishMenuAsync(string kind, List<(int y, string t, bool ja)> rows)
         {
             var pubSw = System.Diagnostics.Stopwatch.StartNew();
+            // H5 (revert: revert publish-dump): menu/title publishes get their
+            // frame too — same dump, loop from the last settled OCR (no
+            // iteration is plumbed into this path).
+            try { DumpPublishFrame(string.Join("\n", rows.ConvertAll(r => r.t)), _dumpLoop, "menu-" + kind); } catch { }
             try
             {
                 // Fan-out like the battle path: every row starts together, wall time

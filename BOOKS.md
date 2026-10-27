@@ -2646,3 +2646,113 @@ foreign/phantom posts while roaming; '!'/'?'/'...'/digit lines post
 ([loss] SALVAGE-publish where salvaged); gambler box tagged DECISION with
 its はい row; occlusion-hold log line names the intruder if a window sits
 over the game.
+
+H-PHANTOM ROOT CAUSE (2026-10-27): phantom posts RECURRED in the 10-27
+run (そう思うほうがなかったのか / そういうことですから、キャラクラクター /
+そういえば、そうですね。) and 10-24b (そういうことでしょうか / それでも、
+これからのサービスでは / ファンディングサービス) with F1 occlusion-hold
+SILENT - no foreign window. Forensics: cls (classical-proposer) blocks
+rotate fluent text at fixed rect (136,234,593,168) while REAL dialogue
+is on screen -> the rec-beam hallucinates from game GRAPHICS
+(logo/texture), a SECOND phantom cause beside occlusion. Tuners:
+Temp\opencode\hallu_replay.py v2 (replays corpus frames - kills 9/9
+known phantoms, 0 confirmed-real), h4_final.py v4 (H4 threshold sweep).
+Five universal fixes (no game branches), all in CaptureController.cs:
+
+H1 frame-level ja block-sanity veto - ProcessOcrObservationAsync ENTRY,
+before the kana-chart gate (so SimReplay/CatStats measure it); A-side
+skips MineCorrection when the same veto would fire (mined pairs stay
+clean). Rules inside if(fw>0&&fh>0): edge x<=0.02*fw / y<=0.02*fh /
+right>=0.98*fw / bottom>=0.98*fh; giant h>0.32*fh OR n>=7 OR
+area>0.40*fw*fh; lowconf c<0.95 (unknown dims -> lowconf-only).
+Veto = >=1 ja block and ALL fail -> extractedText="" + Diag-gated
+"[blocks] block-reject vetoed" log; sets _loopJaPassing=false. The
+lineheight rule was DROPPED in tuning (counterproductive). Block
+trackers (menu/title/battle/scroll/chart) read ocrBlocks directly -
+untouched. -> revert block-sanity
+
+H2 sticky source confirmation - _candidateSourceOk born at adoption
+from the birth-frame _loopJaPassing, sticky-OR each unchanged loop;
+priors captured beside chartPrior/salvPrior (one loop old by
+construction - errs toward KEEPING real posts); challenger seed gated
+&& _loopJaPassing with _challSourceOk=true / _challSrcDiv;
+TrySalvageStarved(iteration, old, oldSc, sourceConfirmed, srcDiv) ->
+Loss("unconfirmed-source") after anchorless. Replay: 2 fires in 445
+corpora (ultra-conservative by design). -> revert source-confirm
+
+H3 position-based hold-decay (a string-staleness variant was tried and
+REJECTED in tuning - position-based is the shipped rule): single
+bookkeeping block before the candidateText= log - candidate changed ->
+reinit (rect = best text-matching H1-passing ja block, else largest
+passing; seen=iteration; div reset); unchanged -> sticky-OR occupancy /
+div max. Decay else-if BEFORE hold-weak-challenger: substantial
+candidate + non-substantial incoming + non-gameover + _candidateSrcKnown
+&& iteration-_candidateSrcSeenLoop >= HoldDecayLoops(3) -> log
+STABLE-DECISION=hold-decayed, adopt fresh (mirrors fresh-read block).
+Replay: 523 fires; weak-hold 98->18 mostly REDIRECTED (texts reappear
+in the GAINED salvage list = same line, new road). -> revert hold-decay
+
+H4 decode disagreement - DecodeDisagreeDiv=0.25; _candidateSrcDiv =
+sticky max over the candidate lifetime of MatchingDiv (div of ja blocks
+matching the candidate via containment-either-way or
+HasCommonPrefix>=6 - matches ALL ja blocks, phantom sources usually FAIL
+H1 so they never pass); challenger div updated at seed + alive growth;
+Loss("decode-disagree") in TrySalvageStarved after unconfirmed-source.
+0.25 keeps the real peak 0.207 (さあどうする) vs oracle 0.20. Falls
+OPEN (0) with no match/div data - corpora recorded before the `d`
+sidecar field (~345/445) are unaffected BY DESIGN; future corpora all
+carry d. Replay: 534 gated. -> revert decode-agree
+
+H5 per-publish frame dumps - Diag-gated _dumpFrame clone (~2.8MB LOH,
+loop-scoped) + _dumpLoop before the ProcessOcrObservationAsync call;
+DumpPublishFrame(text, loop, kind) (lock _dumpLock, ring 80 ->
+%APPDATA%\WunderLanguage\publish-dumps\pub_{n%80:00}_{loop}_{kind}.png
++ index.txt "fn|loop|text"); calls after RecordFire in
+PublishDecisionAsync and at TranslateAndPublishMenuAsync entry; dispose
+in Stop. -> revert publish-dump
+
+GATES (2026-10-27): build BOTH sides 0 err / 17 warn exact baseline
+(base = HEAD 43cdd1a stashed; new restored). catstats A/B full sweep 445
+corpora both sides (Temp\opencode\applog_catstats_base.log vs
+applog_catstats_new.log; analysis ab_diff.py / ab_percorpus.py /
+ab_lost.py / probe_losses.py / probe2.py):
+- KILLS: every known phantom dead in replay - そう思う 1->0, そういえば
+  3->0, そうで 2->0, web それはそういう 1->0; cls-junk 今後は、おまえ
+  56->1, 時時時間終わり 39->2, 時間時間かかった 12->1, 時時時計終わり 12->2,
+  このメニュー 6->0, このメッセージ 3->0, リスクエル / 上記の記事 / うん ボン /
+  うん ホン -> decode-disagree. Residual 1-2 per string = corpora WITHOUT
+  the `d` field (H4 falls open by design).
+- GAINS: 118 distinct salvage texts +166 fires, overwhelmingly REAL
+  lines previously stuck behind junk: 朝までには戻ってくる +14,
+  ブーメランだ！ +10, あっ魔法の力が足りない +8, ＭＡＰを手に入れた +4,
+  アグニム intro +3, 大きなカギを手に入れた +3, この先が、教会の中 +3,
+  村の長老に会いなさい +2, 司祭は、人間ではないわ +2 ...
+- LOSSES: 140 distinct -297 fires (net -131), junk-heavy (the kills
+  above + ウェッジビックス web mash, date-salads, メニューアップデータ
+  ベーションサービス ghost). Real-looking losses attributed per [loss]
+  line: menu-or-title-owns (おじいちゃん / ブラインド variants - PRE-
+  existing gate), blend/continuation/already-fired (お城のまわり,
+  ここのレバー, ゼルダ姫を - PRE-existing), and RE-ROUTED: 全知全能 /
+  ７賢者の血 / カンテラ / とにかく１Ｆ / おじいちゃん still show
+  SALVAGE-publish somewhere in the new log. NEW-gate real cost across
+  ALL 445 corpora: 4 clean lines at decode-disagree (いいねえ。いえ、
+  いいんじゃない。 / ああ、そうですか ティナ / いや、いいけど、いまだ
+  しょう / あ、そうだったんだろうなんだよ リリー) + stutter variants
+  (ティナがレベルアップ x2, フィガロ城) - all oracle-flagged wrong reads
+  (div>0.25 = 82% precision) - plus 2 unconfirmed-source.
+- Totals: simFires 4323->4022 (-301 = junk killed + roads rerouted),
+  simJunk 252->237, SALVAGE-publish 1932->1801, publish-new 1602->1573,
+  publish-weak-hold 108->20, hold-decayed 523, decode-disagree 534,
+  unconfirmed-source 2, junk +1271 (H3 churn - more distinct strings
+  reach salvage and die at the FIRST gate = correct labels, zero
+  publishes).
+- vetoed=0 in the replay logs = the [blocks] block-reject log is
+  Diag-gated and catstats runs Diag OFF; H1's effect is still visible
+  (phantom strings absent from post-veto OCR-result lines entirely,
+  e.g. そう思う 0 lines). Live runs have Diag on -> the line appears.
+Remaining gate: LIVE run - acceptance: zero phantom posts while roaming
+WITH F1 occlusion-hold silent (proves the graphics-hallucination path is
+dead); with Diag on, "[blocks] block-reject vetoed" +
+discard reason=unconfirmed-source / decode-disagree lines appear;
+publish-dumps\ gains a png+index.txt per publish; real item-get lines
+(朝まで/ブーメラン-class) still post.
