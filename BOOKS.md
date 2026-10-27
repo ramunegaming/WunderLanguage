@@ -2756,3 +2756,38 @@ dead); with Diag on, "[blocks] block-reject vetoed" +
 discard reason=unconfirmed-source / decode-disagree lines appear;
 publish-dumps\ gains a png+index.txt per publish; real item-get lines
 (朝まで/ブーメラン-class) still post.
+
+Z2 INVENTORY EVIDENCE + LEAK FIX (2026-10-27, offline portion):
+z2_mine.py/z2_mine2.py scanned all 63 Zelda corpora for the pause screen.
+The 2026-10-08 SVG geometry is now CITED against real frames (the
+"unlocks when cited" condition is met): item-name box (0.666,0.070,
+0.295,0.187) holds カンテラ/ブーメラン/（１）カンテラ, pendant
+(0.693,0.313) ペンダント, DO commands (0.048,0.669) がっぐ…ひっぱる /
+よむ / はなす, EQUIPMENT (0.688,0.673) reads as Latin (Ｅａｕｌｐｔｉｃｈｉ /
+ＥＧＵＩＰＭＥＮＴ) = passes untranslated, ITEM area = sprites (invisible to
+OCR). Current behavior: the MENU road already fires the joined screen
+correctly (menu-fire:MENU 'カンテラ\nペンダント\n\n…かっくはひっぱる\nよむ
+はなす' + menu-update on selection change, right category); the dialogue
+road leaked it LIVE 3x (publish-weak-hold '（１）カンテラ' in two corpora +
+'… カンテラ カンテラ'). Root cause in C2 HeldByStableMenu: candidate
+（１）カンテラ (7ch) vs row カンテラ (4ch) - equality no, fragment no (row
+shorter), merged no (row <8 floor): the （１）enumerator defeats all three
+containment rules. FIX (revert z2-menu-decor): rule 4 - remove ALL
+occurrences of a row (>=4ch) from the candidate; if the remainder is
+DECORATION ONLY (DecorOnly: enumerators/digits/punct/whitespace) the menu
+owns it. Content remainders can never hold: 'カンテラを手に入れた！' leaves
+'を手に入れた！'. GATES: build 0/17 exact; constructive proof z2_gate.py -
+positives = all 3 live leaks held (old=False, new=True via decor rule);
+sweep = 3016 recorded dialogue fires x worst-case merged row sets (no
+time co-occurrence = deliberate upper bound): old rules held 47, rule 4
+adds EXACTLY 4 holds = the leaks themselves, zero real dialogue touched;
+catstats full re-run zero delta on every counter (SALVAGE-publish 1801,
+publish-new 1573, publish-weak-hold 20, per-corpus simFires 449) - the
+choke sits behind !\_simMode so sim cannot reach it (C2's original gate
+argument, re-verified empirically instead of assumed).
+5-BOX VIEW (the Z2 spec proper): the inventory feed view - item name as
+the ONLY translated field, other four boxes static chrome, sprites blank
+- is display work in SidePanelWindow and cannot be verified offline.
+Deferring to the bulk live session is also the doctrine-safe order:
+shrinking the MENU bubble to one field now would omit content from the
+feed until a view exists to render the chrome (label over omission).

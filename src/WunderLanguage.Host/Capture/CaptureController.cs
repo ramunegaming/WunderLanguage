@@ -195,10 +195,49 @@ namespace WunderLanguage.Host.Capture
                     if (r == j) return true;                                    // whole menu row as dialogue
                     if (r.Length > j.Length && r.Contains(j, StringComparison.Ordinal)) return true; // growing fragment of a menu row
                     if (r.Length >= 8 && j.Length > r.Length && j.Contains(r, StringComparison.Ordinal)) return true; // merged menu rows
+                    // Z2 decorated-row containment (revert: revert z2-menu-decor):
+                    // candidate = a menu row plus enumerator/punct/digit/whitespace
+                    // decorations ONLY - ('（１）カンテラ', '… カンテラ カンテラ'
+                    // vs row 'カンテラ'; both escaped live as publish-weak-hold).
+                    // The remainder must strip to nothing, so a sentence that
+                    // merely mentions a menu word stays safe: 'カンテラを手に
+                    // 入れた！' leaves 'を手に入れた！' = content -> never held.
+                    if (DecorOnly(RemoveAll(j, r))) return true;
                 }
             }
             catch { }
             return false;
+        }
+        // Decor set for the Z2 menu-own rule: enumerators, punctuation,
+        // digits, whitespace - everything that decorates a menu row without
+        // adding content.
+        private static bool DecorOnly(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return true;
+            foreach (char c in s)
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                if (c >= '0' && c <= '9') continue;
+                if (c >= '０' && c <= '９') continue;
+                switch (c)
+                {
+                    case '…': case '.': case '．': case '、': case '。': case '，': case ',':
+                    case '「': case '」': case '『': case '』': case '（': case '）':
+                    case '(': case ')': case '・': case '｜': case '|': case '／': case '/':
+                    case '-': case '－': case '—': case '〜': case '~': case '！': case '!':
+                    case '？': case '?': case '：': case ':': case '◆': case '●': case '○':
+                    case '★': case '☆': case '＃': case '#': case '＊': case '*':
+                    case '"': case '\'': case '“': case '”': case '´': case '`':
+                        continue;
+                }
+                return false;
+            }
+            return true;
+        }
+        private static string RemoveAll(string s, string token)
+        {
+            if (string.IsNullOrEmpty(token)) return s;
+            return s.Replace(token, string.Empty, StringComparison.Ordinal);
         }
         private void ProposeVocab(string ja, string kind)
         {

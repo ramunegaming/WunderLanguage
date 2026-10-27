@@ -369,3 +369,23 @@ silent (proves the graphics-hallucination path is dead); Diag on ->
 "[blocks] block-reject vetoed" + unconfirmed-source/decode-disagree
 loss lines present; publish-dumps\ files appear per publish; real
 item-get lines still post.
+
+2026-10-27 - Z2 inventory, offline portion (no live play needed).
+Evidence mined (z2_mine/z2_mine2/z2_gate over all 63 Zelda corpora):
+the 2026-10-08 inventory SVG geometry CONFIRMED against real frames
+(unlock condition met - item-name/pendant/DO/EQUIPMENT zones all
+aligned; item box holds カンテラ/ブーメラン/（１）カンテラ); the MENU
+road already fires the screen correctly (menu-fire + menu-update on
+selection change); the dialogue road leaked it LIVE 3x via
+publish-weak-hold ('（１）カンテラ' x2, '… カンテラ カンテラ'). Fix =
+C2 predicate rule 4, decorated-row containment (revert:
+revert z2-menu-decor): candidate minus ALL occurrences of a menu row
+(>=4ch) must leave DECORATIONS ONLY (enumerators/digits/punct/space) -
+content remainders never hold. Gates: build 0/17 exact; 3/3 live leaks
+held (constructive proof); 3016-fire worst-case sweep adds EXACTLY 4
+holds = the leaks, zero real dialogue; catstats full re-run ZERO DELTA
+on every counter (choke is !_simMode - sim unreachable, now verified
+not assumed). REMAINS FOR THE BULK LIVE SESSION: the 5-box inventory
+feed view (item name = only translated field) - display work that
+cannot be verified offline, and shrinking the MENU bubble before the
+view exists would omit content (label over omission).
