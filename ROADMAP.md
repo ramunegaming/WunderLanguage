@@ -192,8 +192,8 @@ Ring of recent plain bubbles with element refs: extending fires revise, covered 
 
 ## Planned
 
-### P2. Dictionary experiment (Step 3) — EXECUTED 2026-10-18, concluded inconclusive-by-design
-The v2 dev-only beam-diversity rule yielded 0 corrections / 0 damages across the truth set — gate safe, nothing worth shipping. Residue: 6 untracked tools/p2_*.py scripts. Side-question open: true-beam re-OCR on the ~36 mapped crops, or declare done and move to P3.
+### P2. Dictionary experiment (Step 3) — EXECUTED 2026-10-18, concluded inconclusive-by-design — ✅ **CLOSED 2026-10-28**
+The v2 dev-only beam-diversity rule yielded 0 corrections / 0 damages across the truth set — gate safe, nothing worth shipping. Residue: 6 untracked tools/p2_*.py scripts. Side-question RESOLVED (offline, per the standing recommendation): declare done, move to P3 — the re-OCR option is priced out by its own evidence (0 corrections/0 damages across the truth set = nothing convicts a build).
 
 ### P3. Missed-line sweep + LM-fluency gate (Steps 4–6)
 Re-price singleton residue with truth set; build only what evidence convicts.
@@ -218,7 +218,7 @@ Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/
 - Wedge/Biggs official English forms (Matthew precedent: manual wins).
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
-- P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done (recommended: declare done, move to P3).
+- P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done — **RESOLVED 2026-10-28: declare done, moved to P3** (recommended option; 0/0 truth-set evidence never convicted the re-OCR build).
 - Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
 - Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
 - Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
@@ -389,3 +389,46 @@ not assumed). REMAINS FOR THE BULK LIVE SESSION: the 5-box inventory
 feed view (item name = only translated field) - display work that
 cannot be verified offline, and shrinking the MENU bubble before the
 view exists would omit content (label over omission).
+
+2026-10-28 - F2x offline portion (FFVI wrap, no live play needed).
+Measurement only, no code change. (1) Battle UI VALIDATED on the latest
+full catstats sweep (445 corpora, BYGAME ffvi): recBattle=1251 battle
+stamps vs junkBattle=1 = 0.08% junk, battleLoops=299, bothLoops=80 =
+the known battle-command-window-mints-MENU overlap class (pre-existing,
+label-only per C1 Option 1), bFfviProbe=1 flagged on 16 corpora =
+observe-only Classify probe, matches the BOOKS probe notes (true battle
+frames, zero engine actuation). (2) Title = NO OFFLINE EVIDENCE POSSIBLE:
+tools/t2_title_mine.py over all corpora gives ffvi 0 title-frame matches
+/ 126 corpora, and f2x_title.py proves why - FFVI sessions load
+save-states (first frames = blank/in-game; the only "title-ish" hits are
+Snes9x emulator-menu garble). Ungated false-positive side is clean
+(section C = 0 across all 3,632 dialogue reads), so the HasJapanese
+generalization has a safe basis but NO positive frames to gate on -
+blind coding rejected. Needs ONE cold-boot FFVI capture in the bulk
+session, then rerun the miner and decide. (3) Empty-TITLE anomaly
+CLOSED as historical: 21 empty-ja menu-fire:TITLE records (ffvi 18, all
+2026-09-18..10-09; zelda 3 = 10-10 + 10-22 x2) trace to the quiet-era
+payload (0,"",false); fixed by 1cd1125 (2026-10-22 04:14, "TITLE posts
+carry JA body"); post-fix corpora 10-23/10-24 = 8/8 non-empty, zero
+recurrence, and the two 10-22 empties came from session 0405 started
+nine minutes BEFORE the fix commit. The 7806 FullTitle fallback already
+covers the EN side. No action. (4) FFVI menu/inventory census (69
+menu-fire + 29 menu-update / 126 corpora): joins sane (gil/party/reward
+rows), battle-window rows in MENU = bothLoops class again; a focused
+FFVI inventory/menu session is still owed. REMAINS LIVE-GATED: cold-boot
+title capture, intro on a fast first pass (READ-limited), first-town
+coverage, shop (P6 signal), focused inventory/menu session.
+
+2026-10-28 - PM1 offline portion (measurement only, no code change).
+Corpora are THIN: 3 PM files / 987 lines fed (BYGAME papermario):
+stableMenuLoops=5, transient=131, battle=1 loop, simFires=73,
+recPub=58 (junkPct 1.7%), recMenuM=5, recDlgDec=58 / recDlgFire=55.
+Intro stability stands on the prior measurement (W2: intro measured
+28/28 sim). Title: t2_title_mine = 0 PM title frames (corpora start
+post-title) - same cold-boot capture as FFVI in the bulk session. The 5
+recorded PM menu fires: 2 real ('さて今日は．．．', GAME OVER + save
+rows), 2 contaminated joins (web class: 生活保険/２０１８年１２月２０日
+salad welded to real Rogueport text) = the capture-occlusion class F1
+now names, not a menu defect. Battle/menu/decision coverage (W2) needs
+the focused no-focus-loss session = bulk live. PM battle glossary EN
+confirmations stay blocked on the same session.
