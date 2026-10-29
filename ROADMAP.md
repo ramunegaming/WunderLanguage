@@ -3,10 +3,10 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## HANDOVER STATE (2026-10-26 — read this first)
+## HANDOVER STATE (2026-10-26 — refreshed 2026-10-29, read this first)
 
-> Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-10-26 F1-F4 occlusion/miss/decision batch (gated, committed); BOOKS tail = full root-cause chains + A/B numbers. **Live gate owed** (reopen emulator/app).
+> Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail; refreshed 2026-10-29 with the consolidated **BULK LIVE SESSION CHECKLIST**). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
+> Newest ledger entries: ROADMAP tail = 2026-10-29 P5/P7/P8 pricing (before it P4 re-mine + P3 closed); BOOKS tail = full root-cause chains + A/B numbers. **Offline queue DRAINED 2026-10-29 — the only remaining gate = the bulk live session (checklist in the checkpoint) + user calls (R2/R3/R4 picks, mash-memo expiry go, P6 shop-play signal).**
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -198,30 +198,30 @@ The v2 dev-only beam-diversity rule yielded 0 corrections / 0 damages across the
 ### P3. Missed-line sweep + LM-fluency gate (Steps 4–6) — ✅ **OFFLINE DONE 2026-10-29** (repriced against truth set, zero builds convicted; full entry at 2026-10-29 below; LM-fluency gate NOT convicted, phantom source SOLVED)
 Re-price singleton residue with truth set; build only what evidence convicts.
 
-### P4. Loop payoffs (Step 9)
+### P4. Loop payoffs (Step 9) — ✅ **OFFLINE DONE 2026-10-29** (re-mine + promotion review complete; nothing qualifies for append — zero measured spread; entry at 2026-10-29 below)
 Re-mine and promotion review with Paper Mario data; profile tuning only on measured spread.
 
-### P5. Decision boxes + sprites (Step 10)
+### P5. Decision boxes + sprites (Step 10) — **OFFLINE PRICED 2026-10-29** (no build convicted: PM pointing-hand evidence still absent — 0/52 decHit in the now-in-hand PM data; zero covered misses; build stays queued for live, full numbers in the 2026-10-29 P5/P7/P8 entry below)
 Positioned boxes, Zelda sprite map, PM pointing hand — queued behind Paper Mario data.
 
 ### P6. Shop UI
 FFVI battle-polish order otherwise intact.
 
-### P7. Zelda-long latency exceedance
+### P7. Zelda-long latency exceedance — **OFFLINE PRICED 2026-10-29** (Zelda frame p99 = 12.1s vs 3.4–9.9s peers measured; no Zelda-specific stage regression found — FFVI rec max exceeds Zelda's; tail = time outside det+rec; investigation stays with the profiling session, numbers in entry below)
 Pre-existing (stash-proven, not a regression). Investigate when profiling time comes.
 
-### P8. Display-behavior queue (from ChatGPT taxonomy review, 2026-10-14)
+### P8. Display-behavior queue (from ChatGPT taxonomy review, 2026-10-14) — **ALL FOUR CLASSES PRICED 2026-10-29: no build** (transient-numeric miss set empty — junk gate owns it 105/105 dead, 0 published; fade class unpriceable offline from garble (B10-consistent singletons + salvage covers); per-line replacement = mostly normal dialogue advance; timed-vs-advance unmeasurable at ~1s OCR cadence. Entry below.)
 Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/titles/name-entry/singleton-glimpse (B10-T2, B12, title/menu/battle paths). Queued, unmeasured: fading text, moving/animated text + transient notifications (damage numbers, pickups), per-line replacement, timed-vs-advance-controlled distinction. Each needs a priced miss set before any build.
 
 ## Open questions (restored 2026-10-15 - blocks FFVI names work until answered)
-- Mash memo policy: keep stale / fast-track update / expire to empty (recommended: expire).
-- Wedge/Biggs official English forms (Matthew precedent: manual wins).
+- Mash memo policy: **RECOMMENDATION FIRMED 2026-10-29 = expire to empty** (user confirm pending before the wipe). Evidence: memo/ffvi.json = 9 pairs / 538 B, written 2026-10-13 under provider "DeepL (unreliable-offline fallback)"; entries include garble-key junk ('ただから'→"Just Because" — a garble of たたかう=Fight, which the same memo also holds correctly) and dialogue leaking into battle-name rows ('またな。'→"See you later."). The provider guard keeps the file inert while the primary provider is active, but it would serve junk in any future fallback window; fast-track keeps the bad keys; expire = one 9-entry relearn against a permanent correctness risk, and matches the Loop-3 "deliberately unseeded memo" doctrine (relearns live, cap 200).
+- Wedge/Biggs official English forms: **RESOLVED 2026-10-29 → "Biggs" / "Wedge"** (Matthew precedent: manual wins — the 2026-10-09 pin rule is literally "manual differs from Woolsey, manual wins", and Vicks IS the Woolsey form). Evidence: ウェッジ = "Wedge" in every official source; ビックス = "Vicks" only in the 1994 Woolsey NA localization (SNES script + official Player's Guide), "Biggs" in every official re-release since (incl. the official FFVI Advance EN manual) and in Japanese materials that use English text; series canon = Star Wars Biggs Darklighter/Wedge Antilles (FFVI is the sole game spelling it ビックス). Not yet pinned in code (BOOKS: "absent from manual pages — no source") — sources cited here; pin ready when FFVI names work resumes.
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
 - P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done — **RESOLVED 2026-10-28: declare done, moved to P3** (recommended option; 0/0 truth-set evidence never convicted the re-OCR build).
 - Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
 - Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
-- Watch items: one crash-truncated tail gzip in corpus dir (not blocking); one orphaned PM miner file under pre-paren versioned id (negligible); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
+- Watch items: two crash-truncated corpus gzips (Snes9x_1.60_20261019_035824 + one Zelda_no_Densetsu tail file; scanners skip them cleanly, not blocking); one orphaned PM miner file under pre-paren versioned id (negligible — but see P4(5): it can defeat the ≥2-file promotion gate if an identical pair lands in both PM files); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
 
 ## SCALING DOCTRINE (standing policy, 2026-10-22, user-set)
 Two tiers: (1) THE FLOOR - a universal game-blind core strong enough that
@@ -513,3 +513,108 @@ future runs: probes are whitespace-insensitive but NOT OCR-fidelity-
 insensitive; a manual context pass is required before claiming
 'still-miss' (1 of the 4 claimed miss rows plus 1 fidelity row were
 matcher artifacts; 3/3 survive as genuine residue).
+
+2026-10-29 - P4 offline (loop payoffs: re-mine + promotion review with
+Paper Mario data; measurement only, no code change).
+(1) Re-mine (tools/mine-confusion.py --min-count 2 over all 5 miner
+files): 3,365 substitutions / 394 distinct / 144 candidates not already
+in ConfusionPairs. PM contributed 3 pairs total, all one family
+('おじようさん．．．…' normalization), split across the two PM files
+(Dolphin_2609a-embedded id + ペーパーマリオRPG_(G8MJ01 = the known
+orphan-file split from the ResolveGameId id bug).
+(2) Reviewer verdict on appends: NOTHING QUALIFIES. The only
+multi-game, non-artifact class is punctuation: (…,．) 232 x3 files and
+(…,・) 216 x3 files. Everything below is either single-game heavy-garble
+ALIGNMENT artifacts (the たたかうひっさつわざ family - う/ら, た/だ,
+ね/わ, れ/わ = the diff aligner distributing mismatch across garble;
+appending would corrupt real text) or unsafe global swaps (ホ/ポ 92x1,
+ビ/ピ 19x1 would wreck legitimate ホ/ピ words in unseen strings).
+(3) Measured-spread gate (P4's own rule) = 0. C#-parity fold
+(union-find min-char over EXISTING ∪ proposed) applied to all 3,374
+fired texts from the full 445-corpus replay: ZERO twin pairs merge
+under the proposed folds that do not already merge under the existing
+set - no dup/escape today is attributable to ．/…/・ variance, so no
+append. (Scope note: equality-level merges within corpus; the cost-0.4
+alignment path at CaptureController:4907 was not separately priced -
+latent, unmeasured, unneeded.)
+(4) Promotion review: _global.json = 88 pairs, fully spot-checked =
+100% sane text corrections (ハイラル/人口→入口, 賢者, 封印, セーブ,
+ボタン, ゼルダ, ルピー…), ZERO hallucinated/phantom values → the
+>=2-file agreement gate is not poisoned; PM's 3 pairs correctly NOT
+promoted (keys differ across its two files).
+(5) Gate-risk found, no action taken (folds into the ResolveGameId
+normalize-id fix already awaiting go in BOOKS): PromoteGlobalCorrections
+counts one FILE = one vote, so the orphaned PM duplicate file means an
+identical pair landing in BOTH PM files would self-promote to _global
+from a single real game. Not triggered today. When the id fix goes:
+merge/delete the orphan.
+(6) Profile tuning: none - PM corpora too thin (3 files / 987 lines) to
+measure a spread; tune only when a measured spread exists.
+
+2026-10-29 - P5/P7/P8 offline pricing (measurement only, no code; miss
+sets priced over all 445 corpora + the full new-log replay).
+
+P5 - decision boxes + sprites. Corpus census: DECISION fires = 17
+(FFVI 11, Zelda 6, PM 0) + 2 FFVI DECISION updates; MENU fires = 111
+(FFVI 40, other 33, Zelda 33, PM 5). dec-probe over the full replay:
+191 decHit=True / 2,233 decHit=False = 7.9% overall - per game: Zelda
+21.9% (106/484), other 6.2%, FFVI 4.0% (60/1485), PM 0.0% (0/52).
+Top fail gates: blocks<3 923, content 727, options-count-0 660,
+prompt-bracket 545, option-nature 462, prompt-space 317. Verdict: NO
+BUILD.
+  - PM pointing hand: the PM data this was queued behind is now in
+    hand and still shows 0/52 decision hits (thin corpora, 987 lines)
+    - the convicting evidence does not exist yet; needs the focused
+    no-focus-loss PM session (bulk live).
+  - Zelda sprite map / positioned boxes: the truth set's 2 decision
+    rows are 174623 (FIRE-NOW under current binary) + 175728 (session
+    absent from corpus dir) = zero covered misses attributable to
+    missing positioning/sprites; display geometry is live-verifiable
+    only anyway.
+  - The decision road itself is healthy: fast-fail gates, 7.9% hit
+    rate, PM's 5 menu fires remain the PM1 real+contaminated picture.
+
+P7 - Zelda-long latency. Offline profile (det/rec exist only on newer
+records; frame interval = wt delta between OCR records, <60s):
+  game    det p50/p99/max      rec p50/p99/max     frame p50/p99/max
+  ffvi     152/1273/1678        328/5131/17176      1070/9880/23402
+  zelda    112/521/14770        328/1543/15585       918/12056/57295
+  pm        77/160/758          222/1493/8636        781/3365/39485
+  other    114/1242/9211        165/4291/6172        775/3614/41603
+Reading: p50 frame ~= det+rec+capture ~= 900-1100ms in every game.
+The Zelda long tail is real as measured (frame p99 12.1s vs PM 3.4s /
+other 3.6s / FFVI 9.9s), but p99 frame >> p99 det+rec (2.1s) and FFVI
+rec max (17.2s) exceeds Zelda's (15.6s) = the tail is time OUTSIDE the
+det/rec stages (dwell/skip/stage work), not a Zelda-specific stage
+regression. Verdict: numbers recorded, NO BUILD - stays queued for the
+profiling session; the ~1s loop cadence cannot split the tail any
+further offline.
+
+P8 - display-behavior queue, all four classes priced:
+(a) transient notifications (damage numbers/pickups) = numeric-only
+    class: tiny - FFVI 3 distinct/3 occ, Zelda 20/110, other 24/156
+    (mostly title dates/labels), PM 0. Fate over the full replay:
+    103 dead:junk + 2 dead:menu-or-title-owns, ZERO published.
+    Miss set = empty; the junk gate already owns the class. NO BUILD.
+(b) fading / single-glimpse: distinct-text singleton fraction = 61-69%
+    (len>=4) and 59-71% (len>=10) per game - consistent with B10's
+    64-71% census; garble inflates it and cannot be separated from
+    real fades offline, and the salvage road posts starved singletons
+    (1,801 in this replay) so single-glimpse text does publish.
+    NO BUILD - any real-fade subset must be priced live.
+(c) per-line replacement: same-rect, no-containment text swaps between
+    adjacent records = 1,393 total (zelda 813, ffvi 279, other 223,
+    pm 78). Samples show exactly two sources: OCR block jitter on a
+    fixed rect, and full-screen dialog rect (0,105,667,384) line
+    advance (PM 'そういえば、' -> 'そういうことはないですが、' -> '数多く、')
+    = normal dialogue advance, not a defect. Advance vs forced-
+    replacement cannot be split offline (needs live timing). NO BUILD.
+(d) timed-vs-advance: NOT MEASURABLE from corpus clocks - prefix-growth
+    events n=290 p50 1051ms vs jump-in n=6000 p50 979ms: the ~1s OCR
+    loop cadence swamps typewriter reveal speed (~30-80ms/char), so
+    the two arrival modes are indistinguishable in wt deltas. Queued
+    with empty miss set until video-level/live evidence exists.
+
+Data note: 2 corpus gzips are crash-truncated (Snes9x_1.60_20261019_
+035824, a Zelda_no_Densetsu tail file) - scanners skip them cleanly;
+watch item updated from one to two files.
