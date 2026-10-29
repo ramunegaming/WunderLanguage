@@ -195,7 +195,7 @@ Ring of recent plain bubbles with element refs: extending fires revise, covered 
 ### P2. Dictionary experiment (Step 3) — EXECUTED 2026-10-18, concluded inconclusive-by-design — ✅ **CLOSED 2026-10-28**
 The v2 dev-only beam-diversity rule yielded 0 corrections / 0 damages across the truth set — gate safe, nothing worth shipping. Residue: 6 untracked tools/p2_*.py scripts. Side-question RESOLVED (offline, per the standing recommendation): declare done, move to P3 — the re-OCR option is priced out by its own evidence (0 corrections/0 damages across the truth set = nothing convicts a build).
 
-### P3. Missed-line sweep + LM-fluency gate (Steps 4–6)
+### P3. Missed-line sweep + LM-fluency gate (Steps 4–6) — ✅ **OFFLINE DONE 2026-10-29** (repriced against truth set, zero builds convicted; full entry at 2026-10-29 below; LM-fluency gate NOT convicted, phantom source SOLVED)
 Re-price singleton residue with truth set; build only what evidence convicts.
 
 ### P4. Loop payoffs (Step 9)
@@ -432,3 +432,84 @@ salad welded to real Rogueport text) = the capture-occlusion class F1
 now names, not a menu defect. Battle/menu/decision coverage (W2) needs
 the focused no-focus-loss session = bulk live. PM battle glossary EN
 confirmations stay blocked on the same session.
+
+2026-10-29 - P3 offline (missed-line sweep + LM-fluency gate repriced
+against the truth set; measurement only, no code change). Method: all
+40 eval/truth.jsonl rows replayed against the full-corpus catstats logs
+(base = pre-H-batch, new = current binary, z2 identical to new; base ==
+new on every truth row - the H-batch changed junk kills, not truth
+outcomes). Fire attribution = SALVAGE-publish inline text +
+candidateText -> STABLE-DECISION=publish-* adjacency, whitespace-
+insensitive 10-char probes, plus a manual context pass for matcher
+misses (probe limits noted in the verdict).
+
+(1) Truth census: 18 miss rows (17 miss-complete + 1 miss-menu) = the
+largest class at 45% of the set; 6 false-pub, 5 withheld-partial
+(correct silence), 4 fidelity-error, 3 true-negative, 2 hit, 1 stale,
+1 dup.
+
+(2) Miss repricing: 15/18 covered by corpora (3 sessions absent from
+the corpus dir = n/a: 174916_929, 175728_187, 184115_544). 12/15 NOW
+FIRE under today's binary: the whole heldout Zelda opening-crawl
+family (225839/225902/225914/225927/225944/225956), 230057 cutscene,
+230036, decision box 174623, shop line 174402, 185246, and 175205_983
+(manual context proves a growth-fast-fresh publish at loop 3046 of the
+grown superset; the probe matcher failed on truth-vs-OCR punctuation
+variance - matcher artifact, not an engine miss).
+
+(3) The 3 covered residuals are ALL no-build classes:
+  a. 183048_555 - two-box OCR blend: engine holds by design
+     (STABLE-DECISION=hold-blend) and salvage posts the fragment
+     '「俺がやる。' (label over omission honored); recovery needs
+     sub-line geometry that does not exist (D1: OCR flattens
+     multi-line boxes, unsplittable today).
+  b. 182352_886 - OCR fidelity blend (デート/チルシェ/一般的に misreads)
+     -> suspect-hold -> continuation death. The truth note itself
+     classes it dictionary/beam - P2 already priced that surface at 0
+     corrections. Vision class, no engine build.
+  c. 184850_950 - FFVI intro-crawl never OCRs (fast auto-advance):
+     the known READ-limited class (user speed, not engine); live gate.
+
+(4) False-pub rows = phantom family, SOURCE SOLVED. The phantom
+('外国よりうつわをみつけたパートのレベルが１つあがった トのうつわをみつけた' and
+siblings) exists in corpora as the RAW field of live OCR records over
+textless map/overworld frames - blocks beneath are dot-garbage
+('．．．' at conf 1.0): the live rec-beam hallucinated fluent text from
+game graphics (the H-batch root cause, now corpus-proven: 10-07_204617
+loop 1664, 10-08_203005 loops 1782-1798, 10-10_171811 loops
+1924-1940). Measurement bug found and corrected during the hunt:
+corpus JSON escapes Japanese as \uXXXX, so raw-line substring scans
+always miss (two early 'absent from every corpus' readings were void;
+recovered with decoded walks). Replay today: exactly ONE fire - corpus
+10-07_204617 whose blocks carry d=0/4167 (H4 structurally open, the
+documented no-sidecar fallback); every other family appearance is
+KILLED (menu-or-title-owns x3, blend x2, already-fired x1), including
+the modern 10-23 instance (d-bearing). All captures 10-23/24/27 carry
+d on 100% of blocks -> H4 armed going forward. Phantom recurrence
+strings ('外国よりうつわ…', '外側に何かようかのう…') join the live-gate
+probe list. No build.
+
+(5) Fidelity row 184638_835 re-checked manually: session covered; the
+panel-text family fires in replay (a variant died already-fired = its
+twin already published) while the truth-correct 'ケフカ「魔導…' NEVER
+OCRs in any corpus (魔導/ヒッヒッ never read) = the beam/dictionary
+fidelity surface P2 already priced to zero. No build.
+
+(6) LM-fluency gate: NOT CONVICTED. [loss] reason census over 445
+corpora: base 10,672 lines vs new 11,988 - junk 1479->2750 (H-batch
+kills), already-fired 2299->2097, anchorless 1878->1883,
+menu-or-title-owns 1578->1558, continuation 901->734, blend 426->415,
+decode-disagree 0->534 (new gate), unconfirmed-source 0->2, too-short
+48->42, non-ja 24->61, already-shown 106->110 - plus 1,801 starved
+lines that SALVAGE-POSTED (published, not lost). The salvage/
+every-block/H roads now post what the B10-era 3/41/46 singleton census
+counted as residue; a fluency scorer priced ~40% garbage cannot beat
+that funnel. Revisit only on live-gate miss evidence.
+
+P3 verdict: zero builds - every residue class is already shipped
+(H-batch), design-held with label (blend), vision/read-limited
+(fidelity, crawl speed), or gated live. Truth-set replay caution for
+future runs: probes are whitespace-insensitive but NOT OCR-fidelity-
+insensitive; a manual context pass is required before claiming
+'still-miss' (1 of the 4 claimed miss rows plus 1 fidelity row were
+matcher artifacts; 3/3 survive as genuine residue).
