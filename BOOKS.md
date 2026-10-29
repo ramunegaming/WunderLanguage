@@ -2791,3 +2791,50 @@ the ONLY translated field, other four boxes static chrome, sprites blank
 Deferring to the bulk live session is also the doctrine-safe order:
 shrinking the MENU bubble to one field now would omit content from the
 feed until a view exists to render the chrome (label over omission).
+
+## 2026-10-29 - offline queue drain: P3/P4/P5-P8 knowledge (ledger-only batch, no code)
+PHANTOM SOURCE SOLVED corpus-side (full replay evidence in ROADMAP P3):
+the fluent phantom family lives in corpora as the RAW field of live OCR
+records over textless map/overworld frames - blocks beneath are
+dot-garbage ('．．．' conf 1.0): the rec-beam hallucinating off game
+graphics (the 2026-10-27 H-batch root cause, now corpus-anchored:
+10-07_204617 loop 1664, 10-08_203005 loops 1782-1798, 10-10_171811
+loops 1924-1940). Replay = exactly ONE fire, in the pre-d corpus
+(blocks d=0/4167 = H4 structurally open there); every other appearance
+killed (menu-or-title-owns x3, blend x2, already-fired x1), modern
+d-bearing instance included; 10-23/24/27 captures = 100% d coverage.
+Standing recurrence probes: '外国よりうつわ…', '外側に何かようかのう…' -
+a d=0 fire on these = report, never tune.
+MEASUREMENT TRAPS (all cost real time this batch): (1) corpus JSON
+escapes Japanese as \uXXXX - raw-line substring scans over corpus files
+MUST json-decode first (two 'absent from every corpus' readings were
+void); (2) truth-set probes are whitespace-insensitive but NOT
+OCR-fidelity-insensitive - a claimed 'still-miss' needs a manual
+context pass (2 of 5 claims were matcher artifacts: 175205_983 fired as
+growth-fast-fresh with OCR punctuation the truth lacks; 184638_835's
+panel family fires while truth-correct 魔導 never OCRs); (3)
+'[catstats] corpus=' headers print at the END of their section; (4)
+two corpus gzips are crash-truncated and scanners must skip cleanly
+(Snes9x_1.60_20261019_035824 + one Zelda_no_Densetsu tail).
+CONFUSIONPAIRS / PROMOTION: ConFoldText is comparison-only (all 11
+callers = twin/absorb/history/containment), so pair appends are
+low-risk but stay measured-spread-gated - the only multi-game,
+non-artifact candidates ((…,．) 232 x3 files, (…,・) 216 x3 files)
+merge ZERO extra twins across 3,374 fired texts under C#-parity fold
+=> nothing appended (144 candidates reviewed total; the rest =
+single-game garble-alignment artifacts or unsafe global swaps like
+ホ/ポ, ビ/ピ). PromoteGlobalCorrections counts one FILE = one vote, so
+the orphaned PM duplicate file (two ids, known ResolveGameId bug) could
+self-promote a single-game pair to _global if an identical raw lands in
+both files - not triggered today (PM keys differ across its two files;
+_global = 88 pairs all sane, zero hallucinated values). Fold the orphan
+merge into the id-normalization fix when it goes.
+NAMES: official FFVI English = "Wedge" (every source) + "Biggs" (every
+official re-release and JP materials that use English text; 'Vicks' =
+1994 Woolsey only) => per the 2026-10-09 rule "manual differs from
+Woolsey, manual wins" the pair is Biggs/Wedge - ready to pin when FFVI
+names work resumes. Mash memo (memo/ffvi.json) = 9 pairs under provider
+'DeepL (unreliable-offline fallback)' incl garble-key junk ('ただから'
+-> "Just Because" sitting next to the correct たたかう -> "Fight") and
+dialogue leaking into battle-name rows ('またな。' -> "See you later.")
+=> policy recommendation: expire to empty (user go pending).
