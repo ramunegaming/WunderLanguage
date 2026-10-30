@@ -2838,3 +2838,60 @@ names work resumes. Mash memo (memo/ffvi.json) = 9 pairs under provider
 -> "Just Because" sitting next to the correct たたかう -> "Fight") and
 dialogue leaking into battle-name rows ('またな。' -> "See you later.")
 => policy recommendation: expire to empty (user go pending).
+
+2026-10-30 BULK LIVE SESSION (5 launches; user played all legs; keep-log.armed
+sentinel VALIDATED - 5 session banners recovered from app2.log with zero
+loss; lesson: taskkill /F finalizes nothing - the Zelda corpus gzip is the
+THIRD crash-truncated file (recoverable incrementally: 388 lines incl the
+menu fires), harvest/validate corpus BEFORE any forced kill).
+THREE DEATH CLASSES, all SILENT (zero error chips across 1.75M log chars):
+(1) FFVI leg3 = sidecar HTTP accept-loop death 14:01:21 - WinError 64 inside
+asyncio accept_coro ("Task exception was never retrieved" - nobody owns the
+listener), OCR POSTs then connection-refused 127.0.0.1:8000 for 5+ min,
+transport-hold counter 1->120, process stays alive (pressure sidecar:idle)
+so nothing watched it; window handle valid until user quit 14:07:11 (the
+'window died' was the user closing Snes9x AFTER giving up). Context: GPU
+96-100% util, CAT generation 38.1s/20.7s on that leg. => the transport-death
+class has NO E-code surface - holds are logged, never surfaced to the feed.
+(2) PM leg4 = translation circuit open (OfflineTranslationProvider 30s
+timeout x3 while GPU u100% / VRAM 5663/6144MB; health probe failed) ->
+'[g1] circuit open' -> LOOP HOLD (83/115 holds, ocr=25) = CAPTURE FREEZES on
+translator failure, and the jp-first bubble (スターストーンと魔法の地図...) never
+EN-retried - stuck at the pending marker forever. User directive 2026-10-30:
+capture must not depend on EN - keep capturing + posting JA-pending while
+EN retries in background and late-fills the bubble when it lands.
+Capture-continue + pending-retry = approved design, next build (also surfaces
+the circuit as a chip - second silent class).
+(3) TITLE legs B1/B2 = CheckTitleEpisode.Match() requires HasJapanese(block)
+AND pack-FullTitle containment, so latin-logo titles (FFVI 'FINAL FANTASY VI'
+logo shot 13:53:25, PM 'Paper Mario' logo) can NEVER produce evidence -
+zero [title] episode lines in both legs (not a veto: the detector never
+ran). User title spec 2026-10-30: post the TITLE TEXT ONLY - FFVI dragon +
+flame effects over the text are irrelevant ('no matter the effect or
+business of the title, we just want the text itself'); PM's flashing
+start-prompt line under the logo = EXCLUDE ('additional text too complex and
+confusing, not reliable - focus purely on the title text'). Latin-title
+path = price over captured title frames before any build (the HasJapanese
+gate is deliberate - B13/T2 history - do not just delete it).
+Z2 5-box v1 LIVE-VERIFIED (screenshot: outline + 5 boxes + item live-switch
+ブーメラン->カンテラ + EN strip Boomerang; pack-constant chrome correct). v2
+spec (user 2026-10-30): (1) BOTTLE STATE - corpus shows the びん-selection
+fire as ACTION-ONLY rows ('．．．かっくはひっぱる ．．． / よむ はなす' - NO びん row,
+NO ペンダント, NO ＥＧＵＩＰＭＥＮＴ; ペンダント-gated detection therefore failed and
+it fell through to the generic menu path) -> detect this signature and
+render mid+equip as ONE tall box, 1 frame, no animation; every row present
+is chrome. (2) EN MIRROR - below the separator duplicate the whole box grid
+in EN: live item EN top-right, pack-constant action EN bottom-left ('to
+shoulder  to read  to speak' / 'to pull' - user's canonical forms, NOT the
+translator's '...and carry it, pull it...' / 'Reading and speaking'),
+'Pendant' mid, EQUIPMENT unchanged. Normal-state corpus confirms EN
+row-alignment already carries 'Boomerang'/'Pendant'/'Cantera'.
+SESSION OUTCOMES: phantom probes DEAD (外国よりうつわ… = 0 hits; 外側に何かようかのう…
+appeared once inside OCR garbage at 14:27:04 and was sent-deduped - never
+published; no d=0 fire). DECISION = 1x (さあ、どうする？, 3 rows, no
+question-cap); spawn-choice (2 options, no question row) not decision-shaped
+= D1 class. B16b NOT met - zero runtime absorb lines (only build/miner
+strings). Miscapture evidence (user frustration: 'obvious miscaptures'):
+フスターソード = OCR マ->フ misread with EN faithful to the WRONG JA (same
+string correct later as マスターソード) = recognition variance, not translation
+hallucination - pairs harvested in corpus.

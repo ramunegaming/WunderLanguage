@@ -6,7 +6,7 @@ Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — onl
 ## HANDOVER STATE (2026-10-26 — refreshed 2026-10-29, read this first)
 
 > Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail; refreshed 2026-10-29 with the consolidated **BULK LIVE SESSION CHECKLIST**). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-10-29 P5/P7/P8 pricing (before it P4 re-mine + P3 closed); BOOKS tail = full root-cause chains + A/B numbers. **Offline queue DRAINED 2026-10-29 — the only remaining gate = the bulk live session (checklist in the checkpoint) + user calls (R2/R3/R4 picks RESOLVED 2026-10-29, mash-memo expiry DONE; still open: P6 shop-play signal).**
+> Newest ledger entries: ROADMAP tail = 2026-10-30 bulk live session results + build queue; BOOKS tail = 2026-10-30 session root causes (three silent deaths, title latin-gate, Z2 v2 spec). **Bulk live session EXECUTED 2026-10-30 — next = the offline build queue (Z2 v2, transport E-code/watchdog, circuit capture-continue, latin-title pricing); still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -618,3 +618,22 @@ P8 - display-behavior queue, all four classes priced:
 Data note: 2 corpus gzips are crash-truncated (Snes9x_1.60_20261019_
 035824, a Zelda_no_Densetsu tail file) - scanners skip them cleanly;
 watch item updated from one to two files.
+
+2026-10-30 - bulk live session EXECUTED (5 legs, user-played; keep-log.armed
+validated across all 5 launches; R2-R4 matrix locked: Okami / NieR+KH3D /
+Yakuza 0; mash memo expired 9->0). Full evidence + three silent-death root
+causes in BOOKS tail "2026-10-30 BULK LIVE SESSION". Outcomes: B1/B2 titles
+NOT MET (latin-logo titles cannot fire CheckTitleEpisode - HasJapanese gate;
+user spec: title text only, flashing start line excluded), B3 FFVI wrap died
+mid-leg on sidecar accept-loop death (OCR connection-refused x120, no chip),
+B4 PM froze on translation circuit-open loop-hold (83/115 holds, pending EN
+never retried, no chip), B5 Zelda = TITLE + DECISION posted, phantom probes
+dead, B16b unmet, B6 Z2 5-box PASS + v2 spec. NEXT BUILD QUEUE (offline-
+verifiable, evidence-first): (1) Z2 v2 - bottle tall-box merge + EN mirror
+grid (corpus rows already harvested); (2) transport-death E-code surface +
+sidecar restart watchdog (silent class 1); (3) circuit-open chip +
+capture-continue + pending-EN late retry (user directive, silent class 2);
+(4) latin-title path PRICED over harvested title frames before any build
+(silent class 3 - HasJapanese gate is deliberate, price first). Watch item:
+THIRD crash-truncated corpus gzip (Zelda_20261030_142705, taskkill /F
+finalizes nothing) - harvest/validate corpus BEFORE any forced kill.

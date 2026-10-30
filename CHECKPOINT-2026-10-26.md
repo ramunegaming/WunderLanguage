@@ -59,6 +59,13 @@ Closed this batch (**no code changes** — build baseline 0 err / 17 warn exact 
 1. Copy `%APPDATA%\WunderLanguage\app.log` immediately; harvest the session's corpus (validate before any re-tuning — never harvest an unvalidated corpus).
 2. Harvest proofs → close N1–N6, W2, B18, B16b, T3, C3, F1–F4, H1–H5, W1 acceptance; fold R2/R3/R4 picks + P6 shop signal into the next batch; then next-game onboarding per the scaling doctrine (floor first).
 
+### E. SESSION RESULTS (2026-10-30 — evidence in app2 logs + BOOKS tail)
+- Logs harvested: `gate/session/app2_FINAL.log` (5 sessions, keep-log validated) + `leg_last_applog*.log`; corpus: Zelda gz taskkill-truncated (388 lines recovered — 4 menu fires, TITLE, DECISION), FFVI/PM corpora intact.
+- **B1 FFVI title = NOT MET** (zero title publishes — latin-logo title can't fire `CheckTitleEpisode`, HasJapanese gate) · **B2 PM title = NOT MET** (same) · title spec from user = title text only, exclude flashing start line.
+- **B3 FFVI wrap = FAILED mid-leg** — sidecar accept-loop death (connection-refused, hold 1→120, no chip). **B4 PM = FAILED mid-leg** — circuit-open loop hold 83/115, pending EN never retried, no chip. → three silent-death builds queued: transport E-code/watchdog, circuit chip + capture-continue (user-approved design).
+- **B5 Zelda**: TITLE posted ✓, DECISION 1× ✓, phantom probes dead ✓, B16b not met (no absorb runtime lines), 1× decision-shape miss (spawn choice) = D1.
+- **B6 Z2 5-box = PASS v1** (live screenshot) + **v2 spec** (bottle tall-box merge, EN mirror grid) — build next.
+
 Everything else is closed offline — do not reopen a closed item without new evidence.
 
 ## Standing mechanics (do not regress)
