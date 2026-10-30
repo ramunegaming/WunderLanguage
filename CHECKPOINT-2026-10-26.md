@@ -36,7 +36,7 @@ Closed this batch (**no code changes** — build baseline 0 err / 17 warn exact 
 ### A. User calls (can precede the session)
 1. **R2/R3/R4 resolution-matrix picks**: second 480p game; both 720p games; second 1080p game (Persona 5 = slot 1) → unblocks next-game onboarding.
 2. **Mash memo go**: recommended = **expire to empty** (wipe the 9 pairs in `%APPDATA%\WunderLanguage\memo\ffvi.json`; pure cache, relearns live, cap 200; keeping them risks serving DeepL-fallback junk in a future offline window).
-3. **Z2 5-box build call**: the inventory feed view (item name = only translated field) is display work unverifiable offline — build-with-revert just before/during the session for live screenshot iteration, or defer (MENU bubble stays unshrunk either way until the view exists: label over omission).
+3. ~~**Z2 5-box build call**~~ → **DONE 2026-10-29, commit `efb70e8`** (revert: `revert z2-5box-view`): 5-box inventory view built inside the standard outline — pack-constant chrome, item box live-refreshes, EN + residual strips below the grid; build 0 err/17 warn exact, catstats A/B zero content delta. **Live verify = B6.**
 
 ### B. What to play (capture requirements)
 1. **Cold-boot FFVI, no input**: title must post on the FIRST visit (T3 fastpath — title→intro is the game's own auto-advance timer, not user-driven); return visits = exactly one post per visit. **Shoot the title frame before it auto-advances** = the one missing FFVI title capture (F2x HasJapanese waits on it: 0 FFVI title frames in 126 corpora).
@@ -44,6 +44,7 @@ Closed this batch (**no code changes** — build baseline 0 err / 17 warn exact 
 3. **FFVI wrap**: intro all blocks, first town, battle UI (offline-validated), **inventory/menu session (still owed)**, and **enter a shop** (P6 shop-play signal = the shop-UI build gate).
 4. **PM focused session** — no alt-tab, no focus loss, user plays, our Shot button: N1–N6 proofs = `[memo] saved/loaded` lines (N1), mid-game TITLE silence + TITLE-then-prompt on PM (N2), PM routing line + banking IDs + memo/vocab activation + intro latency numbers (N4), undoubled Dolphin ROM ID + normalized line (N5), shot labels with pack prefixes (N6); plus **W2 battle/menu/decision coverage** (decision re-probe: PM currently 0/52 decHit) and **PM battle glossary EN confirmations** (user reads the EN names off screen).
 5. **Zelda**: B16b screenshot proof = single bubble on typewriter + `absorb-*` lines in the log.
+6. **Z2 5-box live verify**: open the inventory in-game — outline present, 5 boxes in mockup geometry, item box updates on switch (ブーメラン → レンタン etc.), chrome stays put, TRANSLATION strip shows the item EN; ordinary menus (shop/dialogue) must NOT route to the 5-box layout. Screenshot for the record.
 
 ### C. Log / acceptance checks (copy `app.log` FIRST — it wipes per launch)
 1. **H1–H5 phantom batch**: zero phantom posts while roaming (foreign/web text never in the feed — this is also the graphics-hallucination proof); any covering window gets named: `[loop N] occlusion-hold: 0x… "<window title>" composited over the game, holding`. Artifacts must appear: `[blocks] block-reject vetoed` on graphics frames, `[loss] starved … discard reason=unconfirmed-source` / `reason=decode-disagree`, `STABLE-DECISION=hold-decayed`, `publish-dumps\pub_*.png` + `index.txt` entries (ring 80).
@@ -66,7 +67,7 @@ Everything else is closed offline — do not reopen a closed item without new ev
 - **catstats**: `WunderLanguage.Host.exe --catstats "<%APPDATA% corpus dir>"` via `Start-Process -PassThru; $p.WaitForExit()`; app.log wipes per launch — **copy immediately** to `Temp\opencode\catstats_<side>.log`.
 - **Console mangles Japanese**: Python via script files, never `python -c` inline; PowerShell forbids `&` chaining; coordinate clicks/screenshots on the live desktop are BANNED.
 - **Ledgers append-only**: BOOKS.md + ROADMAP.md; commits carry every revert phrase.
-- **Revert phrases for this batch**: `revert block-sanity`, `revert source-confirm`, `revert hold-decay`, `revert decode-agree`, `revert publish-dump` (F1-F4: `revert occlusion-hold`, `revert challenger-salvage`, `revert chart-clear-salvage`, `revert question-cap-scale`; prior batches: `revert salvage-starved`, `revert dwell-sight1`, `revert kana-bar10`, `revert dec-probe`, `revert decision-echo-split`, `revert jp-first`, `revert d1-decisions`, `revert decision-tiering`, `revert decision-sublines`, `revert error-codes`, … full list in BOOKS).
+- **Revert phrases for this batch**: `revert z2-5box-view`, `revert block-sanity`, `revert source-confirm`, `revert hold-decay`, `revert decode-agree`, `revert publish-dump` (F1-F4: `revert occlusion-hold`, `revert challenger-salvage`, `revert chart-clear-salvage`, `revert question-cap-scale`; prior batches: `revert salvage-starved`, `revert dwell-sight1`, `revert kana-bar10`, `revert dec-probe`, `revert decision-echo-split`, `revert jp-first`, `revert d1-decisions`, `revert decision-tiering`, `revert decision-sublines`, `revert error-codes`, … full list in BOOKS).
 
 ## Key files
 
