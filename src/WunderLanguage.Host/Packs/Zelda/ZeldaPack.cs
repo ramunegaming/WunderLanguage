@@ -319,7 +319,96 @@ namespace WunderLanguage.Host.Packs.Zelda
             fixed_ = System.Text.RegularExpressions.Regex.Replace(fixed_, @"お前、(?=知ってる|忘れる)", "お前 ");
             return fixed_;
         }
+        // Z2 5-box inventory feed (revert: revert z2-5box-view): the
+        // inventory screen's chrome + the one live field. Detection = the
+        // static mid row (ペンダント — present in 100% of the corpus's
+        // inventory fires) plus a second chrome marker in another row, so
+        // ordinary menus that merely carry はなす/よむ as words never
+        // route here. The item = first remaining row; anything else is
+        // residual (label over omission — never dropped).
+        private static readonly string[] InventoryActionMarkers = { "ひっぱる", "かつぐ", "よむ", "はなす" };
+        // Mockup chrome (zelda-inventory-mockup.svg, user 2026-10-22):
+        // visual lines as drawn — line 1 carries かつぐ.１ よむ はなす,
+        // line 2 ひっぱる.
+        private static readonly string[] InventoryActionRows = { "かつぐ.１　よむ　はなす", "ひっぱる" };
+        private const string InventoryMidStatic = "ペンダント";
+        private const string InventoryBottomRight = "EQUIPMENT";
+
+        public static bool TryInventoryLayout(string jaJoined, string enJoined, out Packs.InventoryLayout layout)
+        {
+            layout = null!;
+            if (string.IsNullOrWhiteSpace(jaJoined)) return false;
+            string[] jaLines = jaJoined.Split('\n');
+            string[] enLines = (enJoined ?? "").Split('\n');
+            bool aligned = enLines.Length == jaLines.Length;
+
+            int midIdx = -1;
+            bool combo = false;
+            for (int i = 0; i < jaLines.Length; i++)
+            {
+                if (midIdx < 0 && jaLines[i].Contains(InventoryMidStatic, StringComparison.Ordinal))
+                {
+                    midIdx = i;
+                    continue;
+                }
+                if (IsInventoryAction(jaLines[i]) || IsInventoryLatin(jaLines[i])) combo = true;
+            }
+            if (midIdx < 0 || !combo) return false;
+
+            int itemIdx = -1;
+            var residual = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < jaLines.Length; i++)
+            {
+                if (i == midIdx) continue;
+                string line = jaLines[i].Trim();
+                if (line.Length == 0) continue;
+                if (IsInventoryAction(line) || IsInventoryLatin(line)) continue;
+                if (itemIdx < 0) itemIdx = i;
+                else residual.Add(line);
+            }
+
+            string itemJa = itemIdx >= 0 ? jaLines[itemIdx].Trim() : "";
+            // EN is row-aligned with JA (the controller joins both from the
+            // same rows); the JP-first pending marker arrives unaligned —
+            // fall back to the whole EN so the strip never drops it.
+            string itemEn = (aligned && itemIdx >= 0 && !string.IsNullOrWhiteSpace(enLines[itemIdx]))
+                ? enLines[itemIdx]
+                : (enJoined ?? "");
+
+            layout = new Packs.InventoryLayout
+            {
+                ItemJa = itemJa,
+                ItemEn = itemEn,
+                ActionRows = InventoryActionRows,
+                MidText = InventoryMidStatic,
+                BottomRight = InventoryBottomRight,
+                Residual = string.Join("\n", residual),
+            };
+            return true;
+        }
+
+        private static bool IsInventoryAction(string line)
+        {
+            foreach (string m in InventoryActionMarkers)
+                if (line.Contains(m, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
+        // EQUIPMENT garbles on the real screen (ＥＧＵＩＰＭＥＮＴ /
+        // ＥａｂｌｅｔｎＥｘＴ / ＤＶＮＧＥＯＮＩＴＥＭ): >=4 latin letters,
+        // fullwidth included — chrome, never the item.
+        private static bool IsInventoryLatin(string line)
+        {
+            int latin = 0;
+            foreach (char c in line)
+            {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                    || (c >= 'Ａ' && c <= 'Ｚ') || (c >= 'ａ' && c <= 'ｚ')) latin++;
+            }
+            return latin >= 4;
+        }
     }
+
     public sealed class ZeldaPackInstance : Packs.IPack
     {
         public static readonly ZeldaPackInstance Shared = new();
@@ -355,6 +444,7 @@ namespace WunderLanguage.Host.Packs.Zelda
         public double BoxInsetPx => 0.0;
         public double NmsIou => 1.0;
         public double FontScale => 1.0;
+        public bool TryInventoryLayout(string jaJoined, string enJoined, out Packs.InventoryLayout layout) => ZeldaPack.TryInventoryLayout(jaJoined, enJoined, out layout);
         public bool IsMenuHeaderRow(string ascii) => ZeldaPack.IsMenuHeaderRow(ascii);
     }
 }

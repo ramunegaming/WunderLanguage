@@ -177,6 +177,69 @@ namespace WunderLanguage.Host.Windows
                 }
                 bool wasAtBottom = HistoryScroller.VerticalOffset >= HistoryScroller.ScrollableHeight - AtBottomThresholdPx;
                 string stamp = System.DateTime.Now.ToString("HH:mm:ss");
+                // Z2 5-box inventory feed (revert: revert z2-5box-view): the
+                // inventory screen renders as the pack's 5-box layout inside
+                // the standard outline — item name top-right live, four boxes
+                // fixed chrome, EN below the grid. Every other menu falls
+                // through to the normal path untouched.
+                if (kind == "MENU" && Packs.PackRegistry.Current.TryInventoryLayout(japanese, english, out var invLayout))
+                {
+                    // JP-first fill: same JA + real EN lands in the strip.
+                    if (_entryIsInventory && _pendingMenuJa is not null
+                        && NormalizeEllipsisForDisplay(_pendingMenuJa) == NormalizeEllipsisForDisplay(japanese))
+                    {
+                        if (IsPendingEn(english))
+                        {
+                            FileLogger.Log("[panel] menu jp-first pending-dupe (inventory same JA already pending)");
+                            return;
+                        }
+                        // Mirror the rewrite guard: an update that advanced
+                        // the inventory between fire and EN-landing makes
+                        // this EN stale — drop it, the update carried its own.
+                        if (_inventoryFullJa is null
+                            || NormalizeEllipsisForDisplay(_inventoryFullJa) != NormalizeEllipsisForDisplay(japanese))
+                        {
+                            FileLogger.Log("[panel] menu jp-first fill dropped (inventory advanced since fire)");
+                            _pendingMenuJa = null; _pendingMenuEnBlock = null; _pendingMenuAsciiEnHost = null; _pendingMenuJaBlock = null;
+                            return;
+                        }
+                        if (_inventoryEnBlock is not null) _inventoryEnBlock.Text = invLayout.ItemEn;
+                        if (_history.Count > 0)
+                            _history[^1] = (_history[^1].time, kind + "\n" + japanese, english);
+                        FileLogger.Log("[panel] menu jp-first fill (inventory EN refreshed in place)");
+                        _pendingMenuJa = null;
+                        _pendingMenuEnBlock = null;
+                        _pendingMenuAsciiEnHost = null;
+                        _pendingMenuJaBlock = null;
+                        if (wasAtBottom)
+                            Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                        return;
+                    }
+                    // New inventory entry.
+                    _pendingMenuJa = IsPendingEn(english) ? japanese : null;
+                    _pendingMenuEnBlock = null;
+                    _pendingMenuAsciiEnHost = null;
+                    _pendingMenuJaBlock = null;
+                    _battleIsLast = false;
+                    var invParts = BuildInventoryEntry(stamp, kind, invLayout);
+                    HistoryPanel.Children.Add(invParts.entry);
+                    _entryIsInventory = true;
+                    _inventoryFullJa = japanese;
+                    _inventoryItemBlock = invParts.item;
+                    _inventoryEnBlock = invParts.en;
+                    _inventoryResidualBlock = invParts.residual;
+                    _pendingMenuEnBlock = invParts.en;
+                    _lastJapaneseBlock = null;
+                    _lastEnglishBlock = null;
+                    _lastMenuRawJa = null;
+                    _lastMenuAsciiEntry = null;
+                    _lastMenuAsciiJaHost = null;
+                    _lastMenuAsciiEnHost = null;
+                    _history.Add((stamp, kind + "\n" + japanese, english));
+                    if (wasAtBottom)
+                        Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                    return;
+                }
                 // JP-first fill (revert: revert jp-first): the controller posts
                 // the menu/decision JA immediately (EN = pending marker), then
                 // re-invokes with the same JA and the real EN. That second call
@@ -235,6 +298,11 @@ namespace WunderLanguage.Host.Windows
                 _pendingMenuAsciiEnHost = null;
                 _pendingMenuJaBlock = null;
                 _battleIsLast = false;
+                _entryIsInventory = false;
+                _inventoryFullJa = null;
+                _inventoryItemBlock = null;
+                _inventoryEnBlock = null;
+                _inventoryResidualBlock = null;
                 if (MenuDisplayMode == "Ascii")
                 {
                     var asciiEntry = BuildAsciiMenuEntry(stamp, kind, SplitMenuLines(japanese), SplitMenuLines(english));
@@ -273,12 +341,56 @@ namespace WunderLanguage.Host.Windows
         private TextBox? _pendingMenuJaBlock;
         private StackPanel? _pendingMenuAsciiEnHost;
 
+        // Z2 5-box inventory feed (revert: revert z2-5box-view): the
+        // inventory entry owns its state — the full menu JA as the match
+        // key, the top-right item box as the live field, plus the EN strip
+        // and residual strip so no content is ever dropped.
+        private bool _entryIsInventory;
+        private string? _inventoryFullJa;
+        private TextBox? _inventoryItemBlock;
+        private TextBox? _inventoryEnBlock;
+        private TextBox? _inventoryResidualBlock;
+
         // Menu growth: edit in place on match, DROP on mismatch (never appends,
         // so menus can never duplicate dialogue).
         public void UpdateMenuIfMatches(string expectedOldJa, string kind, string japanese, string english)
         {
             Dispatcher.Invoke(() =>
             {
+                // Z2 5-box inventory feed (revert: revert z2-5box-view):
+                // match on the full menu JA, then re-derive the layout —
+                // the item box live-refreshes (カンテラ -> ブーメラン), EN +
+                // residual follow; the four chrome boxes are pack constants
+                // and stay put.
+                if (_entryIsInventory)
+                {
+                    if (_inventoryFullJa is null) return;
+                    if (NormalizeEllipsisForDisplay(_inventoryFullJa) != NormalizeEllipsisForDisplay(expectedOldJa)) return;
+                    _inventoryFullJa = japanese;
+                    if (Packs.PackRegistry.Current.TryInventoryLayout(japanese, english, out var invUpd))
+                    {
+                        if (_inventoryItemBlock is not null)
+                            _inventoryItemBlock.Text = NormalizeEllipsisForDisplay(invUpd.ItemJa);
+                        if (_inventoryEnBlock is not null)
+                            _inventoryEnBlock.Text = invUpd.ItemEn;
+                        if (_inventoryResidualBlock is not null)
+                        {
+                            _inventoryResidualBlock.Text = NormalizeEllipsisForDisplay(invUpd.Residual);
+                            _inventoryResidualBlock.Visibility = string.IsNullOrEmpty(invUpd.Residual) ? Visibility.Collapsed : Visibility.Visible;
+                        }
+                    }
+                    else
+                    {
+                        // OCR lost the screen's static markers mid-update —
+                        // hold the drawn chrome (constants) rather than
+                        // re-route; the next clean update re-derives.
+                        FileLogger.Log("[panel] inventory update lost layout (held)");
+                    }
+                    if (_history.Count > 0)
+                        _history[^1] = (_history[^1].time, japanese, english);
+                    Dispatcher.InvokeAsync(() => HistoryScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+                    return;
+                }
                 if (MenuDisplayMode == "Ascii")
                 {
                     if (_lastMenuRawJa is null || _lastMenuAsciiJaHost is null || _lastMenuAsciiEnHost is null) return;
@@ -1343,6 +1455,134 @@ namespace WunderLanguage.Host.Windows
             container.Children.Add(enBlock);
 
             return (container, jaBlock, enBlock);
+        }
+
+        // Z2 5-box inventory feed (revert: revert z2-5box-view): the
+        // standard outline Border (same as the ascii/battle entries) around
+        // the mockup's 5 boxes (zelda-inventory-mockup.svg; design units
+        // 888x735 inside the outline: left-top sprite box empty, top-right
+        // item name live, middle-right static, bottom-left actions,
+        // bottom-right EQUIPMENT), EN strip below the grid. A SizeChanged
+        // scaler keeps the proportions at any panel width.
+        private (FrameworkElement entry, TextBox item, TextBox en, TextBox residual) BuildInventoryEntry(string stamp, string kind, Packs.InventoryLayout inv)
+        {
+            var subtleBrush = (Brush)FindResource("SubtleTextBrush");
+            var textBrush = (Brush)FindResource("TextBrush");
+            var borderBrush = (Brush)FindResource("BorderBrush");
+
+            var container = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
+            if (HistoryPanel.Children.Count > 0)
+            {
+                container.Children.Add(new Border
+                {
+                    BorderBrush = borderBrush,
+                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    Margin = new Thickness(0, 0, 0, 16)
+                });
+            }
+            container.Children.Add(new TextBlock
+            {
+                Text = stamp,
+                FontSize = 10,
+                Foreground = subtleBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            container.Children.Add(new TextBlock
+            {
+                Text = kind,
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = subtleBrush,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            var outer = new Border
+            {
+                BorderBrush = textBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 10, 12, 10)
+            };
+            var inner = new StackPanel();
+
+            var itemBlock = SelectableBlock(NormalizeEllipsisForDisplay(inv.ItemJa), 14, textBrush, new Thickness(0));
+            var midBlock = SelectableBlock(inv.MidText, 12, textBrush, new Thickness(0));
+            var equipBlock = SelectableBlock(inv.BottomRight, 12, textBrush, new Thickness(0));
+            var actionHost = new StackPanel();
+            var actionFonts = new List<(TextBlock tb, double design)>();
+            foreach (string row in inv.ActionRows)
+            {
+                var tb = new TextBlock { Text = row, FontSize = 12, Foreground = textBrush, TextWrapping = TextWrapping.Wrap };
+                actionHost.Children.Add(tb);
+                actionFonts.Add((tb, 29));
+            }
+
+            static Border InvBox(FrameworkElement? child, Brush stroke) => new Border
+            {
+                BorderBrush = stroke,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 6, 8, 6),
+                Child = child
+            };
+            var leftTop = InvBox(null, textBrush);
+            var itemBox = InvBox(itemBlock, textBrush);
+            var midBox = InvBox(midBlock, textBrush);
+            var bottomLeft = InvBox(actionHost, textBrush);
+            var bottomRight = InvBox(equipBlock, textBrush);
+
+            var canvas = new Canvas();
+            canvas.Children.Add(leftTop);
+            canvas.Children.Add(itemBox);
+            canvas.Children.Add(midBox);
+            canvas.Children.Add(bottomLeft);
+            canvas.Children.Add(bottomRight);
+            canvas.SizeChanged += (_, _) =>
+            {
+                double w = canvas.ActualWidth;
+                if (w <= 0) return;
+                double s = w / 888.0;
+                canvas.Height = 735 * s;
+                static void Place(Border box, double x, double y, double bw, double bh, double s2)
+                {
+                    Canvas.SetLeft(box, x * s2);
+                    Canvas.SetTop(box, y * s2);
+                    box.Width = bw * s2;
+                    box.Height = bh * s2;
+                }
+                Place(leftTop, 0, 0, 551, 431, s);
+                Place(itemBox, 604, 0, 284, 167, s);
+                Place(midBox, 604, 182, 284, 253, s);
+                Place(bottomLeft, 0, 482, 554, 253, s);
+                Place(bottomRight, 604, 482, 284, 253, s);
+                itemBlock.FontSize = System.Math.Max(9, 34 * s);
+                midBlock.FontSize = System.Math.Max(9, 26 * s);
+                equipBlock.FontSize = System.Math.Max(9, 26 * s);
+                foreach (var (tb, design) in actionFonts) tb.FontSize = System.Math.Max(9, design * s);
+            };
+            inner.Children.Add(canvas);
+
+            inner.Children.Add(new Border
+            {
+                BorderBrush = textBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Margin = new Thickness(0, 8, 0, 8)
+            });
+            inner.Children.Add(new TextBlock
+            {
+                Text = "TRANSLATION",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = subtleBrush,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            var enBlock = SelectableBlock(inv.ItemEn, 14, textBrush, new Thickness(0, 0, 0, 0));
+            inner.Children.Add(enBlock);
+            var residualBlock = SelectableBlock(NormalizeEllipsisForDisplay(inv.Residual), 11, subtleBrush, new Thickness(0, 6, 0, 0));
+            residualBlock.Visibility = string.IsNullOrEmpty(inv.Residual) ? Visibility.Collapsed : Visibility.Visible;
+            inner.Children.Add(residualBlock);
+
+            outer.Child = inner;
+            container.Children.Add(outer);
+            return (container, itemBlock, enBlock, residualBlock);
         }
 
         private static readonly Regex EllipsisRunPattern = new(@"[．.]{2,}", RegexOptions.Compiled);

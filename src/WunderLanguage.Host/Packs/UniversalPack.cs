@@ -71,6 +71,9 @@ namespace WunderLanguage.Host.Packs
         public double BoxInsetPx => 0.0;
         public double NmsIou => 1.0;
         public double FontScale => 1.0;
+        // Z2 5-box inventory feed: no inventory screen for this game —
+        // every menu takes the normal path (revert: revert z2-5box-view).
+        public bool TryInventoryLayout(string jaJoined, string enJoined, out InventoryLayout layout) { layout = null!; return false; }
         public bool IsMenuHeaderRow(string ascii) => UniversalPack.IsMenuHeaderRow(ascii);
     }
 }

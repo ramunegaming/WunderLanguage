@@ -59,5 +59,29 @@ namespace WunderLanguage.Host.Packs
         double BoxInsetPx { get; }
         double NmsIou { get; }
         double FontScale { get; }
+        // Z2 5-box inventory feed (revert: revert z2-5box-view): pack
+        // declares that this MENU fire is its inventory screen + the
+        // screen's fixed chrome. The selected item name is the ONLY
+        // extracted field (top-right, live-refreshed in place by menu
+        // updates); the other four boxes render pack constants, EN goes
+        // below the grid. false = any other menu (normal path untouched).
+        bool TryInventoryLayout(string jaJoined, string enJoined, out InventoryLayout layout);
+    }
+
+    // Z2 5-box inventory feed: what the side panel draws inside the
+    // standard outline box (geometry lives in the panel, contents here).
+    public sealed class InventoryLayout
+    {
+        // Top-right: the only extracted/translated field — changes with
+        // selection (カンテラ -> ブーメラン).
+        public string ItemJa { get; set; } = "";
+        public string ItemEn { get; set; } = "";
+        // Bottom-left action words (static), middle-right static text,
+        // bottom-right label (already English on the real screen).
+        public System.Collections.Generic.IReadOnlyList<string> ActionRows { get; set; } = System.Array.Empty<string>();
+        public string MidText { get; set; } = "";
+        public string BottomRight { get; set; } = "";
+        // Rows that fit no box — rendered below the EN strip, never dropped.
+        public string Residual { get; set; } = "";
     }
 }
