@@ -6,7 +6,7 @@ Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — onl
 ## HANDOVER STATE (2026-10-26 — refreshed 2026-10-29, read this first)
 
 > Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail; refreshed 2026-10-29 with the consolidated **BULK LIVE SESSION CHECKLIST**). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-10-29 P5/P7/P8 pricing (before it P4 re-mine + P3 closed); BOOKS tail = full root-cause chains + A/B numbers. **Offline queue DRAINED 2026-10-29 — the only remaining gate = the bulk live session (checklist in the checkpoint) + user calls (R2/R3/R4 picks, mash-memo expiry go, P6 shop-play signal).**
+> Newest ledger entries: ROADMAP tail = 2026-10-29 P5/P7/P8 pricing (before it P4 re-mine + P3 closed); BOOKS tail = full root-cause chains + A/B numbers. **Offline queue DRAINED 2026-10-29 — the only remaining gate = the bulk live session (checklist in the checkpoint) + user calls (R2/R3/R4 picks RESOLVED 2026-10-29, mash-memo expiry DONE; still open: P6 shop-play signal).**
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -76,9 +76,9 @@ Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, 
 - **PM1 — Paper Mario focused week:** intro stability, title posting, inventory, menus. User plays; no alt-tab; our Shot button; collects N1–N6 proofs.
 - **R1–R4 — Resolution matrix, 2 games per generation:**
   - R1 240p: Zelda + FFVI (both onboarded ✓)
-  - R2 480p: Paper Mario + second game (**TBD — user to pick**)
-  - R3 720p: **both TBD — user to pick**
-  - R4 1080p: Persona 5 + second game (**TBD — user to pick**)
+  - R2 480p: Paper Mario + **Okami** (PICKED 2026-10-29)
+  - R3 720p: **NieR Replicant** + **Kingdom Hearts 3D: Dream Drop Distance** (PICKED 2026-10-29; TWEWY dropped — DS-native 256×192, not 3DS — KH3D chosen for the unique dual-screen capture geometry: 400×240 top + 320×240 bottom in one window = the matrix's only two-text-zone test; watch = bottom-screen UI text entering the capture rectangle, document as a find if it pollutes the feed)
+  - R4 1080p: Persona 5 + **Yakuza 0** (PICKED 2026-10-29)
   Each generation trains resolution-specific capture/recognition until solid, then feeds gains back into shared systems.
 
 ### Feed categories (agreed 2026-10-20)
@@ -214,12 +214,12 @@ Pre-existing (stash-proven, not a regression). Investigate when profiling time c
 Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/titles/name-entry/singleton-glimpse (B10-T2, B12, title/menu/battle paths). Queued, unmeasured: fading text, moving/animated text + transient notifications (damage numbers, pickups), per-line replacement, timed-vs-advance-controlled distinction. Each needs a priced miss set before any build.
 
 ## Open questions (restored 2026-10-15 - blocks FFVI names work until answered)
-- Mash memo policy: **RECOMMENDATION FIRMED 2026-10-29 = expire to empty** (user confirm pending before the wipe). Evidence: memo/ffvi.json = 9 pairs / 538 B, written 2026-10-13 under provider "DeepL (unreliable-offline fallback)"; entries include garble-key junk ('ただから'→"Just Because" — a garble of たたかう=Fight, which the same memo also holds correctly) and dialogue leaking into battle-name rows ('またな。'→"See you later."). The provider guard keeps the file inert while the primary provider is active, but it would serve junk in any future fallback window; fast-track keeps the bad keys; expire = one 9-entry relearn against a permanent correctness risk, and matches the Loop-3 "deliberately unseeded memo" doctrine (relearns live, cap 200).
+- Mash memo policy: **RESOLVED + EXECUTED 2026-10-29 = expired to empty** (user confirmed "Expire now"; `expire_memo.py` wiped the 9 pairs → 0, provider field preserved for relearn). Evidence: memo/ffvi.json = 9 pairs / 538 B, written 2026-10-13 under provider "DeepL (unreliable-offline fallback)"; entries include garble-key junk ('ただから'→"Just Because" — a garble of たたかう=Fight, which the same memo also holds correctly) and dialogue leaking into battle-name rows ('またな。'→"See you later."). The provider guard keeps the file inert while the primary provider is active, but it would serve junk in any future fallback window; fast-track keeps the bad keys; expire = one 9-entry relearn against a permanent correctness risk, and matches the Loop-3 "deliberately unseeded memo" doctrine (relearns live, cap 200).
 - Wedge/Biggs official English forms: **RESOLVED 2026-10-29 → "Biggs" / "Wedge"** (Matthew precedent: manual wins — the 2026-10-09 pin rule is literally "manual differs from Woolsey, manual wins", and Vicks IS the Woolsey form). Evidence: ウェッジ = "Wedge" in every official source; ビックス = "Vicks" only in the 1994 Woolsey NA localization (SNES script + official Player's Guide), "Biggs" in every official re-release since (incl. the official FFVI Advance EN manual) and in Japanese materials that use English text; series canon = Star Wars Biggs Darklighter/Wedge Antilles (FFVI is the sole game spelling it ビックス). Not yet pinned in code (BOOKS: "absent from manual pages — no source") — sources cited here; pin ready when FFVI names work resumes.
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
 - P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done — **RESOLVED 2026-10-28: declare done, moved to P3** (recommended option; 0/0 truth-set evidence never convicted the re-OCR build).
-- Resolution matrix picks: second 480p game; both 720p games; second 1080p game (Persona 5 is slot 1).
+- Resolution matrix picks: **RESOLVED 2026-10-29 (user) → R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** — matrix complete, next-game onboarding unblocked.
 - Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
 - Watch items: two crash-truncated corpus gzips (Snes9x_1.60_20261019_035824 + one Zelda_no_Densetsu tail file; scanners skip them cleanly, not blocking); one orphaned PM miner file under pre-paren versioned id (negligible — but see P4(5): it can defeat the ≥2-file promotion gate if an identical pair lands in both PM files); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
 

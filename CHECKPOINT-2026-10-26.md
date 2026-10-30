@@ -34,8 +34,8 @@ Closed this batch (**no code changes** — build baseline 0 err / 17 warn exact 
 ## BULK LIVE SESSION CHECKLIST (consolidated 2026-10-29 — the ONE remaining gate)
 
 ### A. User calls (can precede the session)
-1. **R2/R3/R4 resolution-matrix picks**: second 480p game; both 720p games; second 1080p game (Persona 5 = slot 1) → unblocks next-game onboarding.
-2. **Mash memo go**: recommended = **expire to empty** (wipe the 9 pairs in `%APPDATA%\WunderLanguage\memo\ffvi.json`; pure cache, relearns live, cap 200; keeping them risks serving DeepL-fallback junk in a future offline window).
+1. ~~**R2/R3/R4 resolution-matrix picks**~~ → **RESOLVED 2026-10-29: R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** (full matrix on ROADMAP R1–R4) → next-game onboarding unblocked.
+2. ~~**Mash memo go**~~ → **EXECUTED 2026-10-29: expired to empty** (9 pairs → 0, provider field preserved).
 3. ~~**Z2 5-box build call**~~ → **DONE 2026-10-29, commit `efb70e8`** (revert: `revert z2-5box-view`): 5-box inventory view built inside the standard outline — pack-constant chrome, item box live-refreshes, EN + residual strips below the grid; build 0 err/17 warn exact, catstats A/B zero content delta. **Live verify = B6.**
 
 ### B. What to play (capture requirements)
