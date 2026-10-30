@@ -333,6 +333,13 @@ namespace WunderLanguage.Host.Packs.Zelda
         private static readonly string[] InventoryActionRows = { "かつぐ.１　よむ　はなす", "ひっぱる" };
         private const string InventoryMidStatic = "ペンダント";
         private const string InventoryBottomRight = "EQUIPMENT";
+        // Z2 v2 (revert: revert z2-v2-bottle-mirror): EN mirror grid — the
+        // duplicate layout below the separator carries pack-constant EN
+        // chrome in the user's canonical forms (NOT the translator's
+        // running prose "…and carry it, pull it…" / "Reading and
+        // speaking").
+        private static readonly string[] InventoryActionRowsEn = { "to shoulder　to read　to speak", "to pull" };
+        private const string InventoryMidStaticEn = "Pendant";
 
         public static bool TryInventoryLayout(string jaJoined, string enJoined, out Packs.InventoryLayout layout)
         {
@@ -344,6 +351,8 @@ namespace WunderLanguage.Host.Packs.Zelda
 
             int midIdx = -1;
             bool combo = false;
+            int actionRows = 0;
+            bool latinRow = false;
             for (int i = 0; i < jaLines.Length; i++)
             {
                 if (midIdx < 0 && jaLines[i].Contains(InventoryMidStatic, StringComparison.Ordinal))
@@ -351,9 +360,18 @@ namespace WunderLanguage.Host.Packs.Zelda
                     midIdx = i;
                     continue;
                 }
-                if (IsInventoryAction(jaLines[i]) || IsInventoryLatin(jaLines[i])) combo = true;
+                if (IsInventoryAction(jaLines[i])) { combo = true; actionRows++; }
+                if (IsInventoryLatin(jaLines[i])) { combo = true; latinRow = true; }
             }
-            if (midIdx < 0 || !combo) return false;
+            // Bottle state (user 2026-10-30): selecting びん merges the
+            // ペンダント + EQUIPMENT boxes into ONE tall box, and its fires
+            // carry ONLY the action rows (corpus: '．．．かっくはひっぱる ．．．' /
+            // 'よむ はなす' — no びん row, no ペンダント, no ＥＧＵＩＰＭＥＮＴ, so
+            // the ペンダント-gated path missed it). Signature: >=2 action rows,
+            // no latin chrome, no mid — any other menu falls through.
+            bool bottle = midIdx < 0 && actionRows >= 2 && !latinRow;
+            if (midIdx < 0 && !bottle) return false;
+            if (!bottle && !combo) return false;
 
             int itemIdx = -1;
             var residual = new System.Collections.Generic.List<string>();
@@ -370,18 +388,27 @@ namespace WunderLanguage.Host.Packs.Zelda
             string itemJa = itemIdx >= 0 ? jaLines[itemIdx].Trim() : "";
             // EN is row-aligned with JA (the controller joins both from the
             // same rows); the JP-first pending marker arrives unaligned —
-            // fall back to the whole EN so the strip never drops it.
-            string itemEn = (aligned && itemIdx >= 0 && !string.IsNullOrWhiteSpace(enLines[itemIdx]))
-                ? enLines[itemIdx]
-                : (enJoined ?? "");
+            // fall back to the whole EN so the strip never drops it. No item
+            // row at all (bottle state) = no item EN to show (aligned only;
+            // unaligned pending still falls back to the marker).
+            string itemEn;
+            if (itemIdx >= 0)
+                itemEn = (aligned && !string.IsNullOrWhiteSpace(enLines[itemIdx]))
+                    ? enLines[itemIdx]
+                    : (enJoined ?? "");
+            else
+                itemEn = aligned ? "" : (enJoined ?? "");
 
             layout = new Packs.InventoryLayout
             {
                 ItemJa = itemJa,
                 ItemEn = itemEn,
                 ActionRows = InventoryActionRows,
-                MidText = InventoryMidStatic,
+                ActionRowsEn = InventoryActionRowsEn,
+                MidText = bottle ? "" : InventoryMidStatic,
+                MidTextEn = bottle ? "" : InventoryMidStaticEn,
                 BottomRight = InventoryBottomRight,
+                IsBottle = bottle,
                 Residual = string.Join("\n", residual),
             };
             return true;

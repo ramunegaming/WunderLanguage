@@ -83,5 +83,14 @@ namespace WunderLanguage.Host.Packs
         public string BottomRight { get; set; } = "";
         // Rows that fit no box — rendered below the EN strip, never dropped.
         public string Residual { get; set; } = "";
+        // Z2 v2 (revert: revert z2-v2-bottle-mirror): bottle-selected
+        // state — ペンダント + EQUIPMENT merge into ONE tall box (the bottle
+        // art has nothing to translate: blank); deselected fires carry
+        // ペンダント again and render the two boxes — derived per fire.
+        public bool IsBottle { get; set; }
+        // EN mirror grid (below the separator: the same box layout with
+        // English text — pack-constant chrome, user's canonical forms).
+        public System.Collections.Generic.IReadOnlyList<string> ActionRowsEn { get; set; } = System.Array.Empty<string>();
+        public string MidTextEn { get; set; } = "";
     }
 }

@@ -225,6 +225,8 @@ namespace WunderLanguage.Host.Windows
                     HistoryPanel.Children.Add(invParts.entry);
                     _entryIsInventory = true;
                     _inventoryFullJa = japanese;
+                    _inventoryContainer = invParts.entry;
+                    _inventoryIsBottle = invLayout.IsBottle;
                     _inventoryItemBlock = invParts.item;
                     _inventoryEnBlock = invParts.en;
                     _inventoryResidualBlock = invParts.residual;
@@ -300,6 +302,8 @@ namespace WunderLanguage.Host.Windows
                 _battleIsLast = false;
                 _entryIsInventory = false;
                 _inventoryFullJa = null;
+                _inventoryContainer = null;
+                _inventoryIsBottle = false;
                 _inventoryItemBlock = null;
                 _inventoryEnBlock = null;
                 _inventoryResidualBlock = null;
@@ -347,6 +351,11 @@ namespace WunderLanguage.Host.Windows
         // and residual strip so no content is ever dropped.
         private bool _entryIsInventory;
         private string? _inventoryFullJa;
+        // Z2 v2 (revert: revert z2-v2-bottle-mirror): the drawn bottle state
+        // + the container itself, so an update that flips state rebuilds the
+        // grid geometry in place (bottle = one tall box, else two boxes).
+        private bool _inventoryIsBottle;
+        private FrameworkElement? _inventoryContainer;
         private TextBox? _inventoryItemBlock;
         private TextBox? _inventoryEnBlock;
         private TextBox? _inventoryResidualBlock;
@@ -369,6 +378,28 @@ namespace WunderLanguage.Host.Windows
                     _inventoryFullJa = japanese;
                     if (Packs.PackRegistry.Current.TryInventoryLayout(japanese, english, out var invUpd))
                     {
+                        // Z2 v2 (revert: revert z2-v2-bottle-mirror): the
+                        // bottle state changes the GEOMETRY (one tall box vs
+                        // two), so a flip rebuilds the whole grid in place —
+                        // text-only refresh would draw the old shape.
+                        if (invUpd.IsBottle != _inventoryIsBottle && _inventoryContainer is not null)
+                        {
+                            int idx = HistoryPanel.Children.IndexOf(_inventoryContainer);
+                            var rebuilt = BuildInventoryEntry(_history[^1].time, kind, invUpd);
+                            if (idx >= 0)
+                            {
+                                HistoryPanel.Children[idx] = rebuilt.entry;
+                                _inventoryContainer = rebuilt.entry;
+                                _inventoryIsBottle = invUpd.IsBottle;
+                                _inventoryItemBlock = rebuilt.item;
+                                _inventoryEnBlock = rebuilt.en;
+                                _inventoryResidualBlock = rebuilt.residual;
+                                _pendingMenuEnBlock = rebuilt.en;
+                                FileLogger.Log($"[panel] inventory state flip -> {(invUpd.IsBottle ? "bottle (tall box)" : "normal (two boxes)")} (rebuilt)");
+                            }
+                        }
+                        else
+                        {
                         if (_inventoryItemBlock is not null)
                             _inventoryItemBlock.Text = NormalizeEllipsisForDisplay(invUpd.ItemJa);
                         if (_inventoryEnBlock is not null)
@@ -377,6 +408,7 @@ namespace WunderLanguage.Host.Windows
                         {
                             _inventoryResidualBlock.Text = NormalizeEllipsisForDisplay(invUpd.Residual);
                             _inventoryResidualBlock.Visibility = string.IsNullOrEmpty(invUpd.Residual) ? Visibility.Collapsed : Visibility.Visible;
+                        }
                         }
                     }
                     else
@@ -1504,61 +1536,14 @@ namespace WunderLanguage.Host.Windows
             };
             var inner = new StackPanel();
 
-            var itemBlock = SelectableBlock(NormalizeEllipsisForDisplay(inv.ItemJa), 14, textBrush, new Thickness(0));
-            var midBlock = SelectableBlock(inv.MidText, 12, textBrush, new Thickness(0));
-            var equipBlock = SelectableBlock(inv.BottomRight, 12, textBrush, new Thickness(0));
-            var actionHost = new StackPanel();
-            var actionFonts = new List<(TextBlock tb, double design)>();
-            foreach (string row in inv.ActionRows)
-            {
-                var tb = new TextBlock { Text = row, FontSize = 12, Foreground = textBrush, TextWrapping = TextWrapping.Wrap };
-                actionHost.Children.Add(tb);
-                actionFonts.Add((tb, 29));
-            }
-
-            static Border InvBox(FrameworkElement? child, Brush stroke) => new Border
-            {
-                BorderBrush = stroke,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 6, 8, 6),
-                Child = child
-            };
-            var leftTop = InvBox(null, textBrush);
-            var itemBox = InvBox(itemBlock, textBrush);
-            var midBox = InvBox(midBlock, textBrush);
-            var bottomLeft = InvBox(actionHost, textBrush);
-            var bottomRight = InvBox(equipBlock, textBrush);
-
-            var canvas = new Canvas();
-            canvas.Children.Add(leftTop);
-            canvas.Children.Add(itemBox);
-            canvas.Children.Add(midBox);
-            canvas.Children.Add(bottomLeft);
-            canvas.Children.Add(bottomRight);
-            canvas.SizeChanged += (_, _) =>
-            {
-                double w = canvas.ActualWidth;
-                if (w <= 0) return;
-                double s = w / 888.0;
-                canvas.Height = 735 * s;
-                static void Place(Border box, double x, double y, double bw, double bh, double s2)
-                {
-                    Canvas.SetLeft(box, x * s2);
-                    Canvas.SetTop(box, y * s2);
-                    box.Width = bw * s2;
-                    box.Height = bh * s2;
-                }
-                Place(leftTop, 0, 0, 551, 431, s);
-                Place(itemBox, 604, 0, 284, 167, s);
-                Place(midBox, 604, 182, 284, 253, s);
-                Place(bottomLeft, 0, 482, 554, 253, s);
-                Place(bottomRight, 604, 482, 284, 253, s);
-                itemBlock.FontSize = System.Math.Max(9, 34 * s);
-                midBlock.FontSize = System.Math.Max(9, 26 * s);
-                equipBlock.FontSize = System.Math.Max(9, 26 * s);
-                foreach (var (tb, design) in actionFonts) tb.FontSize = System.Math.Max(9, design * s);
-            };
-            inner.Children.Add(canvas);
+            // Z2 v2 (revert: revert z2-v2-bottle-mirror): JP grid on top,
+            // the SAME box layout duplicated in EN below the separator —
+            // item live EN, pack-constant action/mid chrome, EQUIPMENT
+            // unchanged. Bottle state = one tall box in BOTH grids (the
+            // bottle art has nothing to translate: blank in each).
+            var (gridJp, itemJp, _) = BuildInvGrid(inv, en: false, textBrush);
+            var (gridEn, itemEnBlock, _) = BuildInvGrid(inv, en: true, textBrush);
+            inner.Children.Add(gridJp);
 
             inner.Children.Add(new Border
             {
@@ -1574,15 +1559,101 @@ namespace WunderLanguage.Host.Windows
                 Foreground = subtleBrush,
                 Margin = new Thickness(0, 0, 0, 8)
             });
-            var enBlock = SelectableBlock(inv.ItemEn, 14, textBrush, new Thickness(0, 0, 0, 0));
-            inner.Children.Add(enBlock);
+            inner.Children.Add(gridEn);
             var residualBlock = SelectableBlock(NormalizeEllipsisForDisplay(inv.Residual), 11, subtleBrush, new Thickness(0, 6, 0, 0));
             residualBlock.Visibility = string.IsNullOrEmpty(inv.Residual) ? Visibility.Collapsed : Visibility.Visible;
             inner.Children.Add(residualBlock);
 
             outer.Child = inner;
             container.Children.Add(outer);
-            return (container, itemBlock, enBlock, residualBlock);
+            return (container, itemJp, itemEnBlock, residualBlock);
+        }
+
+        // One inventory grid (JP or EN mirror): 888x735 design space, 5-box
+        // normally / item + ONE tall box + actions when the bottle is
+        // selected. Returns the grid canvas + the item TextBox (the live
+        // field, refreshed by fills and updates) + its action fonts.
+        private (Canvas canvas, TextBox item, List<(TextBlock tb, double design)> actionFonts) BuildInvGrid(Packs.InventoryLayout inv, bool en, Brush textBrush)
+        {
+            TextBox itemBlock = en
+                ? SelectableBlock(inv.ItemEn, 14, textBrush, new Thickness(0))
+                : SelectableBlock(NormalizeEllipsisForDisplay(inv.ItemJa), 14, textBrush, new Thickness(0));
+            string midText = en ? inv.MidTextEn : inv.MidText;
+            var midBlock = SelectableBlock(midText, 12, textBrush, new Thickness(0));
+            var equipBlock = SelectableBlock(inv.BottomRight, 12, textBrush, new Thickness(0));
+            var actionHost = new StackPanel();
+            var actionFonts = new List<(TextBlock tb, double design)>();
+            foreach (string row in (en ? inv.ActionRowsEn : inv.ActionRows))
+            {
+                var tb = new TextBlock { Text = row, FontSize = 12, Foreground = textBrush, TextWrapping = TextWrapping.Wrap };
+                actionHost.Children.Add(tb);
+                actionFonts.Add((tb, 29));
+            }
+
+            static Border InvBox(FrameworkElement? child, Brush stroke) => new Border
+            {
+                BorderBrush = stroke,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 6, 8, 6),
+                Child = child
+            };
+            var leftTop = InvBox(null, textBrush);
+            var itemBox = InvBox(itemBlock, textBrush);
+            var bottomLeft = InvBox(actionHost, textBrush);
+            Border? mergedBox = null, midBox = null, bottomRight = null;
+            if (inv.IsBottle)
+            {
+                // ペンダント + EQUIPMENT merged: bottle art = nothing to
+                // translate, blank (same doctrine as box art).
+                mergedBox = InvBox(null, textBrush);
+            }
+            else
+            {
+                midBox = InvBox(midBlock, textBrush);
+                bottomRight = InvBox(equipBlock, textBrush);
+            }
+
+            var canvas = new Canvas();
+            canvas.Children.Add(leftTop);
+            canvas.Children.Add(itemBox);
+            canvas.Children.Add(bottomLeft);
+            if (mergedBox is not null) canvas.Children.Add(mergedBox);
+            else
+            {
+                canvas.Children.Add(midBox!);
+                canvas.Children.Add(bottomRight!);
+            }
+            canvas.SizeChanged += (_, _) =>
+            {
+                double w = canvas.ActualWidth;
+                if (w <= 0) return;
+                double s = w / 888.0;
+                canvas.Height = 735 * s;
+                static void Place(Border box, double x, double y, double bw, double bh, double s2)
+                {
+                    Canvas.SetLeft(box, x * s2);
+                    Canvas.SetTop(box, y * s2);
+                    box.Width = bw * s2;
+                    box.Height = bh * s2;
+                }
+                Place(leftTop, 0, 0, 551, 431, s);
+                Place(itemBox, 604, 0, 284, 167, s);
+                Place(bottomLeft, 0, 482, 554, 253, s);
+                if (mergedBox is not null) Place(mergedBox, 604, 182, 284, 553, s);
+                else
+                {
+                    Place(midBox!, 604, 182, 284, 253, s);
+                    Place(bottomRight!, 604, 482, 284, 253, s);
+                }
+                itemBlock.FontSize = System.Math.Max(9, 34 * s);
+                if (mergedBox is null)
+                {
+                    midBlock.FontSize = System.Math.Max(9, 26 * s);
+                    equipBlock.FontSize = System.Math.Max(9, 26 * s);
+                }
+                foreach (var (tb, design) in actionFonts) tb.FontSize = System.Math.Max(9, design * s);
+            };
+            return (canvas, itemBlock, actionFonts);
         }
 
         private static readonly Regex EllipsisRunPattern = new(@"[．.]{2,}", RegexOptions.Compiled);
