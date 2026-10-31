@@ -213,6 +213,14 @@ namespace WunderLanguage.Host.Windows
             controller.OcrTransportDied += live =>
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     _sidePanel.ShowError("E7", live));
+            // Circuit-degraded chip (item 3, 2026-10-30; revert:
+            // revert circuit-capture-continue): E8's live line carries
+            // when the slowdown started + how many loops held + the
+            // exact probe error + the reduced-cadence fact; a second
+            // fire refreshes the same row to 'recovered'.
+            controller.CircuitDegraded += live =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    _sidePanel.ShowError("E8", live));
             // Replay the last signal: it may have fired while nobody was
             // subscribed (subscriptions exist only from Connect onward),
             // and losing it would let a broken session start silently -

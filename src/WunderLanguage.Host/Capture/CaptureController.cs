@@ -534,6 +534,10 @@ namespace WunderLanguage.Host.Capture
         // in its popup; fired once at the watchdog threshold and again
         // with a 'recovered' line when OCR reads succeed again.
         public event Action<string>? OcrTransportDied;
+        // Circuit-degraded chip (item 3, 2026-10-30; revert: revert
+        // circuit-capture-continue): payload = the LIVE line for E8,
+        // fired at the hold threshold and on recovery.
+        public event Action<string>? CircuitDegraded;
 
         private int _consecutiveCaptureFailures;
         private const int MaxConsecutiveCaptureFailures = 5;
@@ -554,6 +558,21 @@ namespace WunderLanguage.Host.Capture
         // G1 circuit breaker (revert: revert g1-circuit-breaker): loops
         // spent in breaker-open hold (health probe failing).
         private int _circuitHoldLoops;
+        // Circuit-open chip + capture-continue (item 3, 2026-10-30;
+        // revert: revert circuit-capture-continue): E8 posts once per
+        // open episode at CircuitChipLoops held loops, recovery refreshes
+        // it in place; the health probe records its exact last failure
+        // for the live line (refused ones also feed the E7 watchdog).
+        private bool _circuitChipPosted;
+        private DateTime _circuitOpenSince;
+        private string _g1LastProbeFailure = "";
+        private const int CircuitChipLoops = 10;
+        // Pending-EN late retry (item 3; revert: revert pending-en-retry):
+        // JA text of bubbles stuck at the … marker, retried by a
+        // background pump with backoff until the provider answers.
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _pendingEnRetries = new();
+        private int _pendingEnRetryDelayMs = 5000;
+        private const int PendingEnRetryMaxDelayMs = 60000;
         // 2s budget - a wedged sidecar must not stall the breaker itself.
         private static readonly System.Net.Http.HttpClient _g1HealthHttp = new() { Timeout = TimeSpan.FromSeconds(2) };
 
@@ -1216,11 +1235,17 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw+z2v2+e7watch+circuitcont+enretry active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
+            _cts = new CancellationTokenSource();
             _ = RunLoopAsync(_cts.Token);
+            // Pending-EN retry pump (item 3; revert:
+            // revert pending-en-retry): backfills bubbles stuck at the …
+            // marker while capture keeps running — independent task, its
+            // own delay/backoff, cancelled by the same token on Stop().
+            _ = PendingEnRetryPumpAsync(_cts.Token);
             // Survival batch 4: block idle-sleep for the live session only
             // (pause/Stop releases). Revert: delete this line.
             try { Windows.PowerAvailability.Hold(); } catch { }
@@ -2644,9 +2669,65 @@ namespace WunderLanguage.Host.Capture
             try
             {
                 using var resp = await _g1HealthHttp.GetAsync("http://127.0.0.1:8000/health");
-                return resp.IsSuccessStatusCode;
+                if (resp.IsSuccessStatusCode) { _g1LastProbeFailure = ""; return true; }
+                _g1LastProbeFailure = $"health HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                return false;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                // Exact cause kept for the E8 live line and for the E7
+                // watchdog: a 'refused' probe = listener gone (death
+                // class), a timeout = merely busy (never kill for that).
+                _g1LastProbeFailure = ex.Message.Split('\n')[0];
+                return false;
+            }
+        }
+
+        // Transport-death machinery (item 2, 2026-10-30; revert:
+        // revert transport-watchdog), shared by two feeders since item
+        // 3: the POST catch (refused reads) and the circuit hold (a
+        // refused HEALTH PROBE — a hold must never hide the death
+        // class; before this, a wedged listener behind an open circuit
+        // could sit there uncounted forever). The FFVI leg died
+        // silently on 2026-10-30: the sidecar's accept loop broke while
+        // its process stayed alive, the counter ran 1->120 over five
+        // minutes, and NOTHING on screen ever said why. At 8
+        // consecutive failures the chip posts WHEN (first-failure time)
+        // + WHAT CAUSED IT (exact connection error, count, sidecar PID,
+        // restart status) and asks the manager to kill the deaf tree so
+        // the normal budget/forensics path respawns it (spent budget ->
+        // E3 says so instead). One shot per death episode; success
+        // refreshes it to 'recovered'.
+        private void NoteOcrTransportFailure(string cause, int loop)
+        {
+            _consecutiveOcrTransportFailures++;
+            if (_consecutiveOcrTransportFailures == 1)
+            {
+                _ocrTransportFirstFail = DateTime.Now;
+                _ocrTransportCause = cause;
+                _ocrTransportChipPosted = false;
+                _ocrTransportRestartRequested = false;
+            }
+            if (_consecutiveOcrTransportFailures == 1 || _consecutiveOcrTransportFailures % 20 == 0)
+                FileLogger.Log($"[loop {loop}] OCR transport hold ({_consecutiveOcrTransportFailures} consecutive): {cause}");
+
+            if (_consecutiveOcrTransportFailures >= TransportWatchdogFailures && !_ocrTransportChipPosted)
+            {
+                _ocrTransportChipPosted = true;
+                var mgr = Sidecar.SidecarProcessManager.OcrInstance;
+                string pid = mgr is null ? "n/a" : mgr.SidecarPid().ToString();
+                bool restarted = false;
+                if (!_ocrTransportRestartRequested)
+                {
+                    _ocrTransportRestartRequested = true;
+                    restarted = mgr?.TryRestartDeaf(cause) == true;
+                }
+                string live = $"died {_ocrTransportFirstFail:HH:mm:ss} \u00B7 {cause} \u00B7 " +
+                    $"{_consecutiveOcrTransportFailures} consecutive failures \u00B7 sidecar PID {pid} \u00B7 " +
+                    (restarted ? "restart triggered" : "restart deferred (see app.log)");
+                FileLogger.Log($"[error] transport death E7 signaled: {live}");
+                OcrTransportDied?.Invoke(live);
+            }
         }
 
         private async Task RunLoopAsync(CancellationToken token)
@@ -2739,11 +2820,30 @@ namespace WunderLanguage.Host.Capture
                     // first-failure behavior is unchanged: the loop still
                     // survives on its own; this stops it FREEZING for the
                     // request's lifetime and noticing never.
+                    //
+                    // Capture-continue (item 3, 2026-10-30; revert:
+                    // revert circuit-capture-continue): an open circuit
+                    // used to hard-skip capture every loop — 2026-10-30 PM
+                    // leg: GPU contention failed the 2s probe, 83 loops
+                    // held, NOTHING posted for minutes and nothing said
+                    // why. Now the else-branch falls through to capture +
+                    // OCR every 4th held loop: a working reader closes the
+                    // circuit itself (read success resets the timeout
+                    // counter), a wedged one keeps feeding the E7 transport
+                    // watchdog — the hold can no longer hide a death. At
+                    // CircuitChipLoops held loops E8 posts with when + why.
                     if (_consecutiveNestedTimeouts >= 3)
                     {
                         if (await SidecarHealthOkAsync())
                         {
                             FileLogger.Log($"[loop {iteration}] [g1] circuit closed (sidecar healthy after {_consecutiveNestedTimeouts} timeouts)");
+                            if (_circuitChipPosted)
+                            {
+                                _circuitChipPosted = false;
+                                string cl = $"recovered {DateTime.Now:HH:mm:ss} after {_circuitHoldLoops} held loops \u00B7 probe answering again";
+                                FileLogger.Log($"[g1] E8 refresh: {cl}");
+                                CircuitDegraded?.Invoke(cl);
+                            }
                             _consecutiveNestedTimeouts = 0;
                             _circuitHoldLoops = 0;
                         }
@@ -2752,10 +2852,38 @@ namespace WunderLanguage.Host.Capture
                             _costHolds++;
                             _sessHolds++;
                             _circuitHoldLoops++;
+                            if (_circuitHoldLoops == 1) _circuitOpenSince = DateTime.Now;
                             if (_circuitHoldLoops == 1 || _circuitHoldLoops % 20 == 0)
                                 FileLogger.Log($"[loop {iteration}] [g1] circuit open ({_consecutiveNestedTimeouts} timeouts, health probe failed): holding ({_circuitHoldLoops} loops)");
-                            await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
-                            continue;
+                            // A refused probe is the E7 death class while the
+                            // hold skips POSTs — count it like a refused POST
+                            // so chip + deaf-restart still fire from here.
+                            if (_g1LastProbeFailure.Contains("refused", StringComparison.OrdinalIgnoreCase))
+                                NoteOcrTransportFailure(_g1LastProbeFailure, iteration);
+                            // E8 chip at threshold: when + how long + exact
+                            // probe error + the reduced-cadence fact.
+                            // Refused probes are excluded — that is the E7
+                            // death class (chip + restart own it above);
+                            // E8 is the merely-busy class (GPU contention).
+                            if (_circuitHoldLoops == CircuitChipLoops
+                                && !_g1LastProbeFailure.Contains("refused", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _circuitChipPosted = true;
+                                string live = $"since {_circuitOpenSince:HH:mm:ss}" +
+                                    $" \u00B7 {_circuitHoldLoops} held loops \u00B7 last probe error: " +
+                                    (string.IsNullOrEmpty(_g1LastProbeFailure) ? "unknown" : _g1LastProbeFailure) +
+                                    " \u00B7 capture continuing every 4th cycle";
+                                FileLogger.Log($"[error] circuit-degraded E8 signaled: {live}");
+                                CircuitDegraded?.Invoke(live);
+                            }
+                            // Capture-continue cadence: 3 of every 4 held
+                            // loops still skip (no wedge burn), the 4th falls
+                            // through to capture + OCR below.
+                            if (_circuitHoldLoops % 4 != 0)
+                            {
+                                await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
+                                continue;
+                            }
                         }
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
@@ -2881,6 +3009,18 @@ namespace WunderLanguage.Host.Capture
                         string recLive = $"recovered {DateTime.Now:HH:mm:ss} after {_consecutiveOcrTransportFailures} consecutive failures \u00B7 cause was: {_ocrTransportCause}";
                         FileLogger.Log($"[error] transport recovered: {recLive}");
                         OcrTransportDied?.Invoke(recLive);
+                    }
+                    // Circuit recovery (item 3): a posted E8 refreshes to
+                    // 'recovered' the moment a read succeeds — the probe
+                    // branch only refreshes when IT closes the circuit; a
+                    // capture-continue fall-through read closes it HERE.
+                    if (_circuitChipPosted)
+                    {
+                        _circuitChipPosted = false;
+                        string recC = $"recovered {DateTime.Now:HH:mm:ss} after {_circuitHoldLoops} held loops \u00B7 a read succeeded at full rate";
+                        FileLogger.Log($"[g1] E8 refresh: {recC}");
+                        CircuitDegraded?.Invoke(recC);
+                        _circuitHoldLoops = 0;
                     }
                     _consecutiveOcrTransportFailures = 0;
                     _consecutiveNestedTimeouts = 0;
@@ -3178,48 +3318,7 @@ namespace WunderLanguage.Host.Capture
                     // way). Transport failure holds quietly: first and every
                     // 20th logged with cause, state untouched, loop continues.
                     // Revert: delete this catch (falls into generic ERROR).
-                    _consecutiveOcrTransportFailures++;
-                    string cause = hex.Message.Split('\n')[0];
-                    if (_consecutiveOcrTransportFailures == 1)
-                    {
-                        _ocrTransportFirstFail = DateTime.Now;
-                        _ocrTransportCause = cause;
-                        _ocrTransportChipPosted = false;
-                        _ocrTransportRestartRequested = false;
-                    }
-                    if (_consecutiveOcrTransportFailures == 1 || _consecutiveOcrTransportFailures % 20 == 0)
-                        FileLogger.Log($"[loop {iteration}] OCR transport hold ({_consecutiveOcrTransportFailures} consecutive): {cause}");
-
-                    // Transport-death chip + sidecar restart watchdog
-                    // (item 2, 2026-10-30; revert: revert
-                    // transport-watchdog). The FFVI leg died silently
-                    // this day: the sidecar's accept loop broke while its
-                    // process stayed alive, the hold counter ran 1->120
-                    // over five minutes, and NOTHING on screen ever said
-                    // why. At 8 consecutive refused reads the chip posts
-                    // WHEN (first-failure time) + WHAT CAUSED IT (exact
-                    // connection error, count, sidecar PID, restart
-                    // status) and asks the manager to kill the deaf tree
-                    // so the normal budget/forensics path respawns it
-                    // (spent budget -> E3 says so instead). One shot per
-                    // death episode; success refreshes it to 'recovered'.
-                    if (_consecutiveOcrTransportFailures >= TransportWatchdogFailures && !_ocrTransportChipPosted)
-                    {
-                        _ocrTransportChipPosted = true;
-                        var mgr = Sidecar.SidecarProcessManager.OcrInstance;
-                        string pid = mgr is null ? "n/a" : mgr.SidecarPid().ToString();
-                        bool restarted = false;
-                        if (!_ocrTransportRestartRequested)
-                        {
-                            _ocrTransportRestartRequested = true;
-                            restarted = mgr?.TryRestartDeaf(cause) == true;
-                        }
-                        string live = $"died {_ocrTransportFirstFail:HH:mm:ss} \u00B7 {cause} \u00B7 " +
-                            $"{_consecutiveOcrTransportFailures} consecutive failures \u00B7 sidecar PID {pid} \u00B7 " +
-                            (restarted ? "restart triggered" : "restart deferred (see app.log)");
-                        FileLogger.Log($"[error] transport death E7 signaled: {live}");
-                        OcrTransportDied?.Invoke(live);
-                    }
+                    NoteOcrTransportFailure(hex.Message.Split('\n')[0], iteration);
                 }
                 catch (Exception ex)
                 {
@@ -3242,6 +3341,15 @@ namespace WunderLanguage.Host.Capture
         private async Task TranslateAndPublishAsync(string text)
         {
             var pubSw = System.Diagnostics.Stopwatch.StartNew();
+            // Pending-EN late retry (item 3, 2026-10-30; revert:
+            // revert pending-en-retry): true once the JA bubble is live
+            // with the … marker. Hoisted above the try so the catch can
+            // see it — an EN failure from here on queues a retry instead
+            // of stranding the bubble (cited 2026-10-30: one PM line
+            // stuck at … for the rest of the session after a single
+            // provider timeout — the JA was already posted, only the EN
+            // fetch died).
+            bool jpPosted = false;
             try
             {
                 if (IsLatinChrome(text))
@@ -3349,7 +3457,6 @@ namespace WunderLanguage.Host.Capture
                 // fired 03:26:46, posted 03:27:04 = 18.2s late under GPU load).
                 // Every guard above already ran, so what posts here is exactly
                 // what the old code would have posted after the wait.
-                bool jpPosted = false;
                 try { TextTranslated?.Invoke(text, PendingTranslationMarker); jpPosted = true; FileLogger.Log($"[translate] jp-first posted \"{Truncate(text)}\" (EN pending)"); } catch { }
                 string sendText = MaskQMarks(text, out var qruns);
                 sendText = MaskNames(sendText, out var nruns);
@@ -3413,7 +3520,89 @@ namespace WunderLanguage.Host.Capture
             catch (Exception ex)
             {
                 FileLogger.Log($"[translate] ERROR translating \"{text}\": {ex}");
+                // Pending-EN late retry (item 3): the JA bubble is already
+                // live with the … marker — queue it; the background pump
+                // re-tries with backoff and late-fills the same bubble
+                // whenever the provider answers. Suppressed lines (guard
+                // returns) have jpPosted false → never queued.
+                if (jpPosted && !_stopped) EnqueuePendingEnRetry(text);
             }
+        }
+
+        // Pending-EN retry queue + pump (item 3, 2026-10-30; revert:
+        // revert pending-en-retry). Design target from the 2026-10-30
+        // session: capture never depends on the translator struggling —
+        // the JA posts with the … marker at fire time, and the EN
+        // resolves LATE whenever it lands. Before this, a failed EN
+        // fetch logged one ERROR and the bubble sat at … forever. The
+        // pump re-masks/translates/restores exactly like the fire path
+        // and re-fires TextTranslated → the panel's ring scan fills the
+        // same bubble by exact JA (order-independent, so an older stuck
+        // line still lands while newer bubbles are already complete).
+        private void EnqueuePendingEnRetry(string ja)
+        {
+            try
+            {
+                // One queue entry per bubble text: repeated failures of
+                // the same line do not stack (the ring holds 8; a line
+                // that fell out of it just fills as a logged no-op).
+                foreach (string queued in _pendingEnRetries)
+                    if (queued == ja) return;
+                _pendingEnRetries.Enqueue(ja);
+                FileLogger.Log($"[translate] pending-EN retry queued \"{Truncate(ja)}\" ({_pendingEnRetries.Count} queued, attempt in {_pendingEnRetryDelayMs / 1000}s)");
+            }
+            catch { }
+        }
+
+        private async Task<string?> TryTranslateEnAsync(string jaText)
+        {
+            // Same mask/translate/restore/unpublishable shape as the fire
+            // path; returns null = provider failed (caller retries later),
+            // a string = a definitive answer (including "------").
+            string sendText = MaskQMarks(jaText, out var qruns);
+            sendText = MaskNames(sendText, out var nruns);
+            string translated = await _translationManager.TranslateAsync(sendText);
+            if (nruns.Count > 0) translated = RestoreNames(translated, nruns, out _);
+            if (qruns.Count > 0) translated = RestoreQMarks(translated, qruns, out _);
+            if (IsUnpublishable(translated)) return "------";
+            if (IsHallucinatedProfanity(jaText, translated)) return "------";
+            return translated;
+        }
+
+        private async Task PendingEnRetryPumpAsync(CancellationToken token)
+        {
+            FileLogger.Log("[translate] pending-EN retry pump starting (revert: revert pending-en-retry)");
+            while (!token.IsCancellationRequested && !_stopped)
+            {
+                try { await Task.Delay(_pendingEnRetryDelayMs, token); } catch { break; }
+                if (_pendingEnRetries.IsEmpty) continue;
+                bool drained = true;
+                string? ja;
+                while (_pendingEnRetries.TryDequeue(out ja))
+                {
+                    if (_stopped || token.IsCancellationRequested) { drained = false; break; }
+                    string? en = null;
+                    try { en = await TryTranslateEnAsync(ja); }
+                    catch (Exception ex)
+                    {
+                        FileLogger.Log($"[translate] pending-EN retry failed \"{Truncate(ja)}\": {ex.Message.Split('\n')[0]}");
+                    }
+                    if (en is null)
+                    {
+                        // Provider still failing: put the line back, back
+                        // off (5s -> 60s cap), stop burning the queue.
+                        _pendingEnRetries.Enqueue(ja);
+                        _pendingEnRetryDelayMs = Math.Min(_pendingEnRetryDelayMs * 2, PendingEnRetryMaxDelayMs);
+                        FileLogger.Log($"[translate] pending-EN backoff {_pendingEnRetryDelayMs / 1000}s ({_pendingEnRetries.Count} queued)");
+                        drained = false;
+                        break;
+                    }
+                    FileLogger.Log($"[translate] pending-EN late fill \"{Truncate(ja)}\" -> \"{Truncate(en)}\"");
+                    try { TextTranslated?.Invoke(ja, en); } catch { }
+                }
+                if (drained) _pendingEnRetryDelayMs = 5000;
+            }
+            FileLogger.Log("[translate] pending-EN retry pump stopped");
         }
 
         private async Task TranslateAndUpdateAsync(string expectedOldJa, string text, int loop = -1)

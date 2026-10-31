@@ -51,6 +51,7 @@ namespace WunderLanguage.Host.Diagnostics
                 case "E5": return E5;
                 case "E6": return E6;
                 case "E7": return E7;
+                case "E8": return E8;
                 default: return null;
             }
         }
@@ -180,6 +181,32 @@ namespace WunderLanguage.Host.Diagnostics
                 "to 'recovered' when it does. If the reader cannot come back three times in a row the terminal E3 " +
                 "chip takes over instead. For a bug report, copy the '[job:ocr]' and 'OCR transport hold' blocks " +
                 "from app.log around the time on the chip \u2014 they hold the listener error verbatim.",
+        };
+
+        // Capture degraded (item 3, 2026-10-30; revert:
+        // revert circuit-capture-continue). The G1 circuit-open chip:
+        // before this entry the hold was invisible — 2026-10-30 PM leg
+        // held 83 loops under GPU contention with nothing on screen
+        // saying why posts stopped arriving. The live line (fired from
+        // the loop at the threshold) carries when the slowdown started,
+        // how many loops held, and the exact probe error; a second fire
+        // refreshes it to 'recovered'. Capture-continue changed the
+        // semantics underneath: while open the loop still captures and
+        // reads every 4th cycle, so this is a slow-down chip, never a
+        // stopped-camera chip. Wording lives here.
+        public static readonly ErrorCodeInfo E8 = new()
+        {
+            Code = "E8",
+            Chip = "Error E8 \u00B7 Text reader overloaded \u2014 reduced capture rate",
+            Title = "E8 \u2014 Text reader overloaded (reduced capture rate)",
+            Detail = "The text reader did not answer its health check inside the time budget \u2014 usually because the " +
+                "translation model has the graphics card busy (both share the GPU, saturating around it). Capture " +
+                "is NOT stopped: the program keeps capturing and reads every 4th cycle instead of every cycle, so " +
+                "dialogue still posts while the reader catches up \u2014 it just arrives slower than normal. The line " +
+                "above shows when the slowdown started, how many cycles were held, and the reader's last probe error.",
+            Fix = "Nothing to do \u2014 it clears by itself the moment the reader answers again, and the line above " +
+                "updates to 'recovered' when it does. If it never clears, close other GPU-heavy apps or restart the " +
+                "session; the '[g1] circuit open' lines in app.log hold the exact timing for a bug report.",
         };
     }
 }
