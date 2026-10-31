@@ -204,6 +204,15 @@ namespace WunderLanguage.Host.Windows
             Sidecar.SidecarProcessManager.ErrorCodeNotice += code =>
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     _sidePanel.ShowError(code));
+            // Transport-death chip (item 2, 2026-10-30; revert:
+            // revert transport-watchdog): E7's live line comes straight
+            // from the capture loop's transport catch — WHEN it died +
+            // WHAT caused it (endpoint error, count, sidecar PID,
+            // restart status) — and a second fire refreshes the same
+            // chip to 'recovered' once reads work again.
+            controller.OcrTransportDied += live =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    _sidePanel.ShowError("E7", live));
             // Replay the last signal: it may have fired while nobody was
             // subscribed (subscriptions exist only from Connect onward),
             // and losing it would let a broken session start silently -

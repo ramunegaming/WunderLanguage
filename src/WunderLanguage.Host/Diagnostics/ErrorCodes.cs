@@ -50,6 +50,7 @@ namespace WunderLanguage.Host.Diagnostics
                 case "E4": return E4;
                 case "E5": return E5;
                 case "E6": return E6;
+                case "E7": return E7;
                 default: return null;
             }
         }
@@ -148,6 +149,37 @@ namespace WunderLanguage.Host.Diagnostics
             Fix = "Relaunch WunderLanguage to restart the translator (errors E1/E2 usually come first and explain " +
                 "why it stopped). For a durable fix, add a DeepL API key in Settings \u2014 that gives every failed " +
                 "line a second translation source instead of a single point of failure.",
+        };
+
+        // Transport death (item 2, 2026-10-30; revert: revert
+        // transport-watchdog). The class that killed the FFVI leg
+        // silently that day: the OCR sidecar's HTTP listener broke
+        // (accept-coroutine died, WinError 64) while its PROCESS stayed
+        // alive, so no crash/restart signal ever fired — the hold
+        // counter ran 1->120 over five minutes with zero visible sign.
+        // Fired from the capture loop's transport catch at the watchdog
+        // threshold, and again on recovery; the LIVE line (captured at
+        // the call site, appended to the chip + popup) carries the two
+        // facts the user requires: WHEN it died and WHAT caused it
+        // (first-failure time, exact connection error, consecutive
+        // count, sidecar PID, restart status). Wording lives here.
+        public static readonly ErrorCodeInfo E7 = new()
+        {
+            Code = "E7",
+            Chip = "Error E7 \u00B7 Text reader connection lost",
+            Title = "E7 \u2014 Text reader (OCR) connection lost",
+            Detail = "The text reader stopped answering mid-session: its process is still running, but the connection " +
+                "to it was refused \u2014 its request listener broke without the process ever exiting, so no crash " +
+                "signal fired. Detection pauses from that moment (the line above shows when it died, the exact " +
+                "connection error, how many attempts in a row failed, and the reader's process ID). This is the " +
+                "silent-death class first seen 2026-10-30: five minutes of live frames with nothing posted and " +
+                "nothing on screen explaining why.",
+            Fix = "Nothing to do by hand \u2014 the program now kills the wedged reader and restarts it the moment the " +
+                "failure threshold is reached (the line above says whether that restart was triggered); posting " +
+                "resumes when the reader is warm again, usually well under a minute, and the chip's line updates " +
+                "to 'recovered' when it does. If the reader cannot come back three times in a row the terminal E3 " +
+                "chip takes over instead. For a bug report, copy the '[job:ocr]' and 'OCR transport hold' blocks " +
+                "from app.log around the time on the chip \u2014 they hold the listener error verbatim.",
         };
     }
 }

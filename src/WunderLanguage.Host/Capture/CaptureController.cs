@@ -528,12 +528,28 @@ namespace WunderLanguage.Host.Capture
         private string _lastDecisionSig = "";
         public event Action<string, string, string>? TextUpdated; // (expectedOldJa, newJa, en)
         public event Action? WindowLost;
+        // Transport-death chip (item 2, 2026-10-30; revert:
+        // revert transport-watchdog): payload = the LIVE line (when +
+        // cause + count + PID + restart status) shown on the E7 chip and
+        // in its popup; fired once at the watchdog threshold and again
+        // with a 'recovered' line when OCR reads succeed again.
+        public event Action<string>? OcrTransportDied;
 
         private int _consecutiveCaptureFailures;
         private const int MaxConsecutiveCaptureFailures = 5;
         // Boot/outage survival: consecutive OCR transport failures (see
         // catch below). Reset on every successful OCR read.
         private int _consecutiveOcrTransportFailures;
+        // Transport watchdog (item 2): first-failure clock + cause for
+        // the E7 live line, plus one-shot flags per death episode.
+        private DateTime _ocrTransportFirstFail;
+        private string _ocrTransportCause = "";
+        private bool _ocrTransportChipPosted;
+        private bool _ocrTransportRestartRequested;
+        // Threshold: at 8 consecutive refused reads (~10-20s of loops)
+        // the listener is dead, not warming - boot warmup never reaches
+        // it (sidecar ready-gate + reset on first success).
+        private const int TransportWatchdogFailures = 8;
         private int _consecutiveNestedTimeouts;
         // G1 circuit breaker (revert: revert g1-circuit-breaker): loops
         // spent in breaker-open hold (health probe failing).
@@ -2856,6 +2872,16 @@ namespace WunderLanguage.Host.Capture
                     }
                     catch { avgBitmap = null; ocrBitmap = bitmap; }
                     var (rawText, ocrBlocks, contentWords, totalWords) = await _ocrClient.ExtractTextWithBlocksAsync(ocrBitmap, learningMode, Packs.PackRegistry.Current.BoxScoreThreshold);
+                    // Transport watchdog recovery (item 2): a posted E7
+                    // refreshes in place to 'recovered' the moment reads
+                    // work again - the chip never silently rots stale.
+                    if (_ocrTransportChipPosted)
+                    {
+                        _ocrTransportChipPosted = false;
+                        string recLive = $"recovered {DateTime.Now:HH:mm:ss} after {_consecutiveOcrTransportFailures} consecutive failures \u00B7 cause was: {_ocrTransportCause}";
+                        FileLogger.Log($"[error] transport recovered: {recLive}");
+                        OcrTransportDied?.Invoke(recLive);
+                    }
                     _consecutiveOcrTransportFailures = 0;
                     _consecutiveNestedTimeouts = 0;
                     try { _lastScriptHit = _ocrClient.LastScriptHit; } catch { _lastScriptHit = false; }
@@ -3153,8 +3179,47 @@ namespace WunderLanguage.Host.Capture
                     // 20th logged with cause, state untouched, loop continues.
                     // Revert: delete this catch (falls into generic ERROR).
                     _consecutiveOcrTransportFailures++;
+                    string cause = hex.Message.Split('\n')[0];
+                    if (_consecutiveOcrTransportFailures == 1)
+                    {
+                        _ocrTransportFirstFail = DateTime.Now;
+                        _ocrTransportCause = cause;
+                        _ocrTransportChipPosted = false;
+                        _ocrTransportRestartRequested = false;
+                    }
                     if (_consecutiveOcrTransportFailures == 1 || _consecutiveOcrTransportFailures % 20 == 0)
-                        FileLogger.Log($"[loop {iteration}] OCR transport hold ({_consecutiveOcrTransportFailures} consecutive): {hex.Message.Split('\n')[0]}");
+                        FileLogger.Log($"[loop {iteration}] OCR transport hold ({_consecutiveOcrTransportFailures} consecutive): {cause}");
+
+                    // Transport-death chip + sidecar restart watchdog
+                    // (item 2, 2026-10-30; revert: revert
+                    // transport-watchdog). The FFVI leg died silently
+                    // this day: the sidecar's accept loop broke while its
+                    // process stayed alive, the hold counter ran 1->120
+                    // over five minutes, and NOTHING on screen ever said
+                    // why. At 8 consecutive refused reads the chip posts
+                    // WHEN (first-failure time) + WHAT CAUSED IT (exact
+                    // connection error, count, sidecar PID, restart
+                    // status) and asks the manager to kill the deaf tree
+                    // so the normal budget/forensics path respawns it
+                    // (spent budget -> E3 says so instead). One shot per
+                    // death episode; success refreshes it to 'recovered'.
+                    if (_consecutiveOcrTransportFailures >= TransportWatchdogFailures && !_ocrTransportChipPosted)
+                    {
+                        _ocrTransportChipPosted = true;
+                        var mgr = Sidecar.SidecarProcessManager.OcrInstance;
+                        string pid = mgr is null ? "n/a" : mgr.SidecarPid().ToString();
+                        bool restarted = false;
+                        if (!_ocrTransportRestartRequested)
+                        {
+                            _ocrTransportRestartRequested = true;
+                            restarted = mgr?.TryRestartDeaf(cause) == true;
+                        }
+                        string live = $"died {_ocrTransportFirstFail:HH:mm:ss} \u00B7 {cause} \u00B7 " +
+                            $"{_consecutiveOcrTransportFailures} consecutive failures \u00B7 sidecar PID {pid} \u00B7 " +
+                            (restarted ? "restart triggered" : "restart deferred (see app.log)");
+                        FileLogger.Log($"[error] transport death E7 signaled: {live}");
+                        OcrTransportDied?.Invoke(live);
+                    }
                 }
                 catch (Exception ex)
                 {

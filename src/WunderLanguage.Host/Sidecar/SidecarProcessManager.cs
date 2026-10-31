@@ -55,6 +55,18 @@ namespace WunderLanguage.Host.Sidecar
         // the role-specific message text).
         public static event Action<string>? EngineDown;
         public static event Action<string>? ErrorCodeNotice;
+        // Transport watchdog (item 2, 2026-10-30; revert:
+        // revert transport-watchdog): the capture loop detects the
+        // deaf-listener death (refused connections while the process is
+        // alive) but does not own the manager - App does. Publish the
+        // OCR instance here (one per process; the first OCR role wins)
+        // so the loop can ask for a restart without new plumbing.
+        public static SidecarProcessManager? OcrInstance;
+        // Ready flag: set only when the healthy-wait has seen OCR ready,
+        // cleared on death/stop. The watchdog must never kill during the
+        // boot warmup (connection-refused there is normal, cited
+        // 2026-10-08) - ready + refused = the deaf-listener class.
+        private volatile bool _serviceReady;
         // Pending error replay (2026-10-23; revert: revert error-codes):
         // signals are one-shot, but the ONLY subscriber
         // (AppShell.BuildCaptureController) exists from Connect onward -
@@ -100,9 +112,10 @@ namespace WunderLanguage.Host.Sidecar
             _port = _role == "cat" ? 8001 : 8000;
             _readyStage = _role;
             // OCR: legacy nocatfb policy (healthy death ⇒ OCR-only retry).
-            // CAT: its whole job is the translator — always retry with it.
+            // CAT: its whole job is the translator - always retry with it.
             _restartWithCat = _role == "cat";
             _job.TreeDied += OnTreeDied;
+            if (_role == "ocr" && OcrInstance is null) OcrInstance = this;
         }
 
         private void LogDeathForensics()
@@ -301,6 +314,7 @@ namespace WunderLanguage.Host.Sidecar
                 // Same shape as the startup early-exit dump. Revert: delete
                 // the call.
                 try { LogDeathForensics(); } catch { }
+                _serviceReady = false;
                 if (_stopRequested || _restarting) return;
                 // Error chip E1 (2026-10-23; revert: revert error-codes):
                 // a CAT death INSIDE the load window is the "failed to
@@ -672,6 +686,7 @@ namespace WunderLanguage.Host.Sidecar
                         if (ocr == "ready")
                         {
                             FileLogger.Log("Sidecar health check succeeded.");
+                            _serviceReady = true;
                             return;
                         }
                         if (ocr.StartsWith("failed", StringComparison.OrdinalIgnoreCase))
@@ -825,11 +840,43 @@ namespace WunderLanguage.Host.Sidecar
             catch { return 0; }
         }
 
+        // Transport watchdog restart (item 2, 2026-10-30; revert:
+        // revert transport-watchdog). The 2026-10-30 FFVI leg died for
+        // 5 minutes with NO death signal: the sidecar's HTTP accept
+        // coroutine broke (WinError 64) while the process stayed alive,
+        // so the job never saw a death and OCR requests were refused
+        // forever. Ready + refused = a deaf listener that no crash path
+        // can catch, so THIS is the seam that kills the tree: the normal
+        // TreeDied handler then owns forensics + the restart budget +
+        // the terminal E3 if the budget is spent. Guards: never during
+        // boot warmup (_serviceReady false), never during an in-flight
+        // restart, never after Stop().
+        public bool TryRestartDeaf(string cause)
+        {
+            try
+            {
+                if (_stopRequested || _restarting) return false;
+                if (!_serviceReady) return false;
+                var p = _process;
+                if (p is null || p.HasExited) return false;
+                _serviceReady = false;
+                FileLogger.Log($"[job:{_role}] transport watchdog: pid={p.Id} ready but refusing connections ({cause}) - killing tree for restart (budget {_restarts}/3)");
+                p.Kill(entireProcessTree: true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[job:{_role}] transport watchdog restart failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public void Stop()
         {
             // Requested death: the job watcher must NOT restart the tree
             // it sees dying below (kill races the completion packets).
             _stopRequested = true;
+            _serviceReady = false;
             try { _restartCts?.Cancel(); } catch { }
             try { _catWatchCts?.Cancel(); } catch { }
             try

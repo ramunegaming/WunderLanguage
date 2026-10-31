@@ -980,6 +980,10 @@ namespace WunderLanguage.Host.Windows
         private Border? _errorChip;
         private TextBlock? _errorChipLabel;
         private string? _errorCodeShown;
+        // Live line (item 2 transport chip): factual when+cause data
+        // captured at the fire site, appended to the chip + popup under
+        // the registry's static wording.
+        private string? _errorChipLive;
         private Window? _errorPopup;
 
         public void ShowNotice(string text)
@@ -1015,7 +1019,7 @@ namespace WunderLanguage.Host.Windows
         // unknown codes log and drop (a bad code must never break the
         // feed path). The chip's screen position is logged once layout
         // settles so UI-automation gates (and support shots) can find it.
-        public void ShowError(string code)
+        public void ShowError(string code, string? live = null)
         {
             Dispatcher.Invoke(() =>
             {
@@ -1074,8 +1078,15 @@ namespace WunderLanguage.Host.Windows
                     }
                     bool first = _errorCodeShown != code;
                     _errorCodeShown = code;
-                    if (_errorChipLabel != null && _errorChipLabel.Text != info.Chip)
-                        _errorChipLabel.Text = info.Chip;
+                    // Live line (item 2): registry wording first, factual
+                    // when+cause data below it — both wrap inside the
+                    // chip's max width.
+                    _errorChipLive = live;
+                    string labelText = string.IsNullOrEmpty(live)
+                        ? info.Chip
+                        : info.Chip + "\n" + live;
+                    if (_errorChipLabel != null && _errorChipLabel.Text != labelText)
+                        _errorChipLabel.Text = labelText;
                     FileLogger.Log($"[error] chip {(first ? code + " posted" : code + " refreshed (in place)")}");
                     HistoryScroller.ScrollToEnd();
                     // Re-logged on EVERY post/update, at ApplicationIdle:
@@ -1141,6 +1152,8 @@ namespace WunderLanguage.Host.Windows
                     Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC9, 0x4D)),
                 });
                 root.Children.Add(ErrorSectionLabel("What happened"));
+                if (!string.IsNullOrEmpty(_errorChipLive))
+                    root.Children.Add(ErrorBody("\u25B6 " + _errorChipLive));
                 root.Children.Add(ErrorBody(info.Detail));
                 root.Children.Add(ErrorSectionLabel("What to do"));
                 root.Children.Add(ErrorBody(info.Fix));
@@ -1214,6 +1227,7 @@ namespace WunderLanguage.Host.Windows
             _noticeShown = false;
             // Error chip is session chrome like the notice row.
             _errorCodeShown = null;
+            _errorChipLive = null;
             _errorChip = null;
             _errorChipLabel = null;
             Dispatcher.Invoke(() =>
