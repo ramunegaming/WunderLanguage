@@ -328,6 +328,11 @@ namespace WunderLanguage.Host.Packs.FFVI
         public static readonly (string from, string to)[] DisplayFixups = { };
         public const string TitleMarker = "FINAL FANTASY";
         public const string FullTitle = "FINAL FANTASY VI";
+        // Item 4 (revert latin-title-match / revert canonical-title-fallback):
+        // latin form declared (logo split reads never contain it whole —
+        // measured, see IPack); logo unreadable = canonical-title fallback A.
+        public static readonly string[] LatinTitleForms = new[] { "FINAL FANTASY VI" };
+        public const bool TitleLogoUnreadable = true;
         public static readonly (string ja, string en)[] TitleMap =
         {
             ("FINAL FANTASY VI", "Final Fantasy VI"),
@@ -363,6 +368,8 @@ namespace WunderLanguage.Host.Packs.FFVI
         public System.Collections.Generic.IReadOnlyList<(string from, string to)> DisplayFixups => FfviPack.DisplayFixups;
         public string TitleMarker => FfviPack.TitleMarker;
         public string FullTitle => FfviPack.FullTitle;
+        public System.Collections.Generic.IReadOnlyList<string> LatinTitleForms => FfviPack.LatinTitleForms;
+        public bool TitleLogoUnreadable => FfviPack.TitleLogoUnreadable;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> TitleMap => FfviPack.TitleMap;
         public bool IsTransitionBlend(string text) => FfviPack.IsTransitionBlend(text);
         public string ApplySweepFixups(string fixed_) => FfviPack.ApplySweepFixups(fixed_);

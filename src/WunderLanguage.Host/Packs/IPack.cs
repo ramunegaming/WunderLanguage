@@ -7,6 +7,22 @@ namespace WunderLanguage.Host.Packs
         System.Collections.Generic.IReadOnlyList<(string from, string to)> DisplayFixups { get; }
         string TitleMarker { get; }
         string FullTitle { get; }
+        // Item 4 latin titles (2026-10-30; revert: revert latin-title-match):
+        // pack-declared LATIN title strings for the strict title matcher —
+        // known-exact-string only (KC-fold + casefold + alphanumerics; the
+        // FULL normalized form must be present in the read). Never fuzzy,
+        // never fragments: mined over 5,467 fired bubbles + 108,739 OCR
+        // blocks = 0 false-matches (tools/i4_latin_mine.py). Empty = no
+        // latin title declared (JA path only).
+        System.Collections.Generic.IReadOnlyList<string> LatinTitleForms { get; }
+        // Item 4 fallback A (revert: revert canonical-title-fallback): this
+        // pack's title logo ART never reads — measured: contrast re-OCR
+        // 0/24 variant-runs on the four harvested title shots
+        // (tools/i4_ocr_boost.py), full latin form 0/108,739 corpus blocks.
+        // true = the title screen is identified by quiet + steadiness (E)
+        // + window-title identity, and the canonical FullTitle is POSTED
+        // instead of waiting for a logo read that can never come.
+        bool TitleLogoUnreadable { get; }
         System.Collections.Generic.IReadOnlyList<(string ja, string en)> TitleMap { get; }
         bool IsTransitionBlend(string text);
         string ApplySweepFixups(string fixed_);

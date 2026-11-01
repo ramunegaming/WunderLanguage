@@ -56,6 +56,11 @@ namespace WunderLanguage.Host.Packs.PaperMario
         public static readonly string[] WeaponLabels = { };
         public static readonly (string ja, string en)[] BattleGlossary = { };
         public static bool KeepSpeakerBrackets => false;
+        // Item 4 (revert latin-title-match / revert canonical-title-fallback):
+        // logo never reads latin (0 block hits in corpora) — declared for
+        // coverage if a clean-font variant ever reads; fallback A carries.
+        public static readonly string[] LatinTitleForms = new[] { "PAPER MARIO", "PAPER MARIO RPG" };
+        public const bool TitleLogoUnreadable = true;
     }
     public sealed class PaperMarioPackInstance : IPack
     {
@@ -65,6 +70,8 @@ namespace WunderLanguage.Host.Packs.PaperMario
         public System.Collections.Generic.IReadOnlyList<(string from, string to)> DisplayFixups => PaperMarioPack.DisplayFixups;
         public string TitleMarker => PaperMarioPack.TitleMarker;
         public string FullTitle => PaperMarioPack.FullTitle;
+        public System.Collections.Generic.IReadOnlyList<string> LatinTitleForms => PaperMarioPack.LatinTitleForms;
+        public bool TitleLogoUnreadable => PaperMarioPack.TitleLogoUnreadable;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> TitleMap => PaperMarioPack.TitleMap;
         public bool IsTransitionBlend(string text) => PaperMarioPack.IsTransitionBlend(text);
         public string ApplySweepFixups(string fixed_) => PaperMarioPack.ApplySweepFixups(fixed_);

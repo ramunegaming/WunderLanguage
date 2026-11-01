@@ -302,6 +302,13 @@ namespace WunderLanguage.Host.Capture
         private int _quietCount;
         private bool _quietHint;
         private string _quietSeen = "";
+        // Item 4-A (2026-10-31; revert: revert canonical-title-fallback):
+        // once-per-dwell edge for the >= bar. The old == bar misses its own
+        // window when the logo hint flickers (measured FFVI: quiet reached
+        // 59 while the hinted bar read 30), so A must be able to fire ABOVE
+        // the bar - which needs an explicit edge or it would republish every
+        // following loop. Reset with _quietCount.
+        private bool _quietAPosted;
         private readonly object _mineLock = new();
         private string _successorText = string.Empty;
         private int _successorCount;
@@ -822,7 +829,7 @@ namespace WunderLanguage.Host.Capture
                     try { LoadMinedCorrections(); } catch { }
                     CorpusRotate();
                     // New game, new timeline: stale quiet must not mint a TITLE.
-                    _quietCount = 0; _quietSeen = "";
+                    _quietCount = 0; _quietSeen = ""; _quietAPosted = false;
                     return;
                 }
                 if (fresh == _gameId) return;
@@ -831,7 +838,7 @@ namespace WunderLanguage.Host.Capture
                 try { Packs.PackRegistry.SetSession(_gameId); } catch { }
                 try { LoadMinedCorrections(); } catch { }
                 CorpusRotate();
-                _quietCount = 0; _quietSeen = "";
+                _quietCount = 0; _quietSeen = ""; _quietAPosted = false;
             }
             catch { }
         }
@@ -1235,7 +1242,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw+z2v2+e7watch+circuitcont+enretry active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw+z2v2+e7watch+circuitcont+enretry+latintitle+steadiness+titlefallback active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -3116,6 +3123,10 @@ namespace WunderLanguage.Host.Capture
                             shown++;
                         }
                         if (Settings.Diag.Enabled) FileLogger.Log($"[blocks] total={ocrBlocks.Count} jaBlocks={jaBlocks} primaryJa={HasJapanese(extractedText)} frame={fw}x{fh}{preview}");
+                        // Item 4-E (revert: revert title-steadiness): classify
+                        // blinking vs persistent text BEFORE either title
+                        // detector reads it.
+                        try { UpdateTitleSteadiness(iteration, ocrBlocks); } catch { }
                         string? quietTitleSettled = CheckQuietTitle(iteration, ocrBlocks);
                         // A live battle owns the screen: the logo/title detector must
                         // never fire mid-fight (it forces a bogus TITLE plus a dupe
@@ -4579,6 +4590,30 @@ namespace WunderLanguage.Host.Capture
         private bool _titleEpisodePosted;
         private const int TitleEpisodePublishAt = 3;
         private const int TitleEpisodeBlindGap = 20;
+        // Title-path text steadiness (item 4-E, 2026-10-31; revert:
+        // revert title-steadiness). User spec (2026-10-30 bulk session):
+        // "title text only, flashing start line excluded" - shipped as
+        // machinery, never a per-game string list. A text is convicted as
+        // blinking only after >=3 sightings AND >=2 returns from an absence,
+        // so ONE OCR dropout or a briefly flame-occluded title can never
+        // convict; a convicted blinker stops counting as title evidence.
+        // A first sighting has no history yet, so the T3 first-visit fastpath
+        // (strong on sight one) cannot regress. The believed set (seen >=2,
+        // not convicted) is what A's steadiness reads - transient one-off rec
+        // hallucination on logo art is not evidence, so varying garbage
+        // cannot destabilise it, while genuine changing text (scroll,
+        // animation, line advance) does. Tracks retire after TitleSteadyRetire
+        // loops without a sighting so a long session cannot grow them.
+        private struct TitleTrack { public int N; public int Ret; public int Last; public bool Absent; }
+        private readonly System.Collections.Generic.Dictionary<string, TitleTrack> _titleTrack = new();
+        private readonly System.Collections.Generic.HashSet<string> _titleFlicker = new();
+        private readonly System.Collections.Generic.HashSet<string> _titlePrevKeys = new();
+        private System.Collections.Generic.HashSet<string> _titleBelieved = new();
+        private int _titleStableLoops;
+        private const int TitleSteadyNeed = 3;
+        private const int TitleFlickerSightings = 3;
+        private const int TitleFlickerGaps = 2;
+        private const int TitleSteadyRetire = 300;
         // T2.5 (2026-10-21 live round 1): OCR drops the prolonged-sound
         // mark ー between reads (morning: 神々のトライフォース matched
         // containment 1.00; evening: 神々のトライフォス — no ー — scored
@@ -4593,6 +4628,110 @@ namespace WunderLanguage.Host.Capture
                     .Replace("ー", "").Replace("―", "")
                     .Replace("—", "").Replace("‐", "").Replace("－", "");
         }
+        private static string TitleSteadyKey(string t) => TitleNorm(t ?? "");
+
+        // Item 4-E core (revert: revert title-steadiness): one call per
+        // observation, ahead of both title detectors. Its log line is
+        // sim-inert (measured: the base catstats log carries ZERO title
+        // lines across all 453 corpora / 192,002 lines) so the offline A/B
+        // stays byte-identical - the title path is live-provable only.
+        private void UpdateTitleSteadiness(int iteration, List<OcrBlock>? blocks)
+        {
+            try
+            {
+                var cur = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+                if (blocks != null)
+                    foreach (var b in blocks)
+                    {
+                        string k = TitleSteadyKey((b.Text ?? "").Trim());
+                        if (k.Length >= 2) cur.Add(k);
+                    }
+                foreach (var k in cur)
+                {
+                    if (_titleTrack.TryGetValue(k, out var tr))
+                    {
+                        if (tr.Absent) tr.Ret++;
+                        tr.N++;
+                        tr.Absent = false;
+                        tr.Last = iteration;
+                        _titleTrack[k] = tr;
+                    }
+                    else _titleTrack[k] = new TitleTrack { N = 1, Ret = 0, Last = iteration, Absent = false };
+                }
+                foreach (var k in _titlePrevKeys)
+                    if (!cur.Contains(k) && _titleTrack.TryGetValue(k, out var tr))
+                    {
+                        tr.Absent = true;
+                        tr.Last = iteration;
+                        _titleTrack[k] = tr;
+                    }
+                foreach (var k in cur)
+                {
+                    if (_titleFlicker.Contains(k)) continue;
+                    if (_titleTrack.TryGetValue(k, out var tr) && tr.N >= TitleFlickerSightings && tr.Ret >= TitleFlickerGaps)
+                    {
+                        _titleFlicker.Add(k);
+                        if (!_simMode) FileLogger.Log($"[title] steadiness flicker-drop \"{Truncate(k, 40)}\" vis={tr.N} gaps={tr.Ret}");
+                    }
+                }
+                // Believed = seen >=2 AND not convicted. Transient one-off
+                // garbage is not evidence in either direction, so varying rec
+                // hallucination on logo art cannot destabilise the dwell.
+                var believed = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+                foreach (var k in cur)
+                    if (_titleTrack.TryGetValue(k, out var tr) && tr.N >= 2 && !_titleFlicker.Contains(k)) believed.Add(k);
+                if (believed.SetEquals(_titleBelieved)) _titleStableLoops++;
+                else _titleStableLoops = 1;
+                _titleBelieved = believed;
+                _titlePrevKeys.Clear();
+                foreach (var k in cur) _titlePrevKeys.Add(k);
+                // Retirement: a long session must not grow the tracker.
+                if (_titleTrack.Count > TitleSteadyRetire)
+                {
+                    var dead = new System.Collections.Generic.List<string>();
+                    foreach (var kv in _titleTrack)
+                        if (iteration - kv.Value.Last > TitleSteadyRetire) dead.Add(kv.Key);
+                    foreach (var k in dead) { _titleTrack.Remove(k); _titleFlicker.Remove(k); }
+                }
+            }
+            catch { }
+        }
+
+        // Item 4-B (revert: revert latin-title-match): pack-declared LATIN
+        // title forms, known-exact-string only - NFKC + casefold +
+        // alphanumerics, then the FULL normalized form must be present (or
+        // equal). The reverse direction (read is a FRAGMENT of the form) is
+        // forbidden: pricing run 1 measured 81 junk hits on fragments.
+        // Evidence: 0 false-matches over 5,467 fired bubbles and 0 matches
+        // over 108,739 OCR blocks (tools/i4_latin_mine.py, which joins split
+        // logo reads per frame - hence the joined-frame call site).
+        // HasJapanese is deliberately NOT required: this is the title path
+        // only; the dialogue hot path's HasJapanese gate is untouched.
+        private static string LatinNorm(string t)
+        {
+            if (string.IsNullOrEmpty(t)) return "";
+            string n = t.Normalize(System.Text.NormalizationForm.FormKC).ToLowerInvariant();
+            var sb = new System.Text.StringBuilder(n.Length);
+            foreach (char c in n)
+                if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')) sb.Append(c);
+            return sb.ToString();
+        }
+
+        private static string? LatinTitleHit(string text, System.Collections.Generic.IReadOnlyList<string> forms)
+        {
+            if (forms == null || string.IsNullOrEmpty(text)) return null;
+            string b = LatinNorm(text);
+            if (b.Length == 0) return null;
+            foreach (var f in forms)
+            {
+                if (string.IsNullOrEmpty(f)) continue;
+                string fb = LatinNorm(f);
+                if (fb.Length == 0) continue;
+                if (b == fb || (fb.Length >= 6 && b.Contains(fb, System.StringComparison.Ordinal))) return f;
+            }
+            return null;
+        }
+
         private bool CheckTitleEpisode(int iteration, List<OcrBlock> blocks)
         {
             try
@@ -4620,7 +4759,12 @@ namespace WunderLanguage.Host.Capture
                 foreach (var b in blocks)
                 {
                     string bt = (b.Text ?? "").Trim();
-                    if (Match(bt))
+                    // E veto (revert: revert title-steadiness): a text
+                    // convicted as blinking is a prompt line ("press start"),
+                    // not title text - it never counts as title evidence. A
+                    // first sighting has no conviction yet, so the T3
+                    // first-visit fastpath still fires on sight one.
+                    if (Match(bt) && !_titleFlicker.Contains(TitleSteadyKey(bt)))
                     {
                         evidence = true;
                         // Title-fastpath (revert: revert title-fastpath): a
@@ -4641,6 +4785,49 @@ namespace WunderLanguage.Host.Capture
                             || (Unvoice(bn).Length >= pnUV.Length && Unvoice(bn).Contains(pnUV, System.StringComparison.Ordinal)))
                             strong = true;
                         break;
+                    }
+                }
+                // Item 4-B (revert: revert latin-title-match): the matcher
+                // above is inert on latin reads (HasJapanese sits inside
+                // Match), which is exactly why FFVI/PM latin titles could
+                // never fire. Exact-string match against the pack's declared
+                // forms, per block AND against the frame JOINED - the logo
+                // reads as SPLIT blocks ("inal" + "Fantasy" + "VI") and the
+                // pricing mine joins per frame for that reason. A hit is a
+                // full-form containment by construction, so it ranks as
+                // strong: same rank as the JA fastpath, same vetoes below.
+                if (!evidence)
+                {
+                    System.Collections.Generic.IReadOnlyList<string> forms = System.Array.Empty<string>();
+                    try { forms = Packs.PackRegistry.Current.LatinTitleForms ?? System.Array.Empty<string>(); } catch { }
+                    if (forms != null && forms.Count > 0)
+                    {
+                        string? hit = null;
+                        var joined = new System.Text.StringBuilder();
+                        foreach (var b in blocks)
+                        {
+                            string bt = (b.Text ?? "").Trim();
+                            if (bt.Length == 0) continue;
+                            if (joined.Length > 0) joined.Append(' ');
+                            joined.Append(bt);
+                            hit = LatinTitleHit(bt, forms);
+                            if (hit == null) continue;
+                            if (_titleFlicker.Contains(TitleSteadyKey(bt))) { hit = null; continue; }
+                            evidence = true;
+                            strong = true;
+                            break;
+                        }
+                        if (!evidence)
+                        {
+                            hit = LatinTitleHit(joined.ToString(), forms);
+                            if (hit != null)
+                            {
+                                evidence = true;
+                                strong = true;
+                            }
+                        }
+                        if (evidence && hit != null && !_simMode)
+                            FileLogger.Log($"[title] latin-match loop={iteration} form=\"{hit}\"");
                     }
                 }
                 if (evidence)
@@ -4728,7 +4915,7 @@ namespace WunderLanguage.Host.Capture
                 // Battle liveness breaks the streak: any frame fire or slot change
                 // resets the counter, so long battles can never mint a TITLE.
                 string sig = (_lastTranslatedText ?? "") + "\n" + (_menuSignature ?? "") + "\n" + (_lastPublishedMenu ?? "") + "\n" + (_battleFiredSig ?? "") + "\n" + (_battlePrevSig ?? "");
-                if (sig != _quietSeen) { _quietSeen = sig; _quietCount = 0; _quietHint = false; return null; }
+                if (sig != _quietSeen) { _quietSeen = sig; _quietCount = 0; _quietHint = false; _quietAPosted = false; return null; }
                 if (iteration % 40 == 0 && _quietCount > 0) FileLogger.Log($"[menu] quiet-title watch quiet={_quietCount} hint={_quietHint}");
                 if (blocks != null)
                 {
@@ -4772,9 +4959,31 @@ namespace WunderLanguage.Host.Capture
                         if (!(b.X <= 6 && b.X + b.Width >= _battleFrameW - 6 && b.Height < 100)) { logoGeometry = false; break; }
                     }
                 }
-                if (_quietCount == titleBar && !string.IsNullOrEmpty(packTitle)
+                // Item 4-A (revert: revert canonical-title-fallback): packs
+                // whose title logo ART never reads (TitleLogoUnreadable;
+                // measured 0/24 contrast re-OCR runs over the four harvested
+                // title shots + 0/108,739 corpus blocks carrying the latin
+                // form) can satisfy NEITHER read-dependent condition - the
+                // logo hint (caps/year) flickers and the JA logo-band
+                // geometry is structurally absent (PM live 2026-10-30
+                // 14:18:19 "quiet-title blocked (non-logo geometry)"). So
+                // identity for this screen comes from quiet + E steadiness +
+                // the window-title resolution already mapped into the pack,
+                // and the canonical FullTitle is POSTED rather than waiting
+                // for a read that can never arrive. Bars (30 hinted / 120
+                // bare) and the menu/candidate/gameplay vetoes are untouched;
+                // only the == bar (which misses when the hint flickers past
+                // it - measured FFVI quiet 59 vs bar 30) and the geometry
+                // conjunct are relaxed, and _quietAPosted keeps the >= edge
+                // one-shot per dwell.
+                bool aFallback = false;
+                try { aFallback = Packs.PackRegistry.Current.TitleLogoUnreadable; } catch { }
+                bool reachBar = aFallback
+                    ? (_quietCount >= titleBar && _titleStableLoops >= TitleSteadyNeed && !_quietAPosted)
+                    : (_quietCount == titleBar);
+                if (reachBar && !string.IsNullOrEmpty(packTitle)
                     && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
-                    && logoGeometry
+                    && (aFallback || logoGeometry)
                     // Gameplay veto (cited 2026-10-10 sword scene: TITLE 10
                     // quiet loops after gameplay with hint). Titles happen at
                     // session start / long silence, never moments after
@@ -4784,13 +4993,14 @@ namespace WunderLanguage.Host.Capture
                     // via gates below. Revert: delete the veto conjunct.
                     && (iteration - _lastDialogueFireLoop >= 60))
                 {
-                    FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint})");
+                    if (aFallback) _quietAPosted = true;
+                    FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint}{(aFallback ? " A-fallback steady=" + _titleStableLoops : "")})");
                     return packTitle;
                 }
                 // Observability for the geometry gate (cited 2026-10-08: a
                 // session with no publish can't tell blocked from untested).
                 // Fires only on the non-FFVI hinted path — FFVI identical.
-                if (_quietCount == titleBar && _quietHint && !ffviTitle && !logoGeometry)
+                if (_quietCount == titleBar && _quietHint && !ffviTitle && !logoGeometry && !aFallback)
                 {
                     string geo = "n/a";
                     try

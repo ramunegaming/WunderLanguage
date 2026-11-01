@@ -434,6 +434,10 @@ namespace WunderLanguage.Host.Packs.Zelda
             }
             return latin >= 4;
         }
+        // Item 4: JA title path measures 102/102 (tools/t2_title_mine.py) —
+        // no latin forms declared, no canonical-title fallback.
+        public static readonly string[] LatinTitleForms = System.Array.Empty<string>();
+        public const bool TitleLogoUnreadable = false;
     }
 
     public sealed class ZeldaPackInstance : Packs.IPack
@@ -444,6 +448,8 @@ namespace WunderLanguage.Host.Packs.Zelda
         public System.Collections.Generic.IReadOnlyList<(string from, string to)> DisplayFixups => ZeldaPack.DisplayFixups;
         public string TitleMarker => ZeldaPack.TitleMarker;
         public string FullTitle => ZeldaPack.FullTitle;
+        public System.Collections.Generic.IReadOnlyList<string> LatinTitleForms => ZeldaPack.LatinTitleForms;
+        public bool TitleLogoUnreadable => ZeldaPack.TitleLogoUnreadable;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> TitleMap => ZeldaPack.TitleMap;
         public bool IsTransitionBlend(string text) => ZeldaPack.IsTransitionBlend(text);
         public string ApplySweepFixups(string fixed_) => ZeldaPack.ApplySweepFixups(fixed_);

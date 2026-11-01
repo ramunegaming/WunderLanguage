@@ -36,6 +36,10 @@ namespace WunderLanguage.Host.Packs
             if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^[A-Z ]{4,}$")) return true;
             return false;
         }
+        // Item 4: unknown game — no latin forms, no fallback (empty
+        // FullTitle blocks A exactly as it blocks the quiet path).
+        public static readonly string[] LatinTitleForms = System.Array.Empty<string>();
+        public const bool TitleLogoUnreadable = false;
     }
     public sealed class UniversalPackInstance : IPack
     {
@@ -45,6 +49,8 @@ namespace WunderLanguage.Host.Packs
         public System.Collections.Generic.IReadOnlyList<(string from, string to)> DisplayFixups => UniversalPack.DisplayFixups;
         public string TitleMarker => UniversalPack.TitleMarker;
         public string FullTitle => UniversalPack.FullTitle;
+        public System.Collections.Generic.IReadOnlyList<string> LatinTitleForms => UniversalPack.LatinTitleForms;
+        public bool TitleLogoUnreadable => UniversalPack.TitleLogoUnreadable;
         public System.Collections.Generic.IReadOnlyList<(string ja, string en)> TitleMap => UniversalPack.TitleMap;
         public bool IsTransitionBlend(string text) => UniversalPack.IsTransitionBlend(text);
         public string ApplySweepFixups(string fixed_) => UniversalPack.ApplySweepFixups(fixed_);
