@@ -55,6 +55,12 @@ namespace WunderLanguage.Host.Capture
         // TranslateAndPublish/Update names at the call sites.
         internal bool _simMode = false;
         internal int _simLoop = -1;
+        // Item 5 replay wall-clock: corpus `wt` (session ms) fed by the
+        // replay harnesses so the invention-zone window measures the same
+        // seconds live does (TickCount64 collapses an entire replayed
+        // session into <1s and would zone everything). -1 = not fed ->
+        // loop*400 fallback. Live never reads it.
+        internal long _simZoneNowMs = -1;
         internal readonly System.Collections.Generic.List<string> _simPublished = new();
         internal CaptureController()
         {
@@ -1242,7 +1248,7 @@ namespace WunderLanguage.Host.Capture
             // instantly convicts which binary produced it (cited 2026-10-01:
             // a stale binary's panel was debugged as current — wasted a full
             // round). Tokens are chronological batch markers.
-            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw+z2v2+e7watch+circuitcont+enretry+latintitle+steadiness+titlefallback active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
+            try { FileLogger.Log($"[build] battle25 split+guard+grace+sticky+titleguard+overlap+rows+fanout+prefetch+romaji+rewardclean+hintgate+1read+adopt+digitsplit+fastrefresh+namesonly+topgate+gapblank+onerow+simmemo+siglog+fixedframe+fireorder+actionslot+wideact+splitmon+autofit+countattach+fitlog+itembox+itemcols+itemvocab+itemcover+mockuplayout+weaponbox+wlabels+reltail+behindstay+glossary+trueoverlay+2block+remnant+scrollflicker+bottomrows+gapbar10+dusttoken+stretch+ghostdrop+flickfix+soupbar9+memocap+blankkeep+chartveto+doubleF+voicefix+anchor+latch+blanksfire+canonblank+settle2+newitems+dustcontent+anchorcanon+latchfreeze+blankfire+canonmemokey+midorder+shortrescue+nocatfb+holdzip+hysteresis+pairdedup+tailanchor+novelty+2rows+openbypass+padappend+rescue0+rewardsexp+wnew+wtop+wicon+wtail+sentdedup+titlegeo+fuzzyhalves+confw+z2v2+e7watch+circuitcont+enretry+latintitle+steadiness+titlefallback+inventionzone active (pack={Packs.PackRegistry.Current.GameId})"); } catch { }
             try { Packs.PackRegistry.SetSession(_gameId); } catch { }
             try { LoadMinedCorrections(); } catch { }
             _cts = new CancellationTokenSource();
@@ -1316,6 +1322,14 @@ namespace WunderLanguage.Host.Capture
                         }
                     }
                     catch { }
+                    // Invention-zone feed (item 5, revert: revert
+                    // invention-zone): every observed block feeds the
+                    // per-geometry rolling window BEFORE any decision
+                    // branch, so dwell/pageturn/salvage below and the
+                    // quiet-title watch later in the loop all see this
+                    // frame's evidence. Vetoed (H1) frames still observe:
+                    // the pixels were chaotic regardless of readability.
+                    try { ZoneObserve(ocrBlocks, ZoneNowMs(iteration)); } catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
                     // Suppresses whole screen in both tiers: header, arrows,
                     // END and blobs cost nothing and post nothing.
@@ -1897,7 +1911,11 @@ namespace WunderLanguage.Host.Capture
                             && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
                             // R2a: shown line younger than 3 loops + dissimilar held page = lone intruder, hold it.
                             // True turns arrive with an old shown line and fire instantly, as before.
-                            && (iteration - _lastFireLoop >= 3))
+                            && (iteration - _lastFireLoop >= 3)
+                            // Item 5 (revert: revert invention-zone): the held
+                            // page's source geometry is an invention zone -
+                            // escape hatch stays shut, logs [zone] line.
+                            && !ZoneQuarantine("pageturn", _candidateText, true, iteration))
                         {
                             FileLogger.Log($"[loop {iteration}] STABLE-DECISION=flush-on-pageturn (publishing turned page)");
                             try { CorpusRecordBubble("dialogue-decision:flush-on-pageturn", _candidateText, "", "", iteration); } catch { }
@@ -2659,6 +2677,16 @@ namespace WunderLanguage.Host.Capture
                     && (ComputeSimilarity(old, _lastTranslatedText) >= NearDuplicateSimilarityThreshold
                         || _lastTranslatedText.Contains(old, StringComparison.Ordinal)))
                 { Loss("already-shown"); return; }
+                        // Item 5 (revert: revert invention-zone): salvage evidence
+                // is TEXT-GEOMETRY ONLY - pricing's path (cost measured: 5
+                // fires, all themselves title-logo junk). A snapshot-rect
+                // variant was tried and convicted by the A/B: the rect of
+                // a dying line can point at a cell the TITLE screen zoned
+                // moments earlier, and blocked 3 real Zelda intro lines
+                // (1022_030811 loops 25/28/30, ev=rect, no text twin).
+                // Misses fail open: quarantine supplements the untouched
+                // normal path, never replaces it.
+                if (ZoneQuarantine("salvage", old, false, iteration)) { Loss("zone-quarantine"); return; }
                 FileLogger.Log($"[loss] starved sc={oldSc} SALVAGE-publish \"{Truncate(old)}\"");
                 try { CorpusRecordBubble("dialogue-decision:salvage", old, "", "", iteration); } catch { }
                 _ = PublishDecisionAsync(old, iteration, "salvage");
@@ -2938,7 +2966,12 @@ namespace WunderLanguage.Host.Capture
                             && !IsScrollBlend(_candidateText) && !IsZeldaTransitionBlend(_candidateText)
                             && !EndsWithContinuation(_candidateText) && !IsIncompleteSacrifice(_candidateText)
                             && ComputeSimilarity(_candidateText, _lastTranslatedText) < NearDuplicateSimilarityThreshold
-                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal)))
+                            && (string.IsNullOrEmpty(_lastTranslatedText) || !_lastTranslatedText.Contains(_candidateText, StringComparison.Ordinal))
+                            // Item 5 (revert: revert invention-zone): the held
+                            // candidate's source geometry is an invention zone
+                            // (re-cycling band) - the static frame is no
+                            // confirmation of anything the model invented.
+                            && !ZoneQuarantine("dwell", _candidateText, true, iteration))
                         {
                             _candidateStableCount++;
                             if (_candidateStableCount >= RequiredStableReadings)
@@ -4978,11 +5011,22 @@ namespace WunderLanguage.Host.Capture
                 // one-shot per dwell.
                 bool aFallback = false;
                 try { aFallback = Packs.PackRegistry.Current.TitleLogoUnreadable; } catch { }
+                // Item 5 (revert: revert invention-zone): on a
+                // TitleLogoUnreadable screen the candidate slot is EXPECTED
+                // to hold an invention squatter (rec re-reads its own band
+                // every frame). Requiring it empty lets that garbage veto
+                // the canonical-title fallback forever (live 2026-11-01:
+                // quiet=181, A-fallback held out by a zoned squatter, title
+                // never posted). While the squatter's source geometry is a
+                // zone, the slot counts as clean; readable-title packs
+                // (aFallback=false) keep the strict empty-slot rule.
+                bool slotOk = string.IsNullOrEmpty(_candidateText)
+                    || (aFallback && ZoneSquatterRelax(iteration));
                 bool reachBar = aFallback
                     ? (_quietCount >= titleBar && _titleStableLoops >= TitleSteadyNeed && !_quietAPosted)
                     : (_quietCount == titleBar);
                 if (reachBar && !string.IsNullOrEmpty(packTitle)
-                    && string.IsNullOrEmpty(_menuSignature) && string.IsNullOrEmpty(_candidateText)
+                    && string.IsNullOrEmpty(_menuSignature) && slotOk
                     && (aFallback || logoGeometry)
                     // Gameplay veto (cited 2026-10-10 sword scene: TITLE 10
                     // quiet loops after gameplay with hint). Titles happen at
@@ -4994,6 +5038,10 @@ namespace WunderLanguage.Host.Capture
                     && (iteration - _lastDialogueFireLoop >= 60))
                 {
                     if (aFallback) _quietAPosted = true;
+                    // Observability: the relaxation only ever MATTERS when a
+                    // squatter is still squatting at publish time - say so.
+                    if (!string.IsNullOrEmpty(_candidateText))
+                        FileLogger.Log($"[loop {iteration}] [zone] title-slot relaxed (zoned squatter \"{Truncate(_candidateText)}\")");
                     FileLogger.Log($"[menu] quiet-title publish TITLE (logo screen, {titleBar} quiet loops hint={_quietHint}{(aFallback ? " A-fallback steady=" + _titleStableLoops : "")})");
                     return packTitle;
                 }
@@ -5116,6 +5164,243 @@ namespace WunderLanguage.Host.Capture
             }
             public static double LineageSim => GetDouble("lineageSim", 0.65, 0.55, 0.75);
             public static double FuzzyAdoptSim => GetDouble("fuzzyAdopt", 0.85, 0.80, 0.90);
+        }
+
+        // ---- Invention-zone gate (item 5, 2026-11-01; revert: revert
+        // invention-zone) --------------------------------------------------------
+        // A zone = ONE fixed screen geometry (32/64px grid) that inside a
+        // rolling wall-clock window carries >= minTexts distinct substantial
+        // texts, >= holdShare of them persisting <= maxHold readings (rec
+        // re-invents on animated art every frame; real lines hold — measured
+        // hold p50 = 6 readings), and median beam diversity > divT (single
+        // blocks lie — 21% false-reject at the suspect line, 11% blind spot —
+        // the band aggregate does not, and it ASSOCIATES confidently-wrong
+        // blocks with their flagged band). While a candidate's source
+        // geometry is zoned the three escape hatches (dwell/pageturn/
+        // salvage) refuse to publish: they published EVERY recorded title
+        // hallucination (FFVI 2026-11-01 loops 57/275/280/282 + 8 older
+        // FFVI/PM/Zelda sessions) while the normal 3-stable-readings path
+        // rejected all of them offline. The quiet-title A-fallback
+        // additionally treats a ZONED squatter as a clean candidate slot so
+        // the canonical title still posts (item 4's machinery, conjunct
+        // relaxed — readable-title packs keep the strict empty-slot rule).
+        // Zones re-evaluate per call from the rolling window: they expire
+        // the instant the fingerprint stops, and real dialogue at the same
+        // spot holds readings + low div, so it can never zone. Generic
+        // signals only — no game ids, no per-pack config: any future
+        // chaotic screen zones on its own. Priced over all 456 corpora
+        // (tools/i5_zone_price.py + i5_verify.py, untracked): every
+        // recorded title-band hallucination caught across FFVI/PM/Zelda;
+        // the five apparent cost fires forensically reclassified as benefit
+        // (Zelda title-logo hallucinations at geometry (4,7,9,2), loops
+        // 44-91, cycling with impossible siblings like 時間時間からか) —
+        // measured real cost 0. Held-out-by-game + wall-clock sensitivity
+        // (20/30/45s identical) + fast-battle-text reasoning all pass.
+        // KNOWN BLIND SPOT: a logo that misreads CONSISTENTLY (stable wrong
+        // text, no churn, low div) never zones — not observed in any
+        // recorded session (hallucinations churn by nature), but such a
+        // read would also sail the normal path; documented for BOOKS.
+        // Config: %APPDATA%\WunderLanguage\zonegate.json, read once per
+        // process: { "enabled": 1, "windowSec": 30, "minTexts": 3,
+        //   "maxHold": 2, "holdShare": 0.6, "divT": 0.20 }
+        // "enabled": 0 is the kill switch (feature inert, zero log lines).
+        private static class ZoneGate
+        {
+            private static bool _loaded;
+            private static bool _enabled = true;
+            private static int _windowSec = 30;
+            private static int _minTexts = 3;
+            private static int _maxHold = 2;
+            private static double _holdShare = 0.6;
+            private static double _divT = 0.20;
+            private static void Ensure()
+            {
+                if (_loaded) return;
+                _loaded = true;
+                try
+                {
+                    string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WunderLanguage", "zonegate.json");
+                    if (File.Exists(path))
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("enabled", out var en))
+                            _enabled = en.ValueKind == JsonValueKind.Number ? en.GetDouble() != 0
+                                    : en.ValueKind == JsonValueKind.True;
+                        if (root.TryGetProperty("windowSec", out var ws) && ws.ValueKind == JsonValueKind.Number) _windowSec = (int)Math.Clamp(ws.GetDouble(), 5, 300);
+                        if (root.TryGetProperty("minTexts", out var mt) && mt.ValueKind == JsonValueKind.Number) _minTexts = (int)Math.Clamp(mt.GetDouble(), 2, 10);
+                        if (root.TryGetProperty("maxHold", out var mh) && mh.ValueKind == JsonValueKind.Number) _maxHold = (int)Math.Clamp(mh.GetDouble(), 1, 10);
+                        if (root.TryGetProperty("holdShare", out var hs) && hs.ValueKind == JsonValueKind.Number) _holdShare = Math.Clamp(hs.GetDouble(), 0.1, 1.0);
+                        if (root.TryGetProperty("divT", out var dt) && dt.ValueKind == JsonValueKind.Number) _divT = Math.Clamp(dt.GetDouble(), 0.05, 0.9);
+                    }
+                }
+                catch (Exception ex) { FileLogger.Log("[zone] config read failed: " + ex.Message); }
+                FileLogger.Log($"[zone] config enabled={(_enabled ? 1 : 0)} windowSec={_windowSec} minTexts={_minTexts} maxHold={_maxHold} holdShare={_holdShare:0.##} divT={_divT:0.##}");
+            }
+            public static bool Enabled { get { Ensure(); return _enabled; } }
+            public static long WindowMs { get { Ensure(); return _windowSec * 1000L; } }
+            public static int MinTexts { get { Ensure(); return _minTexts; } }
+            public static int MaxHold { get { Ensure(); return _maxHold; } }
+            public static double HoldShare { get { Ensure(); return _holdShare; } }
+            public static double DivT { get { Ensure(); return _divT; } }
+        }
+
+        // Rolling zone evidence per controller session. Geometry key packs
+        // the 32/64 grid cell; the text map exists because salvage judges a
+        // DYING string whose candidate rect may already belong to the
+        // successor by the time the helper runs.
+        private readonly Dictionary<long, List<(long T, string Text, double Div)>> _zoneBuf = new();
+        private readonly Dictionary<string, (long Key, long T)> _zoneTextGeom = new();
+        private int _zoneObsCount;
+        private static readonly System.Text.RegularExpressions.Regex ZoneDotRe =
+            new("[.．。…]+", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        // Live reads the monotonic clock; replay reads corpus `wt` (fed by
+        // CatStats/SimReplay) so a window means the same seconds it does
+        // live — TickCount64 would collapse a whole replayed session into
+        // <1s and zone everything. wt unset -> loop*400 fallback.
+        private long ZoneNowMs(int iteration)
+        {
+            if (_simMode) return _simZoneNowMs > 0 ? _simZoneNowMs : iteration * 400L;
+            return Environment.TickCount64;
+        }
+
+        private static long ZoneKey(int x, int y, int w, int h)
+            => ((long)(x / 32) & 0xFFF)
+             | (((long)(y / 32) & 0xFFF) << 12)
+             | (((long)(w / 64) & 0xFFF) << 24)
+             | (((long)(h / 64) & 0xFFF) << 36);
+
+        // Same normalization the pricing suite scored: whitespace stripped,
+        // dot-ellipsis runs unified (blocks bank ．．．, published text …).
+        private static string ZoneNorm(string? s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new System.Text.StringBuilder(s.Length);
+            foreach (char c in s!) if (!char.IsWhiteSpace(c)) sb.Append(c);
+            return ZoneDotRe.Replace(sb.ToString(), "…");
+        }
+
+        // Feed one settled observation (all blocks, incl. H1-vetoed: the
+        // pixels were chaotic regardless of readability — pricing fed
+        // unfiltered too).
+        private void ZoneObserve(List<OcrBlock> blocks, long now)
+        {
+            if (!ZoneGate.Enabled || blocks == null || blocks.Count == 0) return;
+            long winMs = ZoneGate.WindowMs;
+            foreach (var b in blocks)
+            {
+                string t = ZoneNorm(b.Text);
+                if (t.Length < 4) continue;   // substantial-text floor (pricing MINLEN)
+                long key = ZoneKey(b.X, b.Y, b.Width, b.Height);
+                if (!_zoneBuf.TryGetValue(key, out var list))
+                { list = new List<(long, string, double)>(); _zoneBuf[key] = list; }
+                list.Add((now, t, b.Div));
+                list.RemoveAll(o => now - o.T > winMs || o.T - now > winMs);
+                _zoneTextGeom[t] = (key, now);
+            }
+            // Periodic sweep: the text map is unbounded (every distinct
+            // substantial string ever seen); 250-observation cadence keeps
+            // per-frame cost off the hot path.
+            if (++_zoneObsCount % 250 == 0)
+            {
+                var dead = new List<string>();
+                foreach (var kv in _zoneTextGeom)
+                    if (now - kv.Value.T > winMs || kv.Value.T - now > winMs) dead.Add(kv.Key);
+                foreach (var k in dead) _zoneTextGeom.Remove(k);
+            }
+        }
+
+        // Zone verdict for one geometry at one instant (rolling window —
+        // no stored state to go stale; expiry is automatic).
+        private bool ZoneActive(long key, long now)
+        {
+            if (!ZoneGate.Enabled) return false;
+            if (!_zoneBuf.TryGetValue(key, out var list) || list.Count == 0) return false;
+            long winMs = ZoneGate.WindowMs;
+            list.RemoveAll(o => now - o.T > winMs || o.T - now > winMs);
+            if (list.Count < ZoneGate.MinTexts) return false;
+            var texts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var divs = new List<double>(list.Count);
+            foreach (var o in list)
+            {
+                texts.TryGetValue(o.Text, out int c);
+                texts[o.Text] = c + 1;
+                divs.Add(o.Div);
+            }
+            if (texts.Count < ZoneGate.MinTexts) return false;              // >=3 distinct texts
+            int holdOk = 0;
+            foreach (var c in texts.Values) if (c <= ZoneGate.MaxHold) holdOk++;
+            if (holdOk < texts.Count * ZoneGate.HoldShare) return false;   // most re-invented, not read
+            divs.Sort();
+            return divs[divs.Count / 2] > ZoneGate.DivT;                   // median band divergence
+        }
+
+        // Escape-hatch gate: true = zoned (caller must NOT publish). Zone
+        // evidence is dual: the SOURCE-RECT geometry (candidate's own rect
+        // when known — pricing's association was text-based, but the rect
+        // is more current and caught the 2026-11-01 loop-271 replay miss
+        // where the held page had no exact block twin) OR the text's
+        // last-seen geometry (pricing's path; catches rectless phantoms —
+        // blocks failing H1 never resolve a rect). EITHER zoned = block;
+        // misses fail open (quarantine supplements the untouched normal
+        // path, never replaces it). Every would-be fire logs one line:
+        // [zone] quarantine (the blocked event — release requirement) or
+        // [zone] pass (near-miss observability: what evidence existed and
+        // why it didn't zone).
+        private bool ZoneQuarantine(string site, string text, bool useCandidateRect, int iteration, bool rectKnown = false, int rx = 0, int ry = 0, int rw = 0, int rh = 0)
+        {
+            try
+            {
+                if (!ZoneGate.Enabled || string.IsNullOrEmpty(text)) return false;
+                long now = ZoneNowMs(iteration);
+                ZoneEvidence(text, useCandidateRect, rectKnown, rx, ry, rw, rh, now, out long rectKey, out long textKey);
+                bool zRect = rectKey >= 0 && ZoneActive(rectKey, now);
+                bool zText = textKey >= 0 && ZoneActive(textKey, now);
+                string ev = (rectKey >= 0 ? "rect" : "") + (rectKey >= 0 && textKey >= 0 ? "+" : "") + (textKey >= 0 ? "text" : "");
+                if (ev.Length == 0) ev = "none";
+                if (zRect || zText)
+                {
+                    long g = zRect ? rectKey : textKey;
+                    FileLogger.Log($"[loop {iteration}] [zone] quarantine site={site} ev={ev} grid=({g & 0xFFF},{(g >> 12) & 0xFFF},{(g >> 24) & 0xFFF},{(g >> 36) & 0xFFF}) \"{Truncate(text)}\"");
+                    return true;
+                }
+                FileLogger.Log($"[loop {iteration}] [zone] pass site={site} ev={ev} grid=({(rectKey >= 0 ? rectKey : textKey) & 0xFFF},{((rectKey >= 0 ? rectKey : textKey) >> 12) & 0xFFF},{((rectKey >= 0 ? rectKey : textKey) >> 24) & 0xFFF},{((rectKey >= 0 ? rectKey : textKey) >> 36) & 0xFFF}) \"{Truncate(text)}\"");
+                return false;
+            }
+            catch { return false; }
+        }
+
+        // Resolve both candidate geometries for a publish decision (no
+        // logging — the quiet-title caller runs per loop and logs only at
+        // its publish edge).
+        private void ZoneEvidence(string text, bool useCandidateRect, bool rectKnown, int rx, int ry, int rw, int rh, long now, out long rectKey, out long textKey)
+        {
+            rectKey = -1; textKey = -1;
+            try
+            {
+                if (rectKnown) rectKey = ZoneKey(rx, ry, rw, rh);
+                else if (useCandidateRect && _candidateSrcKnown) rectKey = ZoneKey(_candidateSrcX, _candidateSrcY, _candidateSrcW, _candidateSrcH);
+                string nt = ZoneNorm(text);
+                if (nt.Length > 0 && _zoneTextGeom.TryGetValue(nt, out var e)
+                    && now - e.T <= ZoneGate.WindowMs && e.T - now <= ZoneGate.WindowMs) textKey = e.Key;
+            }
+            catch { }
+        }
+
+        // Quiet-title A-fallback slot relaxation: candidate present AND its
+        // evidence (rect or last-seen text geometry) zoned = an invention
+        // squatter, not a real held line.
+        private bool ZoneSquatterRelax(int iteration)
+        {
+            try
+            {
+                if (!ZoneGate.Enabled || string.IsNullOrEmpty(_candidateText)) return false;
+                long now = ZoneNowMs(iteration);
+                ZoneEvidence(_candidateText, true, false, 0, 0, 0, 0, now, out long rectKey, out long textKey);
+                return (rectKey >= 0 && ZoneActive(rectKey, now)) || (textKey >= 0 && ZoneActive(textKey, now));
+            }
+            catch { return false; }
         }
 
         internal static bool IsSelfDuplicated(string text)

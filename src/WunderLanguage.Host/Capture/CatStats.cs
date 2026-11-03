@@ -188,7 +188,7 @@ namespace WunderLanguage.Host.Capture
                 {
                     // Parse pass (mirrors SimReplay v4): feed list + recorded
                     // live-truth bubble census. Frame dims banked per-line.
-                    var fed = new List<(int loop, string raw, int cw, int tw, int fw, int fh, List<OcrBlock> blocks, string ja)>();
+                    var fed = new List<(int loop, string raw, int cw, int tw, int fw, int fh, List<OcrBlock> blocks, string ja, long wt)>();
                     int recDd = 0, recDf = 0, recDu = 0, recMenuT = 0, recMenuD = 0, recMenuM = 0, recMenuUpd = 0, recBattle = 0;
                     // Live-truth join: recorded dialogue publishes with their
                     // live loop stamps, later matched against the sampled
@@ -215,7 +215,13 @@ namespace WunderLanguage.Host.Capture
                                 int tw = root.TryGetProperty("tw", out var twe) ? Num(twe) : 0;
                                 int fw = root.TryGetProperty("fw", out var fwe) ? Num(fwe) : 0;
                                 int fh = root.TryGetProperty("fh", out var fhe) ? Num(fhe) : 0;
-                                fed.Add((loop, raw, cw, tw, fw, fh, ParseBlocks(root), ex));
+                                // Item 5: banked wall-clock (session ms) feeds the
+                                // invention-zone window so replay windows mean the
+                                // same seconds live does (tick-count would collapse
+                                // the whole replayed session into <1s and zone
+                                // everything).
+                                long wt = root.TryGetProperty("wt", out var wte) && wte.ValueKind == JsonValueKind.Number ? wte.GetInt64() : 0;
+                                fed.Add((loop, raw, cw, tw, fw, fh, ParseBlocks(root), ex, wt));
                             }
                             else if (t == "bubble")
                             {
@@ -277,12 +283,13 @@ namespace WunderLanguage.Host.Capture
                     // screens read as battle rows).
                     var ffviLabels = Packs.FFVI.FfviPack.WeaponLabels;
                     int bFfviProbe = 0;
-                    foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja) in fed)
+                    foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja, wt) in fed)
                     {
                         try
                         {
                             ctl.SetOcrContextForSim(raw, cw, tw);
                             ctl._simLoop = loop;
+                            ctl._simZoneNowMs = wt > 0 ? wt : loop * 400L;   // item 5 replay clock (see ZoneNowMs)
                             ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
                         }
                         catch (Exception fx) { FileLogger.Log($"[catstats] corpus={name} loop={loop} FEED-ERROR: {fx.Message}"); break; }

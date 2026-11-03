@@ -74,7 +74,7 @@ namespace WunderLanguage.Host.Capture
         {
             try
             {
-                var fed = new List<(int loop, string raw, int cw, int tw, int fw, int fh, List<OcrBlock> blocks, string ja)>();
+                var fed = new List<(int loop, string raw, int cw, int tw, int fw, int fh, List<OcrBlock> blocks, string ja, long wt)>();
                 var recordedFires = new List<string>();
                 var recordedUpdates = new List<string>();
                 long wtCovered = 0, wtTotal = 0;
@@ -98,8 +98,9 @@ namespace WunderLanguage.Host.Capture
                             int tw = root.TryGetProperty("tw", out var twe) ? Num(twe) : 0;
                             int fw = root.TryGetProperty("fw", out var fwe) ? Num(fwe) : 0;
                             int fh = root.TryGetProperty("fh", out var fhe) ? Num(fhe) : 0;
-                            if (root.TryGetProperty("wt", out var w) && w.ValueKind == JsonValueKind.Number) { wtTotal++; if (w.GetInt64() > 0) wtCovered++; }
-                            fed.Add((loop, raw, cw, tw, fw, fh, ParseBlocks(root), ex));
+                            long wt = 0;   // item 5 replay wall-clock (zone window; see ZoneNowMs)
+                            if (root.TryGetProperty("wt", out var w) && w.ValueKind == JsonValueKind.Number) { wt = w.GetInt64(); if (wt > 0) wtCovered++; wtTotal++; }
+                            fed.Add((loop, raw, cw, tw, fw, fh, ParseBlocks(root), ex, wt));
                         }
                         else if (t == "bubble")
                         {
@@ -151,13 +152,14 @@ namespace WunderLanguage.Host.Capture
                 if (sesW > 0 && sesH > 0) dimSrc = "banked";
                 else { sesW = 0; sesH = 0; }
                 try { ctl.SetFrameDimsForSim(sesW, sesH); } catch { }
-                foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja) in fed)
+                foreach (var (loop, raw, cw, tw, fw, fh, blocks, ja, wt) in fed)
                 {
                     try
                     {
                         if (blocks.Count > 0) blockLines++;
                         ctl.SetOcrContextForSim(raw, cw, tw);
                         ctl._simLoop = loop;
+                        ctl._simZoneNowMs = wt > 0 ? wt : loop * 400L;
                         ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
                     }
                     catch (Exception ex) { FileLogger.Log($"[simreplay] loop {loop} ERROR: {ex.Message}"); break; }
