@@ -124,7 +124,35 @@ namespace WunderLanguage.Host.Capture
                     return System.Threading.Tasks.Task.CompletedTask;
                 }
             }
-            catch { }
+            // Fail-open audit (Claude plan ALSO item, scoped to this choke):
+            // this guard deciding wrong must be VISIBLE at the live gate —
+            // an empty catch here would swallow a broken fire-history check.
+            catch (Exception ex) { FileLogger.Log($"[publish] history-guard ERROR fail-open: {ex.Message}"); }
+            // I5 stain choke (revert: revert stain-extend): every one of the
+            // 16 roads funnels here, so a stained lineage (H1-vetoed frame,
+            // suspect-hold, churned cell) can never reach translation by any
+            // detour — salvage, scroll, weak-hold, flush, pageturn, dwell,
+            // publishnew alike. TITLE/MENU mints never enter this function
+            // (TranslateAndPublishMenuAsync) and stay exempt by structure.
+            // Ordering: pre-RecordFire (a blocked text must not poison
+            // fire-history — same rule as menu-hold) and pre-sim-record so
+            // SimReplay measures the block. Fail-open BY DESIGN: no stamp =
+            // publish; an exception logs loudly and publishes (an empty
+            // catch here would hide a broken guard from the live gate).
+            try
+            {
+                string? stainBlock = StainCheck(ja, loop);
+                if (stainBlock != null)
+                {
+                    FileLogger.Log($"[publish] stain-blocked kind={kind} reason={stainBlock} \"{Truncate(ja)}\"");
+                    try { DumpPublishFrame(ja, loop, kind + "-stain"); } catch { }
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[publish] stain-choke ERROR fail-open kind={kind}: {ex.Message}");
+            }
             // C2 menu-garbage hold (revert: revert c2-menu-hold): C1's
             // content spot-checks convicted the class - menu rows
             // (save options, date/number screens, stationary spell lists)
@@ -151,7 +179,8 @@ namespace WunderLanguage.Host.Capture
                     return System.Threading.Tasks.Task.CompletedTask;
                 }
             }
-            catch { }
+            // Fail-open audit (Claude plan ALSO item): logged, never silent.
+            catch (Exception ex) { FileLogger.Log($"[publish] menu-guard ERROR fail-open: {ex.Message}"); }
             try { RecordFire(ja, ev, loop); } catch { }
             // H5: dump the exact frame this publish decision was made on
             // (revert: revert publish-dump). After history/menu parking, so
@@ -623,6 +652,23 @@ namespace WunderLanguage.Host.Capture
         // Omission-only if ever wrong. Revert: delete field + set/clears +
         // the publish-weak-hold conjunct.
         private string _suspectStainedText = string.Empty;
+        // I5 stain extension (Claude plan step 3, revert: revert stain-extend):
+        // B1's single suspect-stain slot widened to provenance STAMPS so a
+        // re-inventing region cannot reset its lineage by changing text —
+        // H1-vetoed frames stamp every JA block's text key (ZoneNorm) and
+        // geometry key (ZoneKey cell); suspect-hold stamps its candidate text
+        // plus source rect; PublishDecisionAsync checks text key, text's
+        // last-seen zone cell, and stained-fragment containment (assembled
+        // scroll lines are never one observed block) so ALL 16 roads obey.
+        // TITLE/MENU mints never enter the choke (separate menu path).
+        // Window symmetric like the zone evidence (stale = unstained).
+        // Fail-open BY DESIGN: missing evidence publishes (B1's principle —
+        // suspicion closes shortcuts, never the main road); an exception in
+        // the choke logs loudly and publishes (real dialogue outranks one
+        // guard — an empty catch would hide a broken guard).
+        private readonly Dictionary<string, (long T, string Src)> _stainText = new(StringComparer.Ordinal);
+        private readonly Dictionary<long, (long T, string Src)> _stainGeom = new();
+        private const long StainWindowMs = 90_000;
         private string _lastTranslatedText = string.Empty;
         // ---- H-batch 2026-10-27 (phantom-post gates H1-H5, universal:
         // no game branches) --------------------------------------------
@@ -1314,11 +1360,21 @@ namespace WunderLanguage.Host.Capture
                     {
                         bool h1AllRejected = AllJaBlocksRejected(ocrBlocks, _battleFrameW, _battleFrameH, out int h1Ja, out string h1Detail);
                         _loopJaPassing = h1Ja > 0 && !h1AllRejected;
-                        if (h1AllRejected && !string.IsNullOrEmpty(extractedText))
+                        if (h1AllRejected)
                         {
-                            if (Settings.Diag.Enabled)
-                                FileLogger.Log($"[loop {iteration}] [blocks] block-reject vetoed ja={h1Ja} frame={_battleFrameW}x{_battleFrameH} {h1Detail}");
-                            extractedText = "";
+                            if (!string.IsNullOrEmpty(extractedText))
+                            {
+                                if (Settings.Diag.Enabled)
+                                    FileLogger.Log($"[loop {iteration}] [blocks] block-reject vetoed ja={h1Ja} frame={_battleFrameW}x{_battleFrameH} {h1Detail}");
+                                extractedText = "";
+                            }
+                            // I5 stain (revert: revert stain-extend): every
+                            // vetoed JA block stamps text+geometry provenance.
+                            // The trackers below still read these blocks (H1
+                            // gates only extractedText), so their strings and
+                            // cells must be poisoned at the source. jaCount>0
+                            // is guaranteed by AllJaBlocksRejected.
+                            try { StainSet(ocrBlocks, null, iteration, "h1-veto"); } catch { }
                         }
                     }
                     catch { }
@@ -1329,7 +1385,7 @@ namespace WunderLanguage.Host.Capture
                     // quiet-title watch later in the loop all see this
                     // frame's evidence. Vetoed (H1) frames still observe:
                     // the pixels were chaotic regardless of readability.
-                    try { ZoneObserve(ocrBlocks, ZoneNowMs(iteration)); } catch { }
+                    try { ZoneObserve(ocrBlocks, iteration); } catch { }
                     // Kana-chart gate (name entry etc.): merged-blob shape.
                     // Suppresses whole screen in both tiers: header, arrows,
                     // END and blobs cost nothing and post nothing.
@@ -1614,6 +1670,11 @@ namespace WunderLanguage.Host.Capture
                             // shortcut closes for this candidate until a new
                             // lineage adopts; breakthrough road stays open.
                             _suspectStainedText = _candidateText;
+                            // I5 stain (revert: revert stain-extend): B1's slot
+                            // alone reaches only weak-hold — stamp text+source
+                            // rect so the choke blocks every other road for
+                            // this lineage too.
+                            try { StainSet(null, _candidateText, iteration, "suspect-hold", _candidateSrcX, _candidateSrcY, _candidateSrcW, _candidateSrcH, _candidateSrcKnown); } catch { }
                         }
                         else
                         {
@@ -5284,9 +5345,10 @@ namespace WunderLanguage.Host.Capture
         // Feed one settled observation (all blocks, incl. H1-vetoed: the
         // pixels were chaotic regardless of readability — pricing fed
         // unfiltered too).
-        private void ZoneObserve(List<OcrBlock> blocks, long now)
+        private void ZoneObserve(List<OcrBlock> blocks, int iteration)
         {
             if (!ZoneGate.Enabled || blocks == null || blocks.Count == 0) return;
+            long now = ZoneNowMs(iteration);
             long winMs = ZoneGate.WindowMs;
             foreach (var b in blocks)
             {
@@ -5298,6 +5360,18 @@ namespace WunderLanguage.Host.Capture
                 list.Add((now, t, b.Div));
                 list.RemoveAll(o => now - o.T > winMs || o.T - now > winMs);
                 _zoneTextGeom[t] = (key, now);
+                // I5 zone-evidence stain (revert: revert stain-extend): a cell
+                // the EXISTING zone criterion calls active (div test included —
+                // same evidence, no parallel logic, divT untouched) poisons its
+                // geometry for every road at the choke. Re-invention therefore
+                // cannot reset its lineage by changing text: the CELL carries
+                // the stain. Transition-only log line (refresh is silent).
+                if (ZoneActive(key, now))
+                {
+                    if (!_stainGeom.TryGetValue(key, out var st) || !StainFresh(st.T, now))
+                        FileLogger.Log($"[loop {iteration}] [stain] set src=zone grid=({key & 0xFFF},{(key >> 12) & 0xFFF},{(key >> 24) & 0xFFF},{(key >> 36) & 0xFFF})");
+                    _stainGeom[key] = (now, "zone");
+                }
             }
             // Periodic sweep: the text map is unbounded (every distinct
             // substantial string ever seen); 250-observation cadence keeps
@@ -5401,6 +5475,91 @@ namespace WunderLanguage.Host.Capture
                 return (rectKey >= 0 && ZoneActive(rectKey, now)) || (textKey >= 0 && ZoneActive(textKey, now));
             }
             catch { return false; }
+        }
+
+        // ---- I5 stain extension (revert: revert stain-extend) ----
+        // Set points: H1-vetoed frames (garbage pixels whose blocks the
+        // trackers still read) and suspect-hold (B1's own event, now stamped
+        // for every road). Check point: PublishDecisionAsync. Keys reuse the
+        // zone normalization/geometry (ZoneNorm/ZoneKey/ZoneNowMs) so replay
+        // clock and live clock behave identically. Missing evidence is NOT
+        // an exception: no fresh stamp = publish.
+        private void StainSet(List<OcrBlock>? blocks, string? text, int iteration, string source,
+            int rx = 0, int ry = 0, int rw = 0, int rh = 0, bool rectKnown = false)
+        {
+            long now = ZoneNowMs(iteration);
+            try
+            {
+                if (blocks != null)
+                {
+                    foreach (var b in blocks)
+                    {
+                        // JA text only: sprite/HUD cells must never poison
+                        // dialogue geometry (H1 vetoes frames, not cells).
+                        if (!HasJapanese(b.Text)) continue;
+                        string t = ZoneNorm(b.Text);
+                        if (t.Length == 0) continue;
+                        _stainText[t] = (now, source);
+                        long g = ZoneKey(b.X, b.Y, b.Width, b.Height);
+                        _stainGeom[g] = (now, source);
+                        FileLogger.Log($"[loop {iteration}] [stain] set src={source} grid=({g & 0xFFF},{(g >> 12) & 0xFFF},{(g >> 24) & 0xFFF},{(g >> 36) & 0xFFF}) \"{Truncate(t, 40)}\"");
+                    }
+                }
+                string? nt = ZoneNorm(text);
+                if (!string.IsNullOrEmpty(nt))
+                {
+                    _stainText[nt] = (now, source);
+                    string line = $"[loop {iteration}] [stain] set src={source}";
+                    if (rectKnown)
+                    {
+                        long g = ZoneKey(rx, ry, rw, rh);
+                        _stainGeom[g] = (now, source);
+                        line += $" grid=({g & 0xFFF},{(g >> 12) & 0xFFF},{(g >> 24) & 0xFFF},{(g >> 36) & 0xFFF})";
+                    }
+                    FileLogger.Log($"{line} \"{Truncate(nt, 40)}\"");
+                }
+            }
+            catch (Exception ex) { FileLogger.Log($"[stain] set ERROR src={source}: {ex.Message}"); }
+        }
+
+        private static bool StainFresh(long stamp, long now)
+            => now - stamp <= StainWindowMs && stamp - now <= StainWindowMs;
+
+        // Publishes are rare (dozens per session), so a full sweep per check
+        // keeps the maps bounded without a background timer.
+        private void StainSweep(long now)
+        {
+            if (_stainText.Count > 0)
+            {
+                List<string>? dead = null;
+                foreach (var kv in _stainText) if (!StainFresh(kv.Value.T, now)) (dead ??= new()).Add(kv.Key);
+                if (dead != null) foreach (var k in dead) _stainText.Remove(k);
+            }
+            if (_stainGeom.Count > 0)
+            {
+                List<long>? dead = null;
+                foreach (var kv in _stainGeom) if (!StainFresh(kv.Value.T, now)) (dead ??= new()).Add(kv.Key);
+                if (dead != null) foreach (var k in dead) _stainGeom.Remove(k);
+            }
+        }
+
+        // null = publish; otherwise block reason:src (the choke logs it).
+        // text key first (exact lineage), then the text's last-seen zone cell
+        // (re-invented lineage inherits its region's poison). Fragment
+        // containment was measured and REJECTED in the A1 replay: it killed
+        // 0 targets (FFVI T41 matched by exact text instead) while blocking
+        // "… だから、大丈夫… …" — a line RECORDED LIVE as publish-new (real
+        // dialogue sharing a >=4-char kana run with a vetoed garbage frame).
+        private string? StainCheck(string ja, int loop)
+        {
+            string nt = ZoneNorm(ja);
+            if (nt.Length == 0) return null;              // no evidence -> fail open
+            long now = ZoneNowMs(loop);
+            StainSweep(now);
+            if (_stainText.TryGetValue(nt, out var ts) && StainFresh(ts.T, now)) return $"text:{ts.Src}";
+            if (_zoneTextGeom.TryGetValue(nt, out var g)
+                && _stainGeom.TryGetValue(g.Key, out var gs) && StainFresh(gs.T, now)) return $"geom:{gs.Src}";
+            return null;
         }
 
         internal static bool IsSelfDuplicated(string text)
