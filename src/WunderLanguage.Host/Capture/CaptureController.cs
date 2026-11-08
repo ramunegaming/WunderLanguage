@@ -181,6 +181,24 @@ namespace WunderLanguage.Host.Capture
             }
             // Fail-open audit (Claude plan ALSO item): logged, never silent.
             catch (Exception ex) { FileLogger.Log($"[publish] menu-guard ERROR fail-open: {ex.Message}"); }
+            // G-A untrusted-latin choke (revert: revert latin-choke): the
+            // translate-time suppression (HasUntrustedLatinRun, pre-post
+            // since 2026-09-19 — TranslateAndPublishAsync refuses the ONLY
+            // TextTranslated post) means these strings can never reach the
+            // user live; hoisting the same predicate to the choke makes
+            // sim/replay agree with that contract and keeps chrome-glitch
+            // strings out of fire-history/dumps/vocab. Same fail-open
+            // style as the guards above; runs in sim AND live (the point
+            // is replay parity — menu-hold stays live-only).
+            try
+            {
+                if (HasUntrustedLatinRun(ja))
+                {
+                    FileLogger.Log($"[publish] untrusted-latin for \"{Truncate(ja)}\" (chrome-glitch string)");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch (Exception ex) { FileLogger.Log($"[publish] latin-guard ERROR fail-open: {ex.Message}"); }
             try { RecordFire(ja, ev, loop); } catch { }
             // H5: dump the exact frame this publish decision was made on
             // (revert: revert publish-dump). After history/menu parking, so
