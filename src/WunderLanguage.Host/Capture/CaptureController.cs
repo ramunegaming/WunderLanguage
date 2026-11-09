@@ -219,6 +219,26 @@ namespace WunderLanguage.Host.Capture
                 }
             }
             catch (Exception ex) { FileLogger.Log($"[publish] repeat-guard ERROR fail-open: {ex.Message}"); }
+            // G-D date-salad choke (revert: revert date-choke): a full
+            // calendar date (4+ digit year + 年 + month + 月 + day + 日,
+            // half or full width) only ever comes from the web-occluder
+            // page visible in capture rects since Sept — posted live as
+            // dialogue/menu on every game (PM 11-04 "２０１８年１１月２０日（土）は、
+            // 日本ではないのですが、", Zelda/FFVI date-salad fires since 09-16).
+            // Priced on tools/date_evidence.py: 473 date reads across
+            // 129/462 corpora (all games), 35/35 recorded date bubbles =
+            // junk, zero genuine screens (0/40 truth rows). The F1 window
+            // probe can't see this occluder; the content signature can.
+            // Same fail-open style as G-A/G-C; runs in sim AND live.
+            try
+            {
+                if (HasDateSalad(ja))
+                {
+                    FileLogger.Log($"[publish] date-salad for \"{Truncate(ja)}\" (web-occluder full date)");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch (Exception ex) { FileLogger.Log($"[publish] date-guard ERROR fail-open: {ex.Message}"); }
             try { RecordFire(ja, ev, loop); } catch { }
             // H5: dump the exact frame this publish decision was made on
             // (revert: revert publish-dump). After history/menu parking, so
@@ -5642,6 +5662,40 @@ namespace WunderLanguage.Host.Capture
                         if (i - prev >= n) return true;
                     }
                     else seen[sub] = i;
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
+        // G-D date-salad predicate (revert: revert date-choke): normalized
+        // full/half-width digits, then scan for 年 preceded by >=4 digits
+        // immediately followed by 1-2 digits + 月 + 1-2 digits + 日. The
+        // >=4-digit-year bar is deliberate (evidence: every genuine screen
+        // in 462 corpora + 40 truth rows is date-free; month-day-only
+        // dates like 12月25日 are left alone — games CAN show those).
+        // Catches typo'd years too (20018年 -> last 4 digits match).
+        private static bool HasDateSalad(string text)
+        {
+            try
+            {
+                var nb = new System.Text.StringBuilder((text ?? "").Length);
+                foreach (char c in text ?? "")
+                    nb.Append(c >= '０' && c <= '９' ? (char)('0' + (c - '０')) : c);
+                string s = nb.ToString();
+                for (int i = 0; i < s.Length; i++)
+                {
+                    if (s[i] != '年' || i < 4) continue;
+                    if (!(char.IsDigit(s[i - 1]) && char.IsDigit(s[i - 2])
+                        && char.IsDigit(s[i - 3]) && char.IsDigit(s[i - 4]))) continue;
+                    int j = i + 1, md = 0;
+                    while (j < s.Length && char.IsDigit(s[j]) && md < 2) { j++; md++; }
+                    if (md == 0 || j >= s.Length || s[j] != '月') continue;
+                    j++;
+                    int dd = 0;
+                    while (j < s.Length && char.IsDigit(s[j]) && dd < 2) { j++; dd++; }
+                    if (dd == 0 || j >= s.Length || s[j] != '日') continue;
+                    return true;
                 }
                 return false;
             }
