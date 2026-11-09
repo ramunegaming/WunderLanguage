@@ -199,6 +199,26 @@ namespace WunderLanguage.Host.Capture
                 }
             }
             catch (Exception ex) { FileLogger.Log($"[publish] latin-guard ERROR fail-open: {ex.Message}"); }
+            // G-C repeat-glue choke (revert: revert repeat-glue): a
+            // partial-double OCR read — the same >=6-char unit twice,
+            // non-overlapping after punctuation strip — is a glued frame,
+            // never a line (10-10 外国よりうつわ phantom's exact shape;
+            // B4's half-split similarity misses shifted/wobbled doubles).
+            // Priced on the G-A catstats sweep (i9_priceC2/C3): 88 killed,
+            // 67 without an in-segment carrier — 54 of those B4 already
+            // withholds at translate, so this only moves the block
+            // pre-RecordFire (replay parity + out of fire-history, zero
+            // live change); the other 13 are glued doubles visible today
+            // (the C class). Same fail-open style; runs in sim AND live.
+            try
+            {
+                if (HasRepeatGlue(ja))
+                {
+                    FileLogger.Log($"[publish] repeat-glue for \"{Truncate(ja)}\" (partial-double OCR read)");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            catch (Exception ex) { FileLogger.Log($"[publish] repeat-guard ERROR fail-open: {ex.Message}"); }
             try { RecordFire(ja, ev, loop); } catch { }
             // H5: dump the exact frame this publish decision was made on
             // (revert: revert publish-dump). After history/menu parking, so
@@ -5590,6 +5610,40 @@ namespace WunderLanguage.Host.Capture
                 string a = s.Substring(0, h).Trim(), b = s.Substring(h, h).Trim();
                 if (a.Length < 8 || b.Length < 8) return false;
                 return ComputeSimilarity(a, b) >= 0.65;
+            }
+            catch { return false; }
+        }
+
+        // G-C repeat-glue predicate (revert: revert repeat-glue): mirror of
+        // tools/i9_price3.has_repeat — strip whitespace + the punctuation
+        // set [\s、。．，,！!？?…・「」『』], then the first n-gram that
+        // recurs NON-OVERLAPPING (i - seen >= n) = glued read. B4's
+        // half-split above only sees aligned doubles; this catches the
+        // shifted/wobbled shape (外国よりうつわ…トのうつわをみつけた).
+        private static bool HasRepeatGlue(string text, int n = 6)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (char c in text ?? "")
+                {
+                    if (char.IsWhiteSpace(c)) continue;
+                    if ("、。．，,！!？?…・「」『』".IndexOf(c) >= 0) continue;
+                    sb.Append(c);
+                }
+                string s = sb.ToString();
+                if (s.Length < 2 * n) return false;
+                var seen = new System.Collections.Generic.Dictionary<string, int>();
+                for (int i = 0; i <= s.Length - n; i++)
+                {
+                    string sub = s.Substring(i, n);
+                    if (seen.TryGetValue(sub, out int prev))
+                    {
+                        if (i - prev >= n) return true;
+                    }
+                    else seen[sub] = i;
+                }
+                return false;
             }
             catch { return false; }
         }
