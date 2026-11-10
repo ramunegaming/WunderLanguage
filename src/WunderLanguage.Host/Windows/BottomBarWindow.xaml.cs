@@ -19,6 +19,15 @@ namespace WunderLanguage.Host.Windows
 
         private void PauseButton_Click(object sender, RoutedEventArgs e)
         {
+            TogglePause();
+        }
+
+        // Single source of truth for pause state: the detached feed's header
+        // Pause button (revert: revert popout-feed) routes through here so the
+        // two buttons can never disagree, and PauseToggled still fires exactly
+        // once per toggle for the capture controller.
+        public void TogglePause()
+        {
             _paused = !_paused;
             PauseButton.Content = _paused ? "Resume" : "Pause";
             PauseToggled?.Invoke(_paused);

@@ -43,6 +43,48 @@ namespace WunderLanguage.Host.Windows
             return new IntPtr(SetWindowLong32(hWnd, GWLP_HWNDPARENT, owner.ToInt32()));
         }
 
+        // Pop-out feed (revert: revert popout-feed): WS_EX_NOACTIVATE on the
+        // detached feed. Same read/modify/write shape as SetWindowOwner - the
+        // flag rides alongside whatever else is already in the ex-style, and
+        // clearing it on re-dock restores only the bit we added.
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+
+        private static IntPtr GetExtendedStyle(IntPtr hWnd)
+        {
+            if (IntPtr.Size == 8)
+                return GetWindowLongPtr64(hWnd, GWL_EXSTYLE);
+            return new IntPtr(GetWindowLong32(hWnd, GWL_EXSTYLE));
+        }
+
+        private static IntPtr SetExtendedStyle(IntPtr hWnd, IntPtr exStyle)
+        {
+            if (IntPtr.Size == 8)
+                return SetWindowLongPtr64(hWnd, GWL_EXSTYLE, exStyle);
+            return new IntPtr(SetWindowLong32(hWnd, GWL_EXSTYLE, exStyle.ToInt32()));
+        }
+
+        // Global hotkey (RegisterHotKey): the only trigger that works when an
+        // exclusive/fullscreen game owns the foreground and the feed is on the
+        // other monitor. Registered against the side panel's HWND - hidden or
+        // not, a window with a message pump still gets WM_HOTKEY posted to it.
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        private const uint MOD_CONTROL = 0x0002;
+        private const uint MOD_SHIFT = 0x0004;
+        private const uint MOD_NOREPEAT = 0x4000;
+        private const int WM_HOTKEY = 0x0312;
+        private const int HotkeyIdToggleDetach = 0x5741; // "WA"
+        private const int HotkeyIdCopyAll = 0x5742;
+        private const uint VK_C = 0x43;
+        private const uint VK_D = 0x44;
+
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
         private const uint SWP_NOMOVE = 0x0002;
@@ -117,6 +159,14 @@ namespace WunderLanguage.Host.Windows
         // only begin once a real, person-drawn region exists.
         private bool _hasCalibratedRegion;
 
+        // Pop-out feed (revert: revert popout-feed). AppShell is the single
+        // owner of this mode: it decides whether the bars exist, whether the
+        // feed is repositioned/z-paired with the game, and where the feed sits.
+        private bool _detached;
+        private IntPtr _sidePanelPreDetachExStyle;
+        private bool _hotkeysRegistered;
+        private DateTime _lastFeedPosSave = DateTime.MinValue;
+
         public AppShell(IntPtr emulatorHandle, GameRegion gameRegion, AppSettings settings)
         {
             _emulatorHandle = emulatorHandle;
@@ -129,6 +179,17 @@ namespace WunderLanguage.Host.Windows
             _bottomBar.SettingsRequested += OnSettingsRequested;
             _topBar.ShotRequested += () => OnShotRequested(gameOnly: false);
             _topBar.ShotGameRequested += () => OnShotRequested(gameOnly: true);
+            // Pop-out feed (revert: revert popout-feed): the detached panel
+            // carries its own copies of the bar controls, so hiding the bars
+            // never takes Pause/Settings/Shot away. Pause routes through
+            // BottomBarWindow.TogglePause so the two buttons stay in sync.
+            _sidePanel.PopOutRequested += () => SetDetached(true);
+            _sidePanel.DockRequested += () => SetDetached(false);
+            _sidePanel.PauseRequested += _bottomBar.TogglePause;
+            _sidePanel.SettingsRequested += OnSettingsRequested;
+            _sidePanel.ShotRequested += () => OnShotRequested(gameOnly: false);
+            _bottomBar.PauseToggled += paused => _sidePanel.SetPauseState(paused);
+            _sidePanel.LocationChanged += OnFeedLocationChanged;
             _tracker = new EmulatorWindowTracker(emulatorHandle);
             _tracker.BoundsChanged += OnBoundsChanged;
             _tracker.ForegroundChanged += OnForegroundChanged;
@@ -139,7 +200,7 @@ namespace WunderLanguage.Host.Windows
             // silently truncating session .gz files. All closes funnel
             // here; controller.Stop is idempotent for repeats.
             _topBar.Closed += (_, _) => ShutdownCapture();
-            _sidePanel.Closed += (_, _) => ShutdownCapture();
+            _sidePanel.Closed += (_, _) => { UnregisterDetachHotkeys(); ShutdownCapture(); };
             _bottomBar.Closed += (_, _) => ShutdownCapture();
             _captureController = BuildCaptureController();
             _zOrderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -258,6 +319,9 @@ namespace WunderLanguage.Host.Windows
         public void Start()
         {
             WindowCapture.FocusWindow(_emulatorHandle);
+            // Pop-out feed: restore the stored position BEFORE the first show
+            // so a returning user never sees the feed flash at 0,0.
+            ApplyStoredFeedPosition();
             _topBar.Show();
             _sidePanel.Show();
             _bottomBar.Show();
@@ -270,9 +334,17 @@ namespace WunderLanguage.Host.Windows
             var dpi = VisualTreeHelper.GetDpi(_topBar);
             _dpiScaleX = dpi.DpiScaleX;
             _dpiScaleY = dpi.DpiScaleY;
+            _sidePanel.MenuDisplayMode = _settings.MenuDisplayMode;
+            // Pop-out feed (revert: revert popout-feed): restore last mode
+            // while the handles are known - the ex-style flip and the hotkey
+            // registration both need _sidePanelHandle, and ForceTopmost below
+            // must already be looking at the right mode rather than pairing
+            // a feed that is about to be demoted out of the topmost band.
+            if (_settings.FeedDetached)
+                SetDetached(true, persist: false);
+            RegisterDetachHotkeys();
             ForceTopmost("Start");
             BeginPostRestoreTopmostBurst();
-            _sidePanel.MenuDisplayMode = _settings.MenuDisplayMode;
             _tracker.Start();
             // Deliberately NOT starting _captureController here - it's
             // still holding the whole-window placeholder region at this
@@ -307,6 +379,17 @@ namespace WunderLanguage.Host.Windows
 
         private void PairGroupAboveEmulator()
         {
+            if (_detached)
+            {
+                // The detached feed lives in the TOPMOST band, not in the
+                // game's z-order neighborhood. Pairing it above the emulator
+                // (SetWindowPos with a non-topmost insert-after) would drop it
+                // back out of that band - straight under whatever is in front
+                // of the game, which is the exact case the feed exists for.
+                if (_sidePanelHandle != IntPtr.Zero)
+                    SetTopmostLogged(_sidePanelHandle, "sidePanel(detached)");
+                return;
+            }
             if (_topBarHandle == IntPtr.Zero || _sidePanelHandle == IntPtr.Zero || _bottomBarHandle == IntPtr.Zero)
             {
                 PairAboveEmulator(_topBarHandle, "topBar");
@@ -403,6 +486,13 @@ namespace WunderLanguage.Host.Windows
         private void ForceTopmost(string reason)
         {
             FileLogger.Log($"ForceTopmost ({reason})");
+            if (_detached)
+            {
+                // Only the feed is on screen; it owns the topmost band.
+                if (_sidePanelHandle != IntPtr.Zero)
+                    SetTopmostLogged(_sidePanelHandle, "sidePanel(detached)");
+                return;
+            }
             PairAboveEmulator(_topBarHandle, "topBar");
             PairAboveEmulator(_sidePanelHandle, "sidePanel");
             PairAboveEmulator(_bottomBarHandle, "bottomBar");
@@ -425,15 +515,29 @@ namespace WunderLanguage.Host.Windows
 
         private void OnEmulatorMinimized()
         {
-            FileLogger.Log("OnEmulatorMinimized: hiding all bars");
+            // Pop-out feed: a detached feed is no longer part of the game's
+            // chrome - it survives the game minimizing (the pipeline holds on
+            // its own via the IsMinimized gate, and the feed has nothing to
+            // show anyway until the game is back). Docked = today's behavior.
+            FileLogger.Log($"OnEmulatorMinimized: hiding chrome (detached={_detached})");
             _topBar.Hide();
-            _sidePanel.Hide();
             _bottomBar.Hide();
+            if (!_detached) _sidePanel.Hide();
             _activePopup?.Hide();
         }
 
         private void OnEmulatorRestored()
         {
+            if (_detached)
+            {
+                FileLogger.Log("OnEmulatorRestored: feed was detached - bars stay hidden");
+                _topBar.Hide();
+                _bottomBar.Hide();
+                _activePopup?.Show();
+                if (_sidePanelHandle != IntPtr.Zero)
+                    SetTopmostLogged(_sidePanelHandle, "sidePanel(restored-detached)");
+                return;
+            }
             FileLogger.Log("OnEmulatorRestored: showing all bars");
             _topBar.Show();
             _sidePanel.Show();
@@ -676,7 +780,16 @@ namespace WunderLanguage.Host.Windows
             {
                 if (barsHidden && !WindowCapture.IsMinimized(_emulatorHandle))
                 {
-                    _topBar.Show(); _sidePanel.Show(); _bottomBar.Show();
+                    // The feed always comes back (it was hidden only so it
+                    // couldn't bury the calibration corners); the bars only
+                    // come back when they were part of the layout to begin
+                    // with. Pop-out feed: revert popout-feed.
+                    _sidePanel.Show();
+                    if (!_detached)
+                    {
+                        _topBar.Show();
+                        _bottomBar.Show();
+                    }
                 }
             }
         }
@@ -720,10 +833,16 @@ namespace WunderLanguage.Host.Windows
             }
             if (hdwp != IntPtr.Zero)
             {
-                hdwp = DeferWindowPos(hdwp, _sidePanelHandle, IntPtr.Zero,
-                    right + marginPx - shadowCompensationPxX, topBarTop, sidePanelWidthPx,
-                    bottomBarBottom - topBarTop,
-                    SWP_NOZORDER | SWP_NOACTIVATE);
+                // Pop-out feed: a detached feed is parked by the person, not by
+                // the game window - re-snapping it to the game's right edge on
+                // every bounds change would undo the whole feature. The bars
+                // keep tracking (hidden, but positioned correctly the moment
+                // they re-show).
+                if (!_detached)
+                    hdwp = DeferWindowPos(hdwp, _sidePanelHandle, IntPtr.Zero,
+                        right + marginPx - shadowCompensationPxX, topBarTop, sidePanelWidthPx,
+                        bottomBarBottom - topBarTop,
+                        SWP_NOZORDER | SWP_NOACTIVATE);
             }
             if (hdwp != IntPtr.Zero)
             {
@@ -741,10 +860,11 @@ namespace WunderLanguage.Host.Windows
                 SetWindowPos(_topBarHandle, IntPtr.Zero,
                     left, topBarTop, width, topBarHeightPx,
                     SWP_NOZORDER | SWP_NOACTIVATE);
-                SetWindowPos(_sidePanelHandle, IntPtr.Zero,
-                    right + marginPx - shadowCompensationPxX, topBarTop, sidePanelWidthPx,
-                    bottomBarBottom - topBarTop,
-                    SWP_NOZORDER | SWP_NOACTIVATE);
+                if (!_detached)
+                    SetWindowPos(_sidePanelHandle, IntPtr.Zero,
+                        right + marginPx - shadowCompensationPxX, topBarTop, sidePanelWidthPx,
+                        bottomBarBottom - topBarTop,
+                        SWP_NOZORDER | SWP_NOACTIVATE);
                 SetWindowPos(_bottomBarHandle, IntPtr.Zero,
                     left, bottom + marginPx - shadowCompensationPxY, width, bottomBarHeightPx,
                     SWP_NOZORDER | SWP_NOACTIVATE);
@@ -755,6 +875,288 @@ namespace WunderLanguage.Host.Windows
                 FileLogger.Log($"  actual sidePanel rect: (L{actualSidePanel.Left},T{actualSidePanel.Top},R{actualSidePanel.Right},B{actualSidePanel.Bottom}) size={actualSidePanel.Width}x{actualSidePanel.Height}");
             if (WindowCapture.TryGetWindowBounds(_bottomBarHandle, out var actualBottomBar))
                 FileLogger.Log($"  actual bottomBar rect: (L{actualBottomBar.Left},T{actualBottomBar.Top},R{actualBottomBar.Right},B{actualBottomBar.Bottom}) size={actualBottomBar.Width}x{actualBottomBar.Height}");
+            if (_detached)
+                RefreshFeedOpacity();
+        }
+
+        // ------------------------------------------------------------------
+        // Pop-out feed (revert: revert popout-feed).
+        //
+        // Why it exists: exclusive/borderless fullscreen claims its monitor,
+        // and the top/bottom bars get pushed off-screen while the feed lands
+        // on the game's own edge. Detaching parks the feed as a standalone
+        // window - typically a second monitor - that the fullscreen game has
+        // no claim over.
+        //
+        // Three properties make it survive that case:
+        //   1. HWND_TOPMOST (the band is global across monitors; nothing but
+        //      another topmost window covers it, and the 150ms z-pairing is
+        //      deliberately skipped so it can't be demoted back into the
+        //      game's z-order neighbourhood).
+        //   2. WS_EX_NOACTIVATE - clicking/scrolling the feed never takes the
+        //      foreground away from the game, so games that minimize or pause
+        //      on focus loss never notice.
+        //   3. Capture keeps running off its own screen-BitBlt of the game's
+        //      rect, which a feed on another monitor can't intersect.
+        // ------------------------------------------------------------------
+
+        private void ToggleDetach() => SetDetached(!_detached);
+
+        private void SetDetached(bool detached, bool persist = true)
+        {
+            if (_detached == detached) return;
+            _detached = detached;
+            try
+            {
+                if (detached)
+                {
+                    _topBar.Hide();
+                    _bottomBar.Hide();
+                    ApplyDetachedPanelStyle();
+                    _sidePanel.SetDetached(true);
+                    if (_sidePanelHandle != IntPtr.Zero)
+                        SetTopmostLogged(_sidePanelHandle, "sidePanel(detach)");
+                    RegisterCopyHotkey();
+                    FileLogger.Log(
+                        $"popout: feed DETACHED at ({_sidePanel.Left},{_sidePanel.Top}) - " +
+                        "bars hidden, feed HWND_TOPMOST + WS_EX_NOACTIVATE");
+                }
+                else
+                {
+                    RestoreDockedPanelStyle();
+                    _sidePanel.SetDetached(false);
+                    UnregisterCopyHotkey();
+                    _topBar.Show();
+                    _bottomBar.Show();
+                    // Re-snap now instead of waiting for a bounds event that may
+                    // never come - the game window hasn't moved, so nothing is
+                    // going to fire one on its own.
+                    if (WindowCapture.TryGetWindowBounds(_emulatorHandle, out var bounds))
+                        OnBoundsChanged(bounds);
+                    PairGroupAboveEmulator();
+                    FileLogger.Log("popout: feed DOCKED - bars restored, feed re-paired to game edge");
+                }
+                RefreshFeedOpacity();
+                if (persist)
+                {
+                    _settings.FeedDetached = _detached;
+                    _settings.FeedLeft = _sidePanel.Left;
+                    _settings.FeedTop = _sidePanel.Top;
+                    _settings.Save();
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: SetDetached({detached}) failed: {ex.Message}");
+            }
+        }
+
+        // Read/modify/write so the flag rides alongside whatever else lives in
+        // the ex-style; the restore only ever clears the bit we added.
+        private void ApplyDetachedPanelStyle()
+        {
+            if (_sidePanelHandle == IntPtr.Zero) return;
+            try
+            {
+                long before = GetExtendedStyle(_sidePanelHandle).ToInt64();
+                _sidePanelPreDetachExStyle = new IntPtr(before);
+                long after = before | WS_EX_NOACTIVATE;
+                SetExtendedStyle(_sidePanelHandle, new IntPtr(after));
+                FileLogger.Log($"popout: feed ex-style 0x{before:X} -> 0x{after:X} (WS_EX_NOACTIVATE)");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: WS_EX_NOACTIVATE set failed: {ex.Message}");
+            }
+        }
+
+        private void RestoreDockedPanelStyle()
+        {
+            if (_sidePanelHandle == IntPtr.Zero) return;
+            try
+            {
+                long now = GetExtendedStyle(_sidePanelHandle).ToInt64();
+                long after = now & ~(long)WS_EX_NOACTIVATE;
+                if (_sidePanelPreDetachExStyle != IntPtr.Zero)
+                    after = _sidePanelPreDetachExStyle.ToInt64();
+                SetExtendedStyle(_sidePanelHandle, new IntPtr(after));
+                FileLogger.Log($"popout: feed ex-style 0x{now:X} -> 0x{after:X} (WS_EX_NOACTIVATE cleared)");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: WS_EX_NOACTIVATE clear failed: {ex.Message}");
+            }
+        }
+
+        // Restore last-run geometry before the first Show so a returning user
+        // never sees the feed flash at its default spot. 0,0 means "never
+        // positioned" (the feed simply keeps WPF's cascade position).
+        private void ApplyStoredFeedPosition()
+        {
+            try
+            {
+                if (_settings.FeedLeft == 0 && _settings.FeedTop == 0) return;
+                _sidePanel.Left = _settings.FeedLeft;
+                _sidePanel.Top = _settings.FeedTop;
+                ClampToVirtualScreen();
+                FileLogger.Log($"popout: restored feed position ({_sidePanel.Left},{_sidePanel.Top})");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: feed position restore failed: {ex.Message}");
+            }
+        }
+
+        // A monitor that's since been unplugged must not strand the feed where
+        // it can't be grabbed again. Revert: revert popout-feed.
+        private void ClampToVirtualScreen()
+        {
+            double vw = SystemParameters.VirtualScreenLeft;
+            double vt = SystemParameters.VirtualScreenTop;
+            double vr = vw + SystemParameters.VirtualScreenWidth;
+            double vb = vt + SystemParameters.VirtualScreenHeight;
+            double w = _sidePanel.ActualWidth > 0 ? _sidePanel.ActualWidth : SidePanelWidth;
+            double h = _sidePanel.ActualHeight > 0 ? _sidePanel.ActualHeight : 420;
+            if (_sidePanel.Left + w < vw) _sidePanel.Left = vw;
+            if (_sidePanel.Top + h < vt) _sidePanel.Top = vt;
+            if (_sidePanel.Left > vr - 40) _sidePanel.Left = vr - 40;
+            if (_sidePanel.Top > vb - 40) _sidePanel.Top = vb - 40;
+        }
+
+        // Detached = the feed may be sitting on the game itself (single monitor)
+        // or on its own monitor. Over the game it drops to partial opacity so
+        // text reads through it; on its own monitor it's fully opaque. Both
+        // rects come from the same Win32 call so the units always agree.
+        // Revert: revert popout-feed.
+        private void RefreshFeedOpacity()
+        {
+            try
+            {
+                if (!_detached)
+                {
+                    if (Math.Abs(_sidePanel.Opacity - 1.0) > 0.01) _sidePanel.Opacity = 1.0;
+                    return;
+                }
+                if (_sidePanelHandle == IntPtr.Zero) return;
+                bool overGame =
+                    WindowCapture.TryGetWindowBounds(_sidePanelHandle, out var feedRect) &&
+                    WindowCapture.TryGetWindowBounds(_emulatorHandle, out var gameRect) &&
+                    feedRect.IntersectsWith(gameRect);
+                double wanted = overGame ? 0.75 : 1.0;
+                if (Math.Abs(_sidePanel.Opacity - wanted) > 0.01)
+                {
+                    _sidePanel.Opacity = wanted;
+                    FileLogger.Log($"popout: feed opacity -> {wanted} (overlaps game={overGame})");
+                }
+            }
+            catch { }
+        }
+
+        // Throttled: DragMove pumps a LocationChanged per pixel of travel and
+        // Save() rewrites settings.json (plus re-encrypts the key).
+        private void OnFeedLocationChanged(object? sender, EventArgs e)
+        {
+            if (!_detached) return;
+            RefreshFeedOpacity();
+            if ((DateTime.UtcNow - _lastFeedPosSave) < TimeSpan.FromSeconds(1)) return;
+            _lastFeedPosSave = DateTime.UtcNow;
+            try
+            {
+                _settings.FeedLeft = _sidePanel.Left;
+                _settings.FeedTop = _sidePanel.Top;
+                _settings.Save();
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: feed position save failed: {ex.Message}");
+            }
+        }
+
+        // Ctrl+Shift+D is the only trigger that works when a fullscreen game
+        // owns the foreground and the feed is out of reach on another monitor.
+        // MOD_NOREPEAT so a held combo is exactly one toggle. Failure is
+        // fail-open: the button still works, we just log it.
+        private void RegisterDetachHotkeys()
+        {
+            if (_hotkeysRegistered) return;
+            if (_sidePanelHandle == IntPtr.Zero) return;
+            try
+            {
+                var src = HwndSource.FromHwnd(_sidePanelHandle);
+                if (src == null)
+                {
+                    FileLogger.Log("popout: hotkey registration skipped (no HwndSource for sidePanel)");
+                    return;
+                }
+                src.AddHook(WndProc);
+                _hotkeysRegistered = true;
+                if (RegisterHotKey(_sidePanelHandle, HotkeyIdToggleDetach, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_D))
+                    FileLogger.Log("popout: hotkey Ctrl+Shift+D registered");
+                else
+                    FileLogger.Log($"popout: hotkey Ctrl+Shift+D FAILED (Win32 {Marshal.GetLastWin32Error()}) - pop-out button only");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: hotkey registration failed: {ex.Message}");
+            }
+        }
+
+        private void UnregisterDetachHotkeys()
+        {
+            if (!_hotkeysRegistered) return;
+            _hotkeysRegistered = false;
+            try
+            {
+                if (_sidePanelHandle != IntPtr.Zero)
+                {
+                    UnregisterHotKey(_sidePanelHandle, HotkeyIdToggleDetach);
+                    UnregisterHotKey(_sidePanelHandle, HotkeyIdCopyAll);
+                    HwndSource.FromHwnd(_sidePanelHandle)?.RemoveHook(WndProc);
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: hotkey unregistration failed: {ex.Message}");
+            }
+        }
+
+        // Copy-all follows the mode. While detached the panel has
+        // WS_EX_NOACTIVATE so its own Ctrl+Shift+C PreviewKeyDown never sees
+        // the key - this global registration is what keeps the shortcut alive
+        // in exactly that state, and it goes away again on re-dock so docked
+        // behavior is byte-for-byte what it was before.
+        private void RegisterCopyHotkey()
+        {
+            if (_sidePanelHandle == IntPtr.Zero) return;
+            if (RegisterHotKey(_sidePanelHandle, HotkeyIdCopyAll, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_C))
+                FileLogger.Log("popout: hotkey Ctrl+Shift+C registered (detached copy-all)");
+            else
+                FileLogger.Log($"popout: hotkey Ctrl+Shift+C FAILED (Win32 {Marshal.GetLastWin32Error()})");
+        }
+
+        private void UnregisterCopyHotkey()
+        {
+            if (_sidePanelHandle == IntPtr.Zero) return;
+            UnregisterHotKey(_sidePanelHandle, HotkeyIdCopyAll);
+        }
+
+        // HwndSource hooks run on the UI thread, so the toggle can touch
+        // windows directly with no dispatcher hop.
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg != WM_HOTKEY) return IntPtr.Zero;
+            int id = wParam.ToInt32();
+            if (id == HotkeyIdToggleDetach)
+            {
+                handled = true;
+                ToggleDetach();
+            }
+            else if (id == HotkeyIdCopyAll)
+            {
+                handled = true;
+                _sidePanel.CopyAllHistoryHotkey();
+            }
+            return IntPtr.Zero;
         }
     }
 }

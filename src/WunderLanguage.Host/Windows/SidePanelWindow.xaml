@@ -9,15 +9,43 @@
         <Grid Margin="16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <!-- Pop-out feed (revert: revert popout-feed). Detached-only
+                 compact header: the top/bottom bars are gone, so their
+                 controls move here. The whole row is the drag handle
+                 (Transparent background so empty space hit-tests) except
+                 over the buttons - ButtonBase eats MouseLeftButtonDown, so a
+                 click never turns into a drag. -->
+            <Grid x:Name="DetachedHeader" Grid.Row="0" Visibility="Collapsed" Margin="0,0,0,12"
+                  Background="Transparent"
+                  MouseLeftButtonDown="DetachedHeader_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
+                            Cursor="SizeAll">
+                    <TextBlock Text="&#x2807;&#x2807;" FontSize="13" Foreground="{StaticResource SubtleTextBrush}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="FEED" FontSize="11" FontWeight="Bold"
+                               Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="DetachedPauseButton" Content="Pause" Padding="8,2" Margin="0,0,4,0" Click="DetachedPauseButton_Click"/>
+                    <Button x:Name="DetachedSettingsButton" Content="Settings" Padding="8,2" Margin="0,0,4,0" Click="DetachedSettingsButton_Click"/>
+                    <Button x:Name="DetachedShotButton" Content="Shot" Padding="8,2" Margin="0,0,4,0" Click="DetachedShotButton_Click"/>
+                    <Button x:Name="DockButton" Content="Dock" Padding="8,2" Click="DockButton_Click"/>
+                </StackPanel>
+            </Grid>
+            <StackPanel x:Name="FeedTitleBlock" Grid.Row="1" Margin="0,0,0,12">
                 <TextBlock Text="Live Chat" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
                 <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,4,0,0"
                            Text="Chat opens up once multiplayer rooms are built - single-player testing for now."/>
             </StackPanel>
-            <Border Grid.Row="1" Background="{StaticResource InnerPanelBrush}" CornerRadius="6" Padding="12" VerticalAlignment="Stretch">
+            <Border Grid.Row="2" Background="{StaticResource InnerPanelBrush}" CornerRadius="6" Padding="12" VerticalAlignment="Stretch">
                 <ScrollViewer x:Name="HistoryScroller" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Resources>
@@ -52,8 +80,21 @@
                     </StackPanel>
                 </ScrollViewer>
             </Border>
-            <TextBlock Grid.Row="2" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource SubtleTextBrush}"
-                       Margin="0,12,0,0" Text="Word breakdown and notes are coming in a later pass."/>
+            <!-- Row 3: footer. The pop-out button is bidirectional - the
+                 same control detaches the feed and re-docks it (the user
+                 asked for reattach on the same button, not a new one). -->
+            <Grid Grid.Row="3" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource SubtleTextBrush}"
+                           VerticalAlignment="Center"
+                           Text="Word breakdown and notes are coming in a later pass."/>
+                <Button x:Name="PopOutButton" Grid.Column="1" Content="Pop out" Padding="10,4" Margin="8,0,0,0"
+                        VerticalAlignment="Center" Click="PopOutButton_Click"
+                        ToolTip="Detach the feed to its own always-on-top window (Ctrl+Shift+D). Drag the FEED grip to move it."/>
+            </Grid>
         </Grid>
     </Border>
 </Window>

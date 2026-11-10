@@ -131,6 +131,15 @@ namespace WunderLanguage.Host.Windows
         // Ctrl+Shift+C copies (timestamps included). Updated in place on growth.
         private readonly List<(string time, string ja, string en)> _history = new();
 
+        // Pop-out feed (revert: revert popout-feed). The panel only raises
+        // intents and reflects the state AppShell hands it - AppShell owns
+        // the detached flag, the z-order policy, and persistence.
+        public event Action? PopOutRequested;
+        public event Action? DockRequested;
+        public event Action? PauseRequested;
+        public event Action? SettingsRequested;
+        public event Action? ShotRequested;
+
         public SidePanelWindow()
         {
             InitializeComponent();
@@ -146,6 +155,59 @@ namespace WunderLanguage.Host.Windows
                 }
             };
         }
+
+        // Detached mode re-shapes the panel: compact control header in, chat
+        // title out. Pure presentation - positioning and z-order stay AppShell's
+        // job.
+        private bool _detached;
+        public void SetDetached(bool detached)
+        {
+            _detached = detached;
+            DetachedHeader.Visibility = detached ? Visibility.Visible : Visibility.Collapsed;
+            FeedTitleBlock.Visibility = detached ? Visibility.Collapsed : Visibility.Visible;
+            PopOutButton.Content = detached ? "Dock" : "Pop out";
+            PopOutButton.ToolTip = detached
+                ? "Re-attach the feed to the game's right edge (Ctrl+Shift+D)."
+                : "Detach the feed to its own always-on-top window (Ctrl+Shift+D). Drag the FEED grip to move it.";
+        }
+
+        // Kept in step with BottomBarWindow so the two Pause buttons never
+        // disagree about which state they'd toggle into.
+        public void SetPauseState(bool paused)
+        {
+            DetachedPauseButton.Content = paused ? "Resume" : "Pause";
+        }
+
+        // Fired from the AppShell hotkey as well: WS_EX_NOACTIVATE means the
+        // detached panel can't take keyboard focus, so the panel-local
+        // Ctrl+Shift+C handler never sees the key while popped out.
+        public void CopyAllHistoryHotkey() => CopyAllHistory();
+
+        private void DetachedHeader_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left) return;
+            try
+            {
+                // Header only - the four buttons set e.Handled on their own
+                // MouseLeftButtonDown, so this never fires mid-click.
+                DragMove();
+            }
+            catch
+            {
+                // DragMove throws if the button was already released - benign.
+            }
+        }
+
+        private void PopOutButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_detached) DockRequested?.Invoke();
+            else PopOutRequested?.Invoke();
+        }
+
+        private void DockButton_Click(object sender, RoutedEventArgs e) => DockRequested?.Invoke();
+        private void DetachedPauseButton_Click(object sender, RoutedEventArgs e) => PauseRequested?.Invoke();
+        private void DetachedSettingsButton_Click(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
+        private void DetachedShotButton_Click(object sender, RoutedEventArgs e) => ShotRequested?.Invoke();
 
         private void CopyAllHistory()
         {

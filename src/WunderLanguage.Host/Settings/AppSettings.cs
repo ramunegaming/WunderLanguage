@@ -17,6 +17,14 @@ namespace WunderLanguage.Host.Settings
         // always-on (user-facing benefits, tiny).
         public bool Diagnostics { get; set; } = false;
 
+        // Pop-out feed (batch: revert popout-feed). Where the detached feed
+        // lived last run: mode + position, so a restart never silently
+        // re-docks or parks the panel at 0,0. 0/0 = "no stored position"
+        // (a freshly-calibrated default is seeded instead).
+        public bool FeedDetached { get; set; } = false;
+        public double FeedLeft { get; set; } = 0;
+        public double FeedTop { get; set; } = 0;
+
         // Encrypted at rest (DPAPI, CurrentUser). Never plaintext on disk.
         public string? DeepLApiKeyEncrypted { get; set; }
 
@@ -70,6 +78,14 @@ namespace WunderLanguage.Host.Settings
                     if (root.TryGetProperty(nameof(Diagnostics), out var dg) && (dg.ValueKind == JsonValueKind.True || dg.ValueKind == JsonValueKind.False))
                         settings.Diagnostics = dg.GetBoolean();
 
+                    // Pop-out feed (revert: revert popout-feed).
+                    if (root.TryGetProperty(nameof(FeedDetached), out var fd) && (fd.ValueKind == JsonValueKind.True || fd.ValueKind == JsonValueKind.False))
+                        settings.FeedDetached = fd.GetBoolean();
+                    if (root.TryGetProperty(nameof(FeedLeft), out var fL) && fL.ValueKind == JsonValueKind.Number)
+                        settings.FeedLeft = fL.GetDouble();
+                    if (root.TryGetProperty(nameof(FeedTop), out var fT) && fT.ValueKind == JsonValueKind.Number)
+                        settings.FeedTop = fT.GetDouble();
+
                     string? encrypted = null;
                     try
                     {
@@ -106,7 +122,7 @@ namespace WunderLanguage.Host.Settings
                         settings.DeepLApiKey = legacyPlaintext;
                     }
 
-                    FileLogger.Log($"Settings loaded: provider={settings.TranslationProvider}, keyPresent={settings.DeepLApiKey is not null}, encryptedPresent={!string.IsNullOrEmpty(encrypted)}, legacyPresent={!string.IsNullOrEmpty(legacyPlaintext)}");
+                    FileLogger.Log($"Settings loaded: provider={settings.TranslationProvider}, keyPresent={settings.DeepLApiKey is not null}, encryptedPresent={!string.IsNullOrEmpty(encrypted)}, legacyPresent={!string.IsNullOrEmpty(legacyPlaintext)}, feedDetached={settings.FeedDetached}, feedPos=({settings.FeedLeft},{settings.FeedTop})");
                     return settings;
                 }
             }
@@ -136,6 +152,12 @@ namespace WunderLanguage.Host.Settings
                 TranslationProvider,
                 MenuDisplayMode,
                 Diagnostics,
+                // Pop-out feed (revert: revert popout-feed). Must be in the
+                // payload or the next SettingsPopup.Save silently wipes both
+                // the detach state and where the feed was parked.
+                FeedDetached,
+                FeedLeft,
+                FeedTop,
             };
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(FilePath, json);
