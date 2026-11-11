@@ -245,7 +245,9 @@ namespace WunderLanguage.Host.Capture
         }
         // HOT LOOP PATH. Screen-copy only — no PrintWindow, no forced redraw, no flicker.
         // Requires the game region to be visible on screen (true while playing).
-        // Falls back to PrintWindow only if BitBlt fails outright.
+        // Falls back to PrintWindow if BitBlt throws, and — on the GameRegion
+        // overload — when BitBlt "succeeds" but hands back a degenerate
+        // (blank/flat) frame (capture-swap, revert: revert capture-swap).
         public static Bitmap CaptureWindowRegion(IntPtr hWnd, Rectangle relativeCropRect)
         {
             if (TryGetWindowBounds(hWnd, out var winBounds))
@@ -283,7 +285,13 @@ namespace WunderLanguage.Host.Capture
                     rel.Height);
                 try
                 {
-                    return CaptureScreenRegion(screenRect);
+                    // Capture-swap (revert: revert capture-swap): a BitBlt that
+                    // SUCCEEDS with a blank frame (the HDR-composited display
+                    // class E9 detects) used to sail straight into OCR — the
+                    // PrintWindow fallback below only fired on a thrown error.
+                    // SwapIfDegenerate qualifies the result and adopts the
+                    // existing PrintWindow path when it carries content.
+                    return SwapIfDegenerate(CaptureScreenRegion(screenRect), hWnd, gameRegion);
                 }
                 catch (Exception ex)
                 {
@@ -345,6 +353,275 @@ namespace WunderLanguage.Host.Capture
             {
                 ReleaseDC(IntPtr.Zero, screenDC);
             }
+        }
+
+        // ------------------------------------------------------------------
+        // Capture-swap (2026-11-11; revert: revert capture-swap).
+        // WHY: on an HDR-composited display the GDI screen BitBlt can
+        // "succeed" while handing back a blank/flat frame (the class E9
+        // detects, batch revert hdr-detect). The PrintWindow fallback that
+        // already exists for thrown errors never saw that case, so blank
+        // frames went straight into OCR. The swap qualifies every
+        // screen-copy result: degenerate screen + a PrintWindow frame that
+        // carries content = adopt PrintWindow for as long as the screen
+        // stays degenerate (compat episode); both degenerate = keep the
+        // screen frame untouched (an honest black loading screen must not
+        // be "rescued" into something else, and E9 upstream still reports).
+        // Fail-open throughout: any probe error keeps the screen frame.
+        private static bool _swapEpisode;
+        private static int _swapMisses;     // consecutive compat attempts that ALSO came back degenerate
+        private static long _swapAdoptedN;  // compat frames adopted this episode
+        private static int _swapMissN;      // misses this episode (log cadence)
+        // Eager retries for the first misses (a transient black flash
+        // self-heals in ~2s), then amortized — a real all-black loading
+        // screen must not pay PrintWindow every 400ms loop forever.
+        private const int SwapEagerMisses = 5;
+        private const int SwapRetryEvery = 10;
+
+        // Blank test: the SAME 64-wide grayscale thumb conversion
+        // ComputeFrameDiff uses (revert hdr-detect), then the SAME shared
+        // classifier the E9 probe reads (CaptureController.IsFlatThumb) —
+        // the swap and the chip must never disagree on what "blank" means.
+        // Fail-open: a sampling error reads "healthy", so a broken thumb
+        // can never trigger a swap.
+        private static bool IsDegenerate(Bitmap bmp)
+        {
+            try
+            {
+                int tw = 64;
+                int th = Math.Max(1, bmp.Height * tw / Math.Max(1, bmp.Width));
+                byte[] gray;
+                using (var thumb = new Bitmap(bmp, new Size(tw, th)))
+                {
+                    var rect = new Rectangle(0, 0, tw, th);
+                    var data = thumb.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+                    try
+                    {
+                        gray = new byte[tw * th];
+                        int stride = Math.Abs(data.Stride);
+                        var row = new byte[stride];
+                        for (int y = 0; y < th; y++)
+                        {
+                            Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, stride);
+                            for (int x = 0; x < tw; x++)
+                                gray[y * tw + x] = (byte)((row[x * 3 + 2] * 77 + row[x * 3 + 1] * 150 + row[x * 3] * 29) >> 8);
+                        }
+                    }
+                    finally { thumb.UnlockBits(data); }
+                }
+                return CaptureController.IsFlatThumb(gray);
+            }
+            catch { return false; }
+        }
+
+        private static void NoteSwapMiss(string why)
+        {
+            if (_swapMissN++ == 0 || _swapMissN % 20 == 0)
+                FileLogger.Log($"[capture-swap] compat frame unavailable ({why}), keeping degenerate screen-copy (miss #{_swapMissN})");
+        }
+
+        private static Bitmap SwapIfDegenerate(Bitmap bmp, IntPtr hWnd, GameRegion gameRegion)
+        {
+            try
+            {
+                bool bad = IsDegenerate(bmp);
+                if (!_swapEpisode)
+                {
+                    if (!bad) return bmp;
+                    _swapEpisode = true;
+                    _swapMisses = 0;
+                    _swapAdoptedN = 0;
+                    _swapMissN = 0;
+                    FileLogger.Log("[capture-swap] screen-copy frame degenerate - engaging PrintWindow compat capture");
+                    // fall through: first miss tries immediately (eager window)
+                }
+                else if (!bad)
+                {
+                    FileLogger.Log($"[capture-swap] screen-copy healthy again - compat capture disengaged (adopted={_swapAdoptedN} misses={_swapMissN})");
+                    _swapEpisode = false;
+                    _swapMisses = 0;
+                    return bmp;
+                }
+                if (!_swapEpisode) return bmp;
+                bool attempt = _swapMisses < SwapEagerMisses || _swapMisses % SwapRetryEvery == 0;
+                if (!attempt) return bmp;
+                using var full = CaptureWindow(hWnd);
+                var rect = gameRegion.GetRelativeCropRect();
+                rect.Intersect(new Rectangle(0, 0, full.Width, full.Height));
+                if (rect.Width <= 0 || rect.Height <= 0)
+                {
+                    _swapMisses++;
+                    NoteSwapMiss("compat crop outside window bounds");
+                    return bmp;
+                }
+                var alt = full.Clone(rect, full.PixelFormat);
+                if (!IsDegenerate(alt))
+                {
+                    _swapMisses = 0;
+                    if (_swapAdoptedN++ % 100 == 0)
+                        FileLogger.Log($"[capture-swap] compat frame adopted ({_swapAdoptedN} this episode) - screen-copy still degenerate");
+                    bmp.Dispose();
+                    return alt;
+                }
+                alt.Dispose();
+                _swapMisses++;
+                NoteSwapMiss("compat frame degenerate too");
+                return bmp;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[capture-swap] probe error (keeping screen-copy): {ex.Message}");
+                return bmp;
+            }
+        }
+
+        // --captureswap offline gate (revert: revert capture-swap): proves
+        // the moving parts on this machine with no emulator/sidecar/GPU:
+        // the shared blank classifier in BOTH directions, BOTH capture
+        // primitives against a real on-screen window of ours (BitBlt
+        // screen-copy + PrintWindow compat), and the production
+        // CaptureWindowRegion path end-to-end including size agreement
+        // (DPI/coordinate-space bugs fail here, not live). The engage/miss
+        // arm needs an actually-degenerate screen - live-owed with the
+        // HDR-on proof.
+        public static bool RunSwapOfflineTest()
+        {
+            bool ok = true;
+            try
+            {
+                var flat = new byte[64 * 36];
+                var rich = new byte[64 * 36];
+                for (int i = 0; i < rich.Length; i++) rich[i] = (byte)(i % 251);
+                bool dFlat = CaptureController.IsFlatThumb(flat);
+                bool dRich = CaptureController.IsFlatThumb(rich);
+                FileLogger.Log($"[captureswap] classifier flat={dFlat} (want True) rich={dRich} (want False)");
+                // flat must be degenerate, rich must NOT be (want-False case
+                // is inverted vs the want-True case above)
+                if (!dFlat || dRich) ok = false;
+
+                System.Windows.Window? w = null;
+                try
+                {
+                    w = new System.Windows.Window
+                    {
+                        Width = 340,
+                        Height = 220,
+                        WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                        Left = 60,
+                        Top = 60,
+                        ShowInTaskbar = false,
+                        Title = "capture-swap gate",
+                        Background = System.Windows.Media.Brushes.White,
+                    };
+                    var sp = new System.Windows.Controls.StackPanel();
+                    sp.Children.Add(new System.Windows.Controls.TextBlock
+                    {
+                        Text = "CAPTURE SWAP GATE",
+                        FontSize = 18,
+                        FontWeight = System.Windows.FontWeights.Bold,
+                        Margin = new System.Windows.Thickness(10, 10, 0, 0),
+                    });
+                    sp.Children.Add(new System.Windows.Controls.Border
+                    {
+                        Background = System.Windows.Media.Brushes.Black,
+                        Height = 70,
+                        Margin = new System.Windows.Thickness(10),
+                    });
+                    sp.Children.Add(new System.Windows.Controls.TextBlock
+                    {
+                        Text = "content band above - both backends must see it",
+                        Margin = new System.Windows.Thickness(10),
+                    });
+                    w.Content = sp;
+                    w.Show();
+                    w.Activate();
+                    // Same-thread pump until the deadline: BeginInvoke(Background)
+                    // + PushFrame flushes the dispatcher queue, the sleep gives
+                    // DWM time to actually paint the window on screen.
+                    var deadline = DateTime.UtcNow.AddMilliseconds(400);
+                    while (DateTime.UtcNow < deadline)
+                    {
+                        var frame = new System.Windows.Threading.DispatcherFrame();
+                        System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                            System.Windows.Threading.DispatcherPriority.Background,
+                            new Action(() => frame.Continue = false));
+                        System.Windows.Threading.Dispatcher.PushFrame(frame);
+                        System.Threading.Thread.Sleep(10);
+                    }
+                    IntPtr h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+                    if (h == IntPtr.Zero || !TryGetWindowBounds(h, out Rectangle winRect) || winRect.Width <= 0)
+                    {
+                        FileLogger.Log("[captureswap] gate window has no usable HWND/bounds");
+                        ok = false;
+                    }
+                    else
+                    {
+                        // Production measures against the DWM extended frame
+                        // (same source as the occlusion probe); log the raw
+                        // USER32 rect too — the delta is the invisible border.
+                        if (TryGetUserRect(h, out Rectangle rawRect))
+                            FileLogger.Log($"[captureswap] bounds dwm={winRect.Width}x{winRect.Height} getrect={rawRect.Width}x{rawRect.Height} (production uses the DWM frame)");
+                        var region = new GameRegion(winRect, winRect); // whole window = calibration
+                        // Production path end-to-end (swap logic included).
+                        // Our window is healthy, so it must stay on screen-copy
+                        // and return the full-window size exactly.
+                        using (var prod = CaptureWindowRegion(h, region))
+                        {
+                            bool prodBad = IsDegenerate(prod);
+                            FileLogger.Log($"[captureswap] production path {prod.Width}x{prod.Height} degenerate={prodBad} (want False) window={winRect.Width}x{winRect.Height}");
+                            if (prodBad) ok = false;
+                            if (prod.Width != winRect.Width || prod.Height != winRect.Height)
+                            {
+                                FileLogger.Log($"[captureswap] production size mismatch vs DWM frame bounds ({winRect.Width}x{winRect.Height})");
+                                ok = false;
+                            }
+                        }
+                        // Primitive A: screen-copy at the client area.
+                        try
+                        {
+                            var origin = w.PointToScreen(new System.Windows.Point(0, 0));
+                            var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(w);
+                            var client = new Rectangle(
+                                (int)origin.X,
+                                (int)origin.Y,
+                                (int)Math.Ceiling(w.ActualWidth * dpi.DpiScaleX),
+                                (int)Math.Ceiling(w.ActualHeight * dpi.DpiScaleY));
+                            using var blt = CaptureScreenRegion(client);
+                            bool bltBad = IsDegenerate(blt);
+                            FileLogger.Log($"[captureswap] bitblt primitive {blt.Width}x{blt.Height} degenerate={bltBad} (want False)");
+                            if (bltBad) ok = false;
+                        }
+                        catch (Exception ex)
+                        {
+                            FileLogger.Log($"[captureswap] bitblt primitive FAILED: {ex.Message}");
+                            ok = false;
+                        }
+                        // Primitive B: PrintWindow compat (the rescue backend).
+                        try
+                        {
+                            using var pw = CaptureWindow(h);
+                            bool pwBad = IsDegenerate(pw);
+                            FileLogger.Log($"[captureswap] printwindow primitive {pw.Width}x{pw.Height} degenerate={pwBad} (want False)");
+                            if (pwBad) ok = false;
+                        }
+                        catch (Exception ex)
+                        {
+                            FileLogger.Log($"[captureswap] printwindow primitive FAILED: {ex.Message}");
+                            ok = false;
+                        }
+                    }
+                }
+                finally
+                {
+                    try { w?.Close(); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[captureswap] ERROR {ex.Message}");
+                ok = false;
+            }
+            return ok;
         }
     }
 }

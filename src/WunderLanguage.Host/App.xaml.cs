@@ -71,6 +71,23 @@ namespace WunderLanguage.Host
                     if (a == "--diagnostics") { Settings.Diag.Enabled = true; FileLogger.Log("[diag] enabled=True (cli, pre-settings)"); break; }
                 for (int i = 0; i < args.Length; i++)
                 {
+                    // Capture-swap offline gate (2026-11-11): --captureswap
+                    // proves the blank-frame rescue machinery on this
+                    // machine - shared blank classifier both ways, both
+                    // capture primitives on a real on-screen window of
+                    // ours, production CaptureWindowRegion end-to-end with
+                    // size agreement. No emulator, no sidecar, no GPU;
+                    // exit 0 only if every assertion holds.
+                    // Revert: revert capture-swap (delete this block +
+                    // the WindowCapture swap machinery).
+                    if (args[i] == "--captureswap")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool swapOk = Capture.WindowCapture.RunSwapOfflineTest();
+                        FileLogger.Log($"[captureswap] exit ok={swapOk}");
+                        Shutdown(swapOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log
