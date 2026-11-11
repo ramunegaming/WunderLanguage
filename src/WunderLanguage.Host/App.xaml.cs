@@ -120,6 +120,22 @@ namespace WunderLanguage.Host
                         ErrorCodeTestRun(i + 1 < args.Length && args[i + 1].StartsWith("E") ? args[i + 1] : null);
                         return;
                     }
+                    // HDR detection offline gate (2026-11-11): --hdrtest
+                    // self-checks the DisplayHdr struct sizes, exercises
+                    // the EXACT flat-frame classifier the capture loop
+                    // runs (solid/edge/noise), and dumps every active
+                    // display path (source, monitor name, HDR flags).
+                    // No emulator, no sidecar, no GPU; exit 0 only if all
+                    // three answered. Revert: revert hdr-detect (delete
+                    // this block + Capture/DisplayHdr.cs).
+                    if (args[i] == "--hdrtest")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool hdrOk = Capture.DisplayHdr.RunOfflineTest();
+                        FileLogger.Log($"[hdrtest] exit ok={hdrOk}");
+                        Shutdown(hdrOk ? 0 : 1);
+                        return;
+                    }
                 }
             }
             catch (System.Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); Shutdown(1); return; }
@@ -444,9 +460,13 @@ namespace WunderLanguage.Host
                 else if (step == 3)
                 {
                     // Second in-place update (E4) + unknown-code guard.
+                    // E99 must NEVER be registered in ErrorCodes — E9 is
+                    // now a real code (revert hdr-detect), so the
+                    // unregistered sentinel moved up to keep this guard
+                    // honest.
                     panel.ShowError("E4");
                     DumpWindowPng(panel, System.IO.Path.Combine(dumpDir, "panel_e4.png"));
-                    panel.ShowError("E9");
+                    panel.ShowError("E99");
                     t.Stop();
                 }
             };

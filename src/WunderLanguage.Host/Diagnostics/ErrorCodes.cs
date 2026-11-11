@@ -20,6 +20,10 @@ namespace WunderLanguage.Host.Diagnostics
     // signal the host does not have yet (a VRAM reading surfaced to the
     // host, a provider-health probe). Wire them through the same two
     // events when the signal exists - do not re-word them here.
+    // E9 IS wired (revert: revert hdr-detect): the capture loop's
+    // sustained-blank probe fires CaptureBlankFrames, AppShell maps it
+    // to ShowError("E9", live). The --errortest unknown-code sentinel is
+    // E99 - it must stay unregistered.
     // Chrome, never translation data: chips stay out of the side
     // panel's _history, so copy-all and the corpus miner never see
     // them (same rule as ShowNotice).
@@ -52,6 +56,7 @@ namespace WunderLanguage.Host.Diagnostics
                 case "E6": return E6;
                 case "E7": return E7;
                 case "E8": return E8;
+                case "E9": return E9;
                 default: return null;
             }
         }
@@ -207,6 +212,40 @@ namespace WunderLanguage.Host.Diagnostics
             Fix = "Nothing to do \u2014 it clears by itself the moment the reader answers again, and the line above " +
                 "updates to 'recovered' when it does. If it never clears, close other GPU-heavy apps or restart the " +
                 "session; the '[g1] circuit open' lines in app.log hold the exact timing for a bug report.",
+        };
+
+        // Capture returning blank frames (2026-11-11; revert:
+        // revert hdr-detect). The HDR detection batch: GDI BitBlt cannot
+        // read an HDR-composited display — it hands OCR a solid frame
+        // and the feed goes quiet with nothing on screen saying why (the
+        // silent-death class, again). Detection-only by design: the chip
+        // fires on the SYMPTOM (sustained flat frames), never merely on
+        // HDR being enabled, because a black loading screen reads the
+        // same — so the wording names both causes. The live line (fired
+        // from the loop) carries when the streak started, the count,
+        // hdr=on/off/unknown for the game's monitor, and the monitor
+        // name; a second fire refreshes it to 'recovered'. The actual
+        // capture-path fix is the next batch (revert: revert
+        // capture-swap), priced off the [hdr]/[blank] logs this chip
+        // points at. Wording lives here.
+        public static readonly ErrorCodeInfo E9 = new()
+        {
+            Code = "E9",
+            Chip = "Error E9 \u00B7 Capture returning blank frames",
+            Title = "E9 \u2014 Capture returning blank frames",
+            Detail = "Screen capture has returned the same solid-colour frame for the number of loops shown on the " +
+                "line above, so the text reader has nothing to read and no new dialogue can post. The usual cause is " +
+                "HDR: Windows composites an HDR display in a way this program's screen-capture path cannot read, which " +
+                "arrives as a black or flat frame (the line above says whether HDR is switched on for the game's " +
+                "monitor, and which monitor). An all-black loading screen in the game reads the same way \u2014 compare " +
+                "the line above with what is actually on screen. This chip is reporting only: the capture-path fix " +
+                "arrives in the next update, and the chip updates to 'recovered' by itself the moment frames start " +
+                "changing again. Your game is unaffected and no input is sent to it.",
+            Fix = "Fastest fix: turn HDR off for the game's display (Settings \u2192 System \u2192 Display \u2192 HDR) — " +
+                "capture recovers immediately; switch it back on after playing if you like. If HDR was already off, " +
+                "the flat frames are probably a black loading screen: wait it out, the chip clears on its own. For a " +
+                "bug report, copy the '[hdr]' and '[blank]' lines from app.log around the time shown on the chip — they " +
+                "hold the monitor name, HDR flags, and the exact streak timing.",
         };
     }
 }

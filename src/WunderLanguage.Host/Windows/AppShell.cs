@@ -282,6 +282,13 @@ namespace WunderLanguage.Host.Windows
             controller.CircuitDegraded += live =>
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     _sidePanel.ShowError("E8", live));
+            // Blank-frame chip (2026-11-11; revert: revert hdr-detect):
+            // E9's live line carries when the flat streak started + how
+            // many frames + hdr=on/off/unknown + the monitor name; a
+            // second fire refreshes the same row to 'recovered'.
+            controller.CaptureBlankFrames += live =>
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    _sidePanel.ShowError("E9", live));
             // Replay the last signal: it may have fired while nobody was
             // subscribed (subscriptions exist only from Connect onward),
             // and losing it would let a broken session start silently -

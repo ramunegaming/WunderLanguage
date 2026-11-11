@@ -638,6 +638,13 @@ namespace WunderLanguage.Host.Capture
         // circuit-capture-continue): payload = the LIVE line for E8,
         // fired at the hold threshold and on recovery.
         public event Action<string>? CircuitDegraded;
+        // Blank-frame chip (2026-11-11; revert: revert hdr-detect):
+        // payload = the LIVE line for E9 (when the flat streak started +
+        // how many + hdr=on/off/unknown + monitor name), fired at the
+        // sustained-blank threshold and again with a 'recovered' line
+        // when frames start changing. Detection only — never gates the
+        // pipeline.
+        public event Action<string>? CaptureBlankFrames;
 
         private int _consecutiveCaptureFailures;
         private const int MaxConsecutiveCaptureFailures = 5;
@@ -667,6 +674,25 @@ namespace WunderLanguage.Host.Capture
         private DateTime _circuitOpenSince;
         private string _g1LastProbeFailure = "";
         private const int CircuitChipLoops = 10;
+        // HDR blank-frame probe (revert: revert hdr-detect): a captured
+        // frame whose 160-wide grayscale thumb is flat (max-min <=
+        // FlatThumbTolerance) is the blank-screen symptom — GDI BitBlt
+        // cannot read an HDR-composited display. Detection only: an
+        // all-black loading screen reads the same, so the E9 wording
+        // names both causes and the probe never gates OCR/settle. Streak
+        // evidence logs at BlankEvidenceLoops (5 ~= 2s), the E9 chip
+        // fires once at BlankChipLoops (30 ~= 12s @ IdleDelayMs), a
+        // clear refreshes it to 'recovered'. Minimized/unfocused/
+        // occluded loops continue BEFORE capture, so only live
+        // foreground frames count.
+        private int _blankFlatLoops;
+        private bool _blankChipPosted;
+        private DateTime _blankSince;
+        private const int BlankEvidenceLoops = 5;
+        private const int BlankChipLoops = 30;
+        // Flatness readout of the last ComputeFrameDiff thumb; reset to
+        // false on any sampling error (fail-open: never fire flat).
+        private bool _lastThumbFlat;
         // Pending-EN late retry (item 3; revert: revert pending-en-retry):
         // JA text of bubbles stuck at the … marker, retried by a
         // background pump with backoff until the provider answers.
@@ -3055,6 +3081,48 @@ namespace WunderLanguage.Host.Capture
                     // for cited distributions. Revert: delete fields/method +
                     // the two call sites.
                     string frameDiff = ComputeFrameDiff(bitmap);
+                    // HDR detection baseline (revert: revert hdr-detect):
+                    // ONE [hdr] dump per session on the first captured
+                    // frame — active paths, monitor names, HDR flags
+                    // (log-only, fail-open, returns instantly afterwards).
+                    DisplayHdr.LogOnce(_hWnd);
+                    // Sustained-blank probe (revert: revert hdr-detect):
+                    // flat thumb = the blank-frame symptom. Log-only
+                    // evidence at 5 loops, E9 chip once at 30 with a
+                    // fresh hdr=on/off/unknown query, refresh to
+                    // 'recovered' the moment any frame is non-flat again.
+                    if (_lastThumbFlat)
+                    {
+                        _blankFlatLoops++;
+                        if (_blankFlatLoops == BlankEvidenceLoops)
+                        {
+                            _blankSince = DateTime.Now;
+                            FileLogger.Log($"[blank] {_blankFlatLoops} consecutive flat frames since {_blankSince:HH:mm:ss} \u00B7 {DisplayHdr.DescribeForWindow(_hWnd)}");
+                        }
+                        else if (_blankFlatLoops > BlankEvidenceLoops && _blankFlatLoops % 20 == 0)
+                            FileLogger.Log($"[blank] still flat ({_blankFlatLoops} loops) \u00B7 {DisplayHdr.DescribeForWindow(_hWnd)}");
+                        if (_blankFlatLoops == BlankChipLoops && !_blankChipPosted)
+                        {
+                            _blankChipPosted = true;
+                            string live = $"since {_blankSince:HH:mm:ss} \u00B7 {_blankFlatLoops} flat frames \u00B7 {DisplayHdr.DescribeForWindow(_hWnd)}";
+                            FileLogger.Log($"[error] blank-frames E9 signaled: {live}");
+                            CaptureBlankFrames?.Invoke(live);
+                        }
+                    }
+                    else if (_blankFlatLoops > 0)
+                    {
+                        int had = _blankFlatLoops;
+                        _blankFlatLoops = 0;
+                        if (had >= BlankEvidenceLoops)
+                            FileLogger.Log($"[blank] clear after {had} flat loops at {DateTime.Now:HH:mm:ss}");
+                        if (_blankChipPosted)
+                        {
+                            _blankChipPosted = false;
+                            string rec = $"recovered {DateTime.Now:HH:mm:ss} after {had} flat loops \u00B7 frames changing again";
+                            FileLogger.Log($"[blank] E9 refresh: {rec}");
+                            CaptureBlankFrames?.Invoke(rec);
+                        }
+                    }
                     if (frameHash == _lastFrameHash)
                     {
                         _costSkipped++;
@@ -9139,6 +9207,11 @@ namespace WunderLanguage.Host.Capture
                     }
                     finally { thumb.UnlockBits(data); }
                 }
+                // Flat readout for the HDR probe (revert: revert
+                // hdr-detect): max-min of the SAME thumb the derivative
+                // already built — one pass, no second resize. Shared
+                // classifier proves itself in --hdrtest.
+                _lastThumbFlat = IsFlatThumb(cur);
                 string res = "diff=noref";
                 if (_prevSmall is not null && _prevSmall.Length == cur.Length && _prevSmallW == tw && _prevSmallH == th)
                 {
@@ -9167,7 +9240,26 @@ namespace WunderLanguage.Host.Capture
                 _prevSmall = cur; _prevSmallW = tw; _prevSmallH = th;
                 return res;
             }
-            catch { _prevSmall = null; _lastDiffFrac = 1.0; return "diff=err"; }
+            catch { _prevSmall = null; _lastDiffFrac = 1.0; _lastThumbFlat = false; return "diff=err"; }
+        }
+        // Flat-frame classifier (revert: revert hdr-detect): a thumb is
+        // "flat" when its darkest and brightest pixels are within
+        // FlatThumbTolerance of each other (solid black/white/gray —
+        // the HDR-capture blank symptom). Static + shared with the
+        // --hdrtest gate so the offline proof runs the exact loop code.
+        // Null/empty is NOT flat (fail-open: never fire on no data).
+        public const byte FlatThumbTolerance = 8;
+        public static bool IsFlatThumb(byte[] px)
+        {
+            if (px is null || px.Length == 0) return false;
+            byte mn = byte.MaxValue, mx = 0;
+            for (int i = 0; i < px.Length; i++)
+            {
+                byte v = px[i];
+                if (v < mn) mn = v;
+                if (v > mx) mx = v;
+            }
+            return mx - mn <= FlatThumbTolerance;
         }
         // Pixel mean of two same-size captures (A1 trial). 32bpp scratch,
         // alpha forced opaque — game captures carry no alpha. Null on any
