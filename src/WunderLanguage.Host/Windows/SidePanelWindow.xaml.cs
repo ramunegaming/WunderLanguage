@@ -174,7 +174,151 @@ namespace WunderLanguage.Host.Windows
             PopOutButton.ToolTip = detached
                 ? "Re-attach the feed to the game's right edge (Ctrl+Shift+D)."
                 : "Detach the feed to its own always-on-top window (Ctrl+Shift+D). Drag the FEED grip to move it.";
+            RefreshDockAffordance();
         }
+
+        // Dock affordance visibility (revert: revert dock-hide): while the
+        // game covers its whole monitor, the Dock action would drop the bars
+        // over a fullscreen game (the reported bug) - hide it. "Pop out"
+        // never hides: docked, it is the escape hatch; the footer's "Dock"
+        // state hides together with the header's Dock button.
+        private bool _gameCoversMonitor;
+        public void SetGameCoversMonitor(bool covered)
+        {
+            _gameCoversMonitor = covered;
+            RefreshDockAffordance();
+        }
+
+        private void RefreshDockAffordance()
+        {
+            DockButton.Visibility = _gameCoversMonitor ? Visibility.Collapsed : Visibility.Visible;
+            PopOutButton.Visibility = (_gameCoversMonitor && _detached) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        // Offline gate (2026-11-12): --dockvis proves the dock-affordance
+        // contract: the pure coverage predicate table, the real monitor
+        // readback on a real window (small window -> not covered; window
+        // stretched to the monitor rect via SetWindowPos -> covered), and
+        // the real panel's visibility flips (Dock hides while covered,
+        // Pop out never hides, footer "Dock" state hides with it).
+        // No emulator, no sidecar, no GPU; exit 0 only if every assertion
+        // holds. Revert: revert dock-hide (delete this method + the
+        // --dockvis block in App.xaml.cs + SetGameCoversMonitor +
+        // WindowCapture.TryGetMonitorBounds/GameCoversMonitor + the
+        // AppShell glue).
+        public static bool RunDockVisOfflineTest()
+        {
+            bool ok = true;
+            // --- Pure predicate table ---
+            var mon = new System.Drawing.Rectangle(0, 0, 2560, 1440);
+            bool exact = Capture.WindowCapture.GameCoversMonitor(mon, mon);
+            bool bigger = Capture.WindowCapture.GameCoversMonitor(new System.Drawing.Rectangle(-10, -10, 2600, 1480), mon);
+            bool inset = Capture.WindowCapture.GameCoversMonitor(new System.Drawing.Rectangle(10, 10, 2540, 1420), mon);
+            bool hairline = Capture.WindowCapture.GameCoversMonitor(new System.Drawing.Rectangle(1, 1, 2559, 1439), mon);
+            FileLogger.Log($"[dockvis] pure fn exact={exact} bigger={bigger} inset={inset} hairline={hairline} (want True/True/False/True)");
+            ok &= exact && bigger && !inset && hairline;
+
+            // --- Real window: monitor readback + coverage both ways ---
+            Window? w = null;
+            try
+            {
+                w = new Window
+                {
+                    Width = 340,
+                    Height = 220,
+                    Left = 60,
+                    Top = 60,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    // Borderless like a fullscreen game: a resizable window
+                    // carries 8px invisible borders, so its DWM visible frame
+                    // is inset from the rect SetWindowPos wrote and would
+                    // never read as covering the monitor.
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Title = "dockvis gate",
+                    Background = Brushes.White,
+                };
+                w.Show();
+                w.Activate();
+                Pump(150);
+                IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+                bool gotMon = Capture.WindowCapture.TryGetMonitorBounds(hwnd, out var realMon);
+                // Coverage reads the OUTER rect (TryGetUserRect), same as
+                // production: outer ⊇ visible, and the DWM frame excludes
+                // the 8px invisible border WPF windows carry.
+                bool gotWin = Capture.WindowCapture.TryGetUserRect(hwnd, out var rawWin);
+                bool smallNotCovered = gotMon && gotWin && !Capture.WindowCapture.GameCoversMonitor(rawWin, realMon);
+                FileLogger.Log($"[dockvis] real window mon={realMon} getrect={rawWin} covered=False:{smallNotCovered} (want True)");
+                ok &= smallNotCovered;
+                // Stretch over the whole monitor with the same physical
+                // SetWindowPos primitive AppShell uses on WPF windows in
+                // production -> must read as covered.
+                if (gotMon && SetWindowPos(hwnd, IntPtr.Zero, realMon.Left, realMon.Top, realMon.Width, realMon.Height, SWP_NOZORDER | SWP_NOACTIVATE))
+                {
+                    bool gotBig = Capture.WindowCapture.TryGetUserRect(hwnd, out var bigRaw);
+                    bool stretched = gotBig && Capture.WindowCapture.GameCoversMonitor(bigRaw, realMon);
+                    FileLogger.Log($"[dockvis] stretched getrect={bigRaw} covered=True:{stretched} (want True)");
+                    ok &= stretched;
+                }
+                else
+                {
+                    FileLogger.Log("[dockvis] SetWindowPos-to-monitor FAILED");
+                    ok = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[dockvis] window phase ERROR: {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { w?.Close(); } catch { }
+            }
+
+            // --- Real panel: visibility flips ---
+            try
+            {
+                var p = new SidePanelWindow();
+                p.SetGameCoversMonitor(true);
+                bool dockHidden = p.DockButton.Visibility == Visibility.Collapsed;
+                bool popOutVisibleDocked = p.PopOutButton.Visibility == Visibility.Visible;
+                p.SetDetached(true);
+                bool footerDockHidden = p.PopOutButton.Visibility == Visibility.Collapsed;
+                p.SetGameCoversMonitor(false);
+                bool restored = p.DockButton.Visibility == Visibility.Visible
+                             && p.PopOutButton.Visibility == Visibility.Visible;
+                FileLogger.Log($"[dockvis] panel dockHidden={dockHidden} popOutAlways={popOutVisibleDocked} footerDockHidden={footerDockHidden} restored={restored} (want all True)");
+                ok &= dockHidden && popOutVisibleDocked && footerDockHidden && restored;
+                p.Close();
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[dockvis] panel phase ERROR: {ex.Message}");
+                ok = false;
+            }
+            return ok;
+        }
+
+        private static void Pump(int ms)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(ms);
+            while (DateTime.UtcNow < deadline)
+            {
+                var frame = new DispatcherFrame();
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                    DispatcherPriority.Background, new Action(() => frame.Continue = false));
+                Dispatcher.PushFrame(frame);
+                System.Threading.Thread.Sleep(10);
+            }
+        }
+
+        // Gate-only primitive (revert: revert dock-hide): stretch the test
+        // window to the monitor rect without going through WPF's DIP math.
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        private const uint SWP_NOZORDER = 0x4;
+        private const uint SWP_NOACTIVATE = 0x10;
 
         // Offline gate (2026-11-12): --feedresize proves the resize contract
         // with the REAL panel: docked = NoResize, detached = CanResize, the
@@ -250,19 +394,6 @@ namespace WunderLanguage.Host.Windows
                 try { w?.Close(); } catch { }
             }
             return ok;
-        }
-
-        private static void Pump(int ms)
-        {
-            var deadline = DateTime.UtcNow.AddMilliseconds(ms);
-            while (DateTime.UtcNow < deadline)
-            {
-                var frame = new DispatcherFrame();
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(
-                    DispatcherPriority.Background, new Action(() => frame.Continue = false));
-                Dispatcher.PushFrame(frame);
-                System.Threading.Thread.Sleep(10);
-            }
         }
 
         // Kept in step with BottomBarWindow so the two Pause buttons never

@@ -137,6 +137,23 @@ namespace WunderLanguage.Host
                         Shutdown(resizeOk ? 0 : 1);
                         return;
                     }
+                    // Dock-affordance visibility offline gate (2026-11-12):
+                    // --dockvis = pure coverage predicate table + real
+                    // monitor readback on a real window (small -> not
+                    // covered, stretched to monitor -> covered) + the real
+                    // panel's visibility flips. No emulator, no sidecar,
+                    // no GPU; exit 0 only if every assertion holds.
+                    // Revert: revert dock-hide (delete this block +
+                    // SidePanelWindow.RunDockVisOfflineTest + the
+                    // WindowCapture detection + the AppShell glue).
+                    if (args[i] == "--dockvis")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool visOk = SidePanelWindow.RunDockVisOfflineTest();
+                        FileLogger.Log($"[dockvis] exit ok={visOk}");
+                        Shutdown(visOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

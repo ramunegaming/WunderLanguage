@@ -160,6 +160,48 @@ namespace WunderLanguage.Host.Capture
                 GetSystemMetrics(SM_YVIRTUALSCREEN),
                 GetSystemMetrics(SM_CXVIRTUALSCREEN),
                 GetSystemMetrics(SM_CYVIRTUALSCREEN));
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint dwFlags);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+
+        // The monitor the window sits on (nearest on ties), full rect in
+        // physical pixels - same coordinate space as TryGetWindowBounds, so
+        // the two compare directly. Revert: revert dock-hide.
+        public static bool TryGetMonitorBounds(IntPtr hWnd, out Rectangle bounds)
+        {
+            bounds = Rectangle.Empty;
+            try
+            {
+                IntPtr mon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+                if (mon == IntPtr.Zero) return false;
+                var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+                if (!GetMonitorInfo(mon, ref info)) return false;
+                var rc = info.rcMonitor;
+                bounds = new Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
+                return bounds.Width > 0 && bounds.Height > 0;
+            }
+            catch { return false; }
+        }
+
+        // Pure coverage test (revert: revert dock-hide): does the game rect
+        // cover its WHOLE monitor? Exclusive/borderless fullscreen reports
+        // the monitor rect exactly (or within a pixel of rounding, hence
+        // the 2px tolerance); anything inset more than that is windowed and
+        // keeps its Dock affordance. Feed the OUTER rect (TryGetUserRect):
+        // outer ⊇ visible, so frame-carrying windows that visually cover
+        // still count; the DWM frame excludes the 8px invisible border.
+        public static bool GameCoversMonitor(Rectangle game, Rectangle monitor, double tolerance = 2.0)
+        {
+            return game.Left <= monitor.Left + tolerance
+                && game.Top <= monitor.Top + tolerance
+                && game.Right >= monitor.Right - tolerance
+                && game.Bottom >= monitor.Bottom - tolerance;
+        }
         // Occlusion probe (revert: revert occlusion-hold): the hot path
         // BitBlts the SCREEN at the game's rect, so whatever is composited
         // ABOVE the game there is what capture actually reads - proven live

@@ -211,7 +211,10 @@ namespace WunderLanguage.Host.Windows
             _bottomBar.Closed += (_, _) => ShutdownCapture();
             _captureController = BuildCaptureController();
             _zOrderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-            _zOrderTimer.Tick += (_, _) => UpdateTopmost();
+            // Dock affordance re-check rides the same tick (revert:
+            // revert dock-hide): fullscreen coverage can flip without a
+            // bounds event we catch.
+            _zOrderTimer.Tick += (_, _) => { UpdateTopmost(); RefreshDockAffordance(); };
             _postRestoreTopmostTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             _postRestoreTopmostTimer.Tick += (_, _) => PostRestoreTopmostTick();
         }
@@ -894,6 +897,44 @@ namespace WunderLanguage.Host.Windows
                 FileLogger.Log($"  actual bottomBar rect: (L{actualBottomBar.Left},T{actualBottomBar.Top},R{actualBottomBar.Right},B{actualBottomBar.Bottom}) size={actualBottomBar.Width}x{actualBottomBar.Height}");
             if (_detached)
                 RefreshFeedOpacity();
+            RefreshDockAffordance();
+        }
+
+        // Dock affordance visibility (revert: revert dock-hide): while the
+        // game covers its whole monitor, the Dock action would drop the bars
+        // over a fullscreen game (the reported bug) - the panel hides the
+        // affordances, "Pop out" always stays. Re-evaluated on every bounds
+        // change AND on the 150ms tick: a mode switch or monitor re-plug can
+        // flip coverage without a bounds event we catch, and the cost is two
+        // Win32 calls. Coverage reads the OUTER rect (TryGetUserRect, the
+        // SetWindowPos coordinate space): outer ⊇ visible, so a frameless
+        // fullscreen game reports the monitor exactly and a thickframe
+        // window that visually covers (maximized) still counts - the DWM
+        // frame excludes the 8px invisible border WPF windows carry.
+        private bool _gameCoversMonitor;
+        private void RefreshDockAffordance()
+        {
+            try
+            {
+                bool covered = false;
+                System.Drawing.Rectangle game = default, mon = default;
+                if (_emulatorHandle != IntPtr.Zero &&
+                    WindowCapture.TryGetUserRect(_emulatorHandle, out game) &&
+                    WindowCapture.TryGetMonitorBounds(_emulatorHandle, out mon))
+                {
+                    covered = WindowCapture.GameCoversMonitor(game, mon);
+                }
+                if (covered != _gameCoversMonitor)
+                {
+                    _gameCoversMonitor = covered;
+                    FileLogger.Log($"dockvis: game covers its monitor -> {covered} (game={game} monitor={mon})");
+                }
+                _sidePanel.SetGameCoversMonitor(covered);
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"dockvis: check failed: {ex.Message}");
+            }
         }
 
         // ------------------------------------------------------------------
