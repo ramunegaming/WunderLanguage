@@ -163,12 +163,106 @@ namespace WunderLanguage.Host.Windows
         public void SetDetached(bool detached)
         {
             _detached = detached;
+            // Feed resize (revert: revert feed-resize): only the popped-out
+            // feed may be dragged-resized - the docked panel's size is owned
+            // by OnBoundsChanged (SetWindowPos against the game rect) and
+            // must stay fixed. MinWidth/MinHeight live in the XAML.
+            ResizeMode = detached ? ResizeMode.CanResize : ResizeMode.NoResize;
             DetachedHeader.Visibility = detached ? Visibility.Visible : Visibility.Collapsed;
             FeedTitleBlock.Visibility = detached ? Visibility.Collapsed : Visibility.Visible;
             PopOutButton.Content = detached ? "Dock" : "Pop out";
             PopOutButton.ToolTip = detached
                 ? "Re-attach the feed to the game's right edge (Ctrl+Shift+D)."
                 : "Detach the feed to its own always-on-top window (Ctrl+Shift+D). Drag the FEED grip to move it.";
+        }
+
+        // Offline gate (2026-11-12): --feedresize proves the resize contract
+        // with the REAL panel: docked = NoResize, detached = CanResize, the
+        // 340x220 minimums with WPF coercion, SizeChanged carrying the new
+        // size (what AppShell persists), and FeedWidth/FeedHeight round-
+        // tripping through the exact Save() payload + the exact Load() read
+        // block - all without touching the real settings.json.
+        // No emulator, no sidecar, no GPU; exit 0 only if every assertion
+        // holds. Revert: revert feed-resize (delete this method + the
+        // --feedresize block in App.xaml.cs + the AppShell/AppSettings
+        // wiring + the XAML ResizeMode/MinWidth/MinHeight).
+        public static bool RunResizeOfflineTest()
+        {
+            bool ok = true;
+            SidePanelWindow? w = null;
+            try
+            {
+                w = new SidePanelWindow();
+                bool mins = w.MinWidth == 340 && w.MinHeight == 220;
+                FileLogger.Log($"[feedresize] min {w.MinWidth}x{w.MinHeight} (want 340x220)");
+                ok &= mins;
+
+                w.SetDetached(false);
+                bool dockedFixed = w.ResizeMode == ResizeMode.NoResize;
+                w.SetDetached(true);
+                bool detachedResizable = w.ResizeMode == ResizeMode.CanResize;
+                FileLogger.Log($"[feedresize] resizeMode docked=NoResize:{dockedFixed} detached=CanResize:{detachedResizable}");
+                ok &= dockedFixed && detachedResizable;
+
+                // SizeChanged carries the new DIP size (the signal AppShell
+                // persists through the feed-defer debounce).
+                double seenW = 0, seenH = 0;
+                w.SizeChanged += (_, e) => { seenW = e.NewSize.Width; seenH = e.NewSize.Height; };
+                w.Show();
+                w.Activate();
+                w.Width = 500;
+                w.Height = 480;
+                Pump(200);
+                bool resized = Math.Abs(seenW - 500) < 1 && Math.Abs(seenH - 480) < 1;
+                FileLogger.Log($"[feedresize] SizeChanged -> {seenW}x{seenH} (want 500x480)");
+                ok &= resized;
+
+                // Below-minimum is coerced, never accepted.
+                w.Width = 100;
+                w.Height = 50;
+                Pump(200);
+                bool coerced = w.ActualWidth >= 340 && w.ActualHeight >= 220;
+                FileLogger.Log($"[feedresize] below-min coerced to {w.ActualWidth}x{w.ActualHeight} (want >= 340x220)");
+                ok &= coerced;
+
+                // Round-trip through the REAL payload writer + the REAL
+                // read block (both extracted in AppSettings for this gate).
+                var s = new Settings.AppSettings { FeedWidth = 500, FeedHeight = 480 };
+                string json = System.Text.Json.JsonSerializer.Serialize(s.BuildPayload());
+                using (var doc = System.Text.Json.JsonDocument.Parse(json))
+                {
+                    var back = new Settings.AppSettings();
+                    Settings.AppSettings.ReadFeedFields(back, doc.RootElement);
+                    bool roundTrip = back.FeedWidth == 500 && back.FeedHeight == 480
+                                     && json.Contains("\"FeedWidth\":500")
+                                     && json.Contains("\"FeedHeight\":480");
+                    FileLogger.Log($"[feedresize] payload round-trip FeedWidth/FeedHeight ok={roundTrip}");
+                    ok &= roundTrip;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[feedresize] ERROR: {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { w?.Close(); } catch { }
+            }
+            return ok;
+        }
+
+        private static void Pump(int ms)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(ms);
+            while (DateTime.UtcNow < deadline)
+            {
+                var frame = new DispatcherFrame();
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                    DispatcherPriority.Background, new Action(() => frame.Continue = false));
+                Dispatcher.PushFrame(frame);
+                System.Threading.Thread.Sleep(10);
+            }
         }
 
         // Kept in step with BottomBarWindow so the two Pause buttons never

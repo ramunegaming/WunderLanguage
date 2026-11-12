@@ -119,6 +119,24 @@ namespace WunderLanguage.Host
                         Shutdown(deferOk ? 0 : 1);
                         return;
                     }
+                    // Feed resize offline gate (2026-11-12): --feedresize
+                    // proves the resize contract with the real panel -
+                    // docked NoResize / detached CanResize, 340x220 minimums
+                    // with coercion, SizeChanged signal, and the FeedWidth/
+                    // FeedHeight payload round-trip through the real
+                    // Save()/Load() code. Never writes settings.json.
+                    // No emulator, no sidecar, no GPU; exit 0 only if every
+                    // assertion holds. Revert: revert feed-resize (delete
+                    // this block + SidePanelWindow.RunResizeOfflineTest +
+                    // the AppShell/AppSettings wiring).
+                    if (args[i] == "--feedresize")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool resizeOk = SidePanelWindow.RunResizeOfflineTest();
+                        FileLogger.Log($"[feedresize] exit ok={resizeOk}");
+                        Shutdown(resizeOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

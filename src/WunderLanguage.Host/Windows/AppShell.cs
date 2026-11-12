@@ -196,6 +196,7 @@ namespace WunderLanguage.Host.Windows
             _sidePanel.ShotRequested += () => OnShotRequested(gameOnly: false);
             _bottomBar.PauseToggled += paused => _sidePanel.SetPauseState(paused);
             _sidePanel.LocationChanged += OnFeedLocationChanged;
+            _sidePanel.SizeChanged += OnFeedSizeChanged;
             _tracker = new EmulatorWindowTracker(emulatorHandle);
             _tracker.BoundsChanged += OnBoundsChanged;
             _tracker.ForegroundChanged += OnForegroundChanged;
@@ -335,6 +336,9 @@ namespace WunderLanguage.Host.Windows
             // Pop-out feed: restore the stored position BEFORE the first show
             // so a returning user never sees the feed flash at 0,0.
             ApplyStoredFeedPosition();
+            // Feed resize (revert: revert feed-resize): same pre-show
+            // treatment as position - no natural-size flash on restart.
+            if (_settings.FeedDetached) ApplyStoredFeedSize();
             _topBar.Show();
             _sidePanel.Show();
             _bottomBar.Show();
@@ -927,6 +931,10 @@ namespace WunderLanguage.Host.Windows
                     _bottomBar.Hide();
                     ApplyDetachedPanelStyle();
                     _sidePanel.SetDetached(true);
+                    // Feed resize (revert: revert feed-resize): every pop-out
+                    // re-applies the stored size - docking force-resized the
+                    // HWND to the dock rect along the way.
+                    ApplyStoredFeedSize();
                     if (_sidePanelHandle != IntPtr.Zero)
                         SetTopmostLogged(_sidePanelHandle, "sidePanel(detach)");
                     RegisterCopyHotkey();
@@ -1017,6 +1025,24 @@ namespace WunderLanguage.Host.Windows
             catch (Exception ex)
             {
                 FileLogger.Log($"popout: feed position restore failed: {ex.Message}");
+            }
+        }
+
+        // Feed resize (revert: revert feed-resize): restore the last
+        // user-chosen feed size on pop-out/startup. 0 = never resized ->
+        // keep the natural size. DIP, same units as FeedLeft/FeedTop;
+        // the 340x220 floor mirrors the XAML MinWidth/MinHeight.
+        private void ApplyStoredFeedSize()
+        {
+            try
+            {
+                if (_settings.FeedWidth < 340 || _settings.FeedHeight < 220) return;
+                _sidePanel.Width = _settings.FeedWidth;
+                _sidePanel.Height = _settings.FeedHeight;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout: feed size restore failed: {ex.Message}");
             }
         }
 
@@ -1115,6 +1141,18 @@ namespace WunderLanguage.Host.Windows
             {
                 FileLogger.Log($"popout: feed position save failed: {ex.Message}");
             }
+        }
+
+        // Persist the detached feed's user resize (revert: revert
+        // feed-resize): docked resizes are programmatic (OnBoundsChanged
+        // SetWindowPos against the game rect) and are guarded out by
+        // _detached; the save rides the same 1s debounce as the position.
+        private void OnFeedSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (!_detached) return;
+            _settings.FeedWidth = e.NewSize.Width;
+            _settings.FeedHeight = e.NewSize.Height;
+            _feedPosSaveDefer.Schedule();
         }
 
         // Ctrl+Shift+D is the only trigger that works when a fullscreen game

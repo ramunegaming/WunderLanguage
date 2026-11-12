@@ -24,6 +24,10 @@ namespace WunderLanguage.Host.Settings
         public bool FeedDetached { get; set; } = false;
         public double FeedLeft { get; set; } = 0;
         public double FeedTop { get; set; } = 0;
+        // Feed resize (revert: revert feed-resize): last user-chosen size
+        // of the popped-out feed, DIP. 0 = never resized (natural size).
+        public double FeedWidth { get; set; } = 0;
+        public double FeedHeight { get; set; } = 0;
 
         // Encrypted at rest (DPAPI, CurrentUser). Never plaintext on disk.
         public string? DeepLApiKeyEncrypted { get; set; }
@@ -46,6 +50,24 @@ namespace WunderLanguage.Host.Settings
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "WunderLanguage", ".deeplkey");
+
+        // Pop-out feed geometry read block (revert: revert popout-feed /
+        // revert feed-resize own their fields). Kept as its own method so
+        // the --feedresize gate can round-trip payload -> fields with this
+        // exact code and zero file I/O.
+        internal static void ReadFeedFields(AppSettings settings, JsonElement root)
+        {
+            if (root.TryGetProperty(nameof(FeedDetached), out var fd) && (fd.ValueKind == JsonValueKind.True || fd.ValueKind == JsonValueKind.False))
+                settings.FeedDetached = fd.GetBoolean();
+            if (root.TryGetProperty(nameof(FeedLeft), out var fL) && fL.ValueKind == JsonValueKind.Number)
+                settings.FeedLeft = fL.GetDouble();
+            if (root.TryGetProperty(nameof(FeedTop), out var fT) && fT.ValueKind == JsonValueKind.Number)
+                settings.FeedTop = fT.GetDouble();
+            if (root.TryGetProperty(nameof(FeedWidth), out var fW) && fW.ValueKind == JsonValueKind.Number)
+                settings.FeedWidth = fW.GetDouble();
+            if (root.TryGetProperty(nameof(FeedHeight), out var fH) && fH.ValueKind == JsonValueKind.Number)
+                settings.FeedHeight = fH.GetDouble();
+        }
 
         public static AppSettings Load()
         {
@@ -78,13 +100,11 @@ namespace WunderLanguage.Host.Settings
                     if (root.TryGetProperty(nameof(Diagnostics), out var dg) && (dg.ValueKind == JsonValueKind.True || dg.ValueKind == JsonValueKind.False))
                         settings.Diagnostics = dg.GetBoolean();
 
-                    // Pop-out feed (revert: revert popout-feed).
-                    if (root.TryGetProperty(nameof(FeedDetached), out var fd) && (fd.ValueKind == JsonValueKind.True || fd.ValueKind == JsonValueKind.False))
-                        settings.FeedDetached = fd.GetBoolean();
-                    if (root.TryGetProperty(nameof(FeedLeft), out var fL) && fL.ValueKind == JsonValueKind.Number)
-                        settings.FeedLeft = fL.GetDouble();
-                    if (root.TryGetProperty(nameof(FeedTop), out var fT) && fT.ValueKind == JsonValueKind.Number)
-                        settings.FeedTop = fT.GetDouble();
+                    // Pop-out feed (revert: revert popout-feed) + feed resize
+                    // (revert: revert feed-resize) - extracted as one block
+                    // so the --feedresize gate can round-trip the payload
+                    // through the REAL read path without touching the file.
+                    ReadFeedFields(settings, root);
 
                     string? encrypted = null;
                     try
@@ -147,18 +167,7 @@ namespace WunderLanguage.Host.Settings
                 encrypted = Convert.ToBase64String(cipher);
             }
 
-            var payload = new
-            {
-                TranslationProvider,
-                MenuDisplayMode,
-                Diagnostics,
-                // Pop-out feed (revert: revert popout-feed). Must be in the
-                // payload or the next SettingsPopup.Save silently wipes both
-                // the detach state and where the feed was parked.
-                FeedDetached,
-                FeedLeft,
-                FeedTop,
-            };
+            var payload = BuildPayload();
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(FilePath, json);
             try
@@ -171,6 +180,28 @@ namespace WunderLanguage.Host.Settings
             catch { }
             FileLogger.Log($"Settings saved: provider={TranslationProvider}, keyPresent={DeepLApiKey is not null}, encryptedPresent={!string.IsNullOrEmpty(encrypted)}");
         }
+
+        // The exact persisted shape as its own method so the --feedresize
+        // gate can assert these fields are included WITHOUT Save()ing over
+        // the real settings.json (Save also rotates the key file).
+        // Revert: revert feed-resize (delete this + the gate's use; the
+        // popout-feed fields below predate it).
+        internal object BuildPayload() => new
+        {
+            TranslationProvider,
+            MenuDisplayMode,
+            Diagnostics,
+            // Pop-out feed (revert: revert popout-feed). Must be in the
+            // payload or the next SettingsPopup.Save silently wipes both
+            // the detach state and where the feed was parked.
+            FeedDetached,
+            FeedLeft,
+            FeedTop,
+            // Feed resize (revert: revert feed-resize). Same rule: absent
+            // from the payload and the next save silently resets the size.
+            FeedWidth,
+            FeedHeight,
+        };
     }
 
     // Process-wide diagnostics gate (see AppSettings.Diagnostics). Set once
