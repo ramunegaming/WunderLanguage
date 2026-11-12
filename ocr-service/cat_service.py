@@ -158,7 +158,7 @@ async def health():
         code = _main.CODE_VERSION
     except Exception:
         code = "py-dev"
-    ok_states = ("ready", "disabled", "disabled-low-vram")
+    ok_states = ("ready", "disabled", "disabled-low-vram", "disabled-low-commit")
     return {"status": "ok" if cat in ok_states else "starting",
             "cat": cat, "code_version": code}
 

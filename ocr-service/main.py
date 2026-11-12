@@ -646,6 +646,47 @@ def _load_cat_stage():
         print("[WunderLanguage] CAT-Translate: tokenizer loaded.", flush=True)
         _slog("cat-tokenizer")
         if DEVICE == "cuda":
+            # Host-commit pre-check (2026-11-12, repro-proven: three
+            # isolated repros AV at torch_cpu.dll offset 0x8e4a279 in
+            # this exact load when system-wide free commit is ~10GB at
+            # the weights step - the 4-bit load spikes ~6.7GB of commit
+            # in 1s; 17 clean loads all started >=12.2GB free, all 3
+            # natural crashes <=10.7GB. Pressure comes from game+browser
+            # holding commit; VRAM was ~5GB free at every crash, so the
+            # VRAM pre-check above never fires on this class. Mirrors
+            # that check; fail-OPEN: a broken query must never disable
+            # translation by itself. Threshold override:
+            # WUNDER_CAT_MIN_FREE_COMMIT_MB (default 11500, between
+            # observed crash max 10675 and clean min 12215).
+            # Revert: revert commit-precheck.
+            try:
+                _min_fc_mb = int(os.environ.get("WUNDER_CAT_MIN_FREE_COMMIT_MB", "11500"))
+            except Exception:
+                _min_fc_mb = 11500
+            try:
+                import ctypes as _msct
+
+                class _MsEx(_msct.Structure):
+                    _fields_ = [("dwLength", _msct.c_ulong), ("dwMemoryLoad", _msct.c_ulong),
+                                ("ullTotalPhys", _msct.c_ulonglong), ("ullAvailPhys", _msct.c_ulonglong),
+                                ("ullTotalPageFile", _msct.c_ulonglong), ("ullAvailPageFile", _msct.c_ulonglong),
+                                ("ullTotalVirtual", _msct.c_ulonglong), ("ullAvailVirtual", _msct.c_ulonglong),
+                                ("ullAvailExtendedVirtual", _msct.c_ulonglong)]
+
+                _mst = _MsEx()
+                _mst.dwLength = _msct.sizeof(_mst)
+                _msct.windll.kernel32.GlobalMemoryStatusEx(_msct.byref(_mst))
+                # ullAvailPageFile = free commit (limit - charge); the
+                # (total-avail) form is CHARGE - measured, not MSDN.
+                _free_fc_mb = _mst.ullAvailPageFile // (1024 * 1024)
+                if _free_fc_mb < _min_fc_mb:
+                    _CAT_SKIP_REASON = "low-commit"
+                    READY["cat"] = "disabled-low-commit"
+                    print(f"[WunderLanguage] CAT-Translate skipped: only {_free_fc_mb}MB host commit free (need {_min_fc_mb}MB) - /translate keeps fallback-blank.", flush=True)
+                    return
+                print(f"[WunderLanguage] CAT-Translate host-commit check: {_free_fc_mb}MB free, proceeding.", flush=True)
+            except Exception as _fcex:
+                print(f"[WunderLanguage] CAT-Translate host-commit check inconclusive ({_fcex}) - proceeding.", flush=True)
             print(f"[WunderLanguage] CAT-Translate: loading 4-bit quantized weights...", flush=True)
             _quant_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -1126,7 +1167,7 @@ def _ensure_cat_async():
         if cat_translate_pipeline is not None:
             return
         st = READY.get("cat", "warming")
-        if st in ("ready", "disabled", "disabled-low-vram"):
+        if st in ("ready", "disabled", "disabled-low-vram", "disabled-low-commit"):
             return
         if isinstance(st, str) and st.startswith("failed"):
             return
@@ -1164,6 +1205,8 @@ def cat_translate(text: str, source_lang: str, target_lang: str):
         print("[WunderLanguage] CAT unavailable (OCR-only mode), leaving blank for fallback chain")
         if _CAT_SKIP_REASON == "low-vram":
             reason = "cat-low-vram"
+        elif _CAT_SKIP_REASON == "low-commit":
+            reason = "cat-low-commit"
         else:
             reason = "cat-warming" if READY.get("cat") == "warming" else "cat-unavailable"
         return "", True, reason
