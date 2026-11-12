@@ -1015,13 +1015,31 @@ namespace WunderLanguage.Host.Windows
         }
 
         // A monitor that's since been unplugged must not strand the feed where
-        // it can't be grabbed again. Revert: revert popout-feed.
+        // it can't be grabbed again. SystemParameters.VirtualScreen* is DIP
+        // divided by the STALE system DPI (144 ghost): (0,0,2986.7,960)
+        // instead of the true (0,0,4480,1440) — the clamp drew its walls
+        // ~20% inside the real screen. Raw PMv2 metrics ÷ the feed's OWN
+        // measured scale (same measure-don't-report rule as Confirm()),
+        // dock scale as fallback. Revert: revert calib-cover.
         private void ClampToVirtualScreen()
         {
-            double vw = SystemParameters.VirtualScreenLeft;
-            double vt = SystemParameters.VirtualScreenTop;
-            double vr = vw + SystemParameters.VirtualScreenWidth;
-            double vb = vt + SystemParameters.VirtualScreenHeight;
+            double sx = _dpiScaleX, sy = _dpiScaleY;
+            try
+            {
+                if (_sidePanelHandle != IntPtr.Zero && _sidePanel.ActualWidth > 10 && _sidePanel.ActualHeight > 10 &&
+                    WindowCapture.TryGetWindowBounds(_sidePanelHandle, out var fp) && fp.Width > 10 && fp.Height > 10)
+                {
+                    double mx = (double)fp.Width / _sidePanel.ActualWidth;
+                    double my = (double)fp.Height / _sidePanel.ActualHeight;
+                    if (mx > 0.5 && mx < 3.0 && my > 0.5 && my < 3.0) { sx = mx; sy = my; }
+                }
+            }
+            catch { }
+            var vs = WindowCapture.GetVirtualScreenRect();
+            double vw = vs.Left / sx;
+            double vt = vs.Top / sy;
+            double vr = vw + vs.Width / sx;
+            double vb = vt + vs.Height / sy;
             double w = _sidePanel.ActualWidth > 0 ? _sidePanel.ActualWidth : SidePanelWidth;
             double h = _sidePanel.ActualHeight > 0 ? _sidePanel.ActualHeight : 420;
             if (_sidePanel.Left + w < vw) _sidePanel.Left = vw;

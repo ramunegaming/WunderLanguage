@@ -88,6 +88,22 @@ namespace WunderLanguage.Host
                         Shutdown(swapOk ? 0 : 1);
                         return;
                     }
+                    // Calibration coverage offline gate (2026-11-11):
+                    // --calibcover shows the real overlay, pumps the
+                    // dispatcher, and asserts its physical frame covers
+                    // the PMv2 raw virtual screen within 2px on every
+                    // edge. No emulator, no sidecar, no GPU; exit 0 only
+                    // on full coverage. Revert: revert calib-cover (delete
+                    // this block + CalibrationWindow.RunCoverageGate +
+                    // the coverage correction + the raw-metrics clamp).
+                    if (args[i] == "--calibcover")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool covOk = CalibrationWindow.RunCoverageGate();
+                        FileLogger.Log($"[calibcover] exit ok={covOk}");
+                        Shutdown(covOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

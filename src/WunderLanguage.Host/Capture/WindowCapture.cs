@@ -63,6 +63,8 @@ namespace WunderLanguage.Host.Capture
         [DllImport("gdi32.dll")]
         private static extern bool BitBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
             IntPtr hdcSrc, int xSrc, int ySrc, uint rop);
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
         private const uint PW_RENDERFULLCONTENT = 2;
         private const uint CAPTURE_FLAGS = PW_RENDERFULLCONTENT;
@@ -70,6 +72,10 @@ namespace WunderLanguage.Host.Capture
         private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
         private const int DWMWA_CLOAKED = 14;
         private const uint SRCCOPY = 0x00CC0020;
+        private const int SM_XVIRTUALSCREEN = 76;
+        private const int SM_YVIRTUALSCREEN = 77;
+        private const int SM_CXVIRTUALSCREEN = 78;
+        private const int SM_CYVIRTUALSCREEN = 79;
         private static readonly HashSet<string> ExcludedClassNames = new(StringComparer.OrdinalIgnoreCase)
         {
             "Progman", "WorkerW", "CabinetWClass", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"
@@ -141,6 +147,19 @@ namespace WunderLanguage.Host.Capture
             bounds = Rectangle.Empty;
             return false;
         }
+        // PMv2 raw virtual-screen rect in PHYSICAL pixels. The framework's
+        // SystemParameters.VirtualScreen* instead reports DIP divided by
+        // the STALE system DPI (144 ghost after display churn): on this
+        // machine (0,0,2986.7,960) instead of the true (0,0,4480,1440) —
+        // which is what left the calibration overlay's bottom/right
+        // unreachable and let the feed clamp strand the pop-out feed.
+        // Revert: revert calib-cover.
+        public static Rectangle GetVirtualScreenRect() =>
+            new Rectangle(
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                GetSystemMetrics(SM_CYVIRTUALSCREEN));
         // Occlusion probe (revert: revert occlusion-hold): the hot path
         // BitBlts the SCREEN at the game's rect, so whatever is composited
         // ABOVE the game there is what capture actually reads - proven live
