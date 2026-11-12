@@ -3,10 +3,10 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## HANDOVER STATE (2026-10-26 — refreshed 2026-10-29, read this first)
+## HANDOVER STATE (2026-10-26 — refreshed 2026-11-12, read this first)
 
-> Checkpoint of record: **`CHECKPOINT-2026-10-26.md`** (full session detail; refreshed 2026-10-29 with the consolidated **BULK LIVE SESSION CHECKLIST**). `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-10-30 bulk live session results + build queue; BOOKS tail = 2026-10-30 session root causes (three silent deaths, title latin-gate, Z2 v2 spec). **Bulk live session EXECUTED 2026-10-30 — next = the offline build queue (Z2 v2, transport E-code/watchdog, circuit capture-continue, latin-title pricing); still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
+> Checkpoint of record: **`CHECKPOINT-2026-11-09.md`** (issue-1 phantom-fire closure, OFFLINE COMPLETE, live gate still owed — ledgers deliberately NOT updated for it until live confirmation). `CHECKPOINT-2026-10-26.md` (bulk live session checklist), `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
+> Newest ledger entries: ROADMAP tail = 2026-11-12 catch-up — UX wave batches 1-7 + commit-precheck all live-confirmed (only HDR batches 2/3 proofs still owed, no HDR on this box); BOOKS tail = 2026-11-12 translation-crash root cause proven (free commit <~11GB at weight load) + fix b599d82. **NEXT = batch 8 taskbar-in-popout (revert taskbar-feed), batch 9 auto-popout-on-fullscreen (revert auto-popout) — both approved 2026-11-12, taskbar first; then Phase 0 onboarding for the 5 R2-R4 games (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0); then beta/alpha release build. Still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -637,3 +637,52 @@ capture-continue + pending-EN late retry (user directive, silent class 2);
 (silent class 3 - HasJapanese gate is deliberate, price first). Watch item:
 THIRD crash-truncated corpus gzip (Zelda_20261030_142705, taskkill /F
 finalizes nothing) - harvest/validate corpus BEFORE any forced kill.
+
+2026-11-12 - LEDGER CATCH-UP: UX wave batches 1-7 + cat_service tracking +
+commit-precheck all live-confirmed (user session 15:25:48-15:27:37 +
+explicit confirmation of the b4/b5/b6 checks; root-cause chain in BOOKS
+tail). Nine commits, gates green each:
+- `20d7768` batch 1 pop-out feed (revert: revert popout-feed) - detached
+  topmost-band overlay + Ctrl+Shift+D hotkey + persisted position;
+  live-used throughout the session (popout restored position, DETACHED
+  flips correct).
+- `676ce65` batch 2 HDR detection (revert: revert hdr-detect) -
+  advanced-color query + sustained-blank probe -> E9 chip; OFFLINE-GATED,
+  live proof still owed (no HDR on this box - friend's machine).
+- `9dc398b` batch 3 capture-swap (revert: revert capture-swap) -
+  PrintWindow adopt when BitBlt returns a degenerate frame; engage/miss
+  arm live-owed with the same HDR proof.
+- `dd5c404` batch 4 calib-cover (revert: revert calib-cover) - raw PMv2
+  virtual screen + <=3-pass measure-and-correct overlay; LIVE PASS: user
+  re-dragged to the true screen bottom and the overlay lands right
+  (pass=2 converged scale=1.250x1.250 - fixed the stale 1.50 ctor scale).
+- `c3dd833` batch 5 feed-defer (revert: revert feed-defer) - 1s
+  post-movement Settings save debounce + 4Hz opacity; LIVE PASS: no
+  mid-drag freeze, Settings saved only after movement stops.
+- `5422289` batch 6 feed-resize (revert: revert feed-resize) - CanResize
+  while detached + FeedWidth/FeedHeight persist; LIVE PASS: drag-resize
+  reflows and persists across pop-out/dock.
+- `2b4697d` batch 7 dock-hide (revert: revert dock-hide) -
+  GameCoversMonitor hides the Dock affordance while covered; LIVE PASS:
+  dockvis flips correct all session (True fullscreen / False windowed /
+  False after game close).
+- `a0582bd` track ocr-service/cat_service.py as-is (tracking only, no
+  logic change - it ran production untracked since the 2026-10-17 split).
+- `b599d82` commit-precheck (revert: revert commit-precheck) - free-commit
+  >=11500MB gate right before from_pretrained, mirrors the existing VRAM
+  pre-check (fail-open, env override WUNDER_CAT_MIN_FREE_COMMIT_MB); ROOT
+  CAUSE PROVEN (BOOKS tail): deterministic AV 0xC0000005 in
+  torch_cpu.dll+0x8e4a279 when system free commit <~11GB at the instant
+  the 4-bit weight load spikes ~6.7GB; 26-boot dataset zero-overlap split
+  (crashes <=10675MB, clean >=12215MB); 3 repros incl. separate-process
+  purity run; availPhys + fullscreen-timing theories exonerated; tests
+  A/C/B pass + catstats A/B per-corpus IDENTICAL (466 common, 0 changed);
+  LIVE PASS: `host-commit check: 12495MB free, proceeding`, no chip,
+  session translated normally.
+Remaining live-owed: batches 2/3 HDR proofs only (no HDR on this box).
+NEXT (approved 2026-11-12, both root-caused in code): batch 8
+taskbar-in-popout (revert: revert taskbar-feed), batch 9
+auto-popout-on-fullscreen-coverage (revert: revert auto-popout) -
+taskbar first; then Phase 0 onboarding for the five R2-R4 picks (Okami /
+NieR Replicant / KH3D / Persona 5 / Yakuza 0), then the beta/alpha
+release build.

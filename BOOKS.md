@@ -2895,3 +2895,87 @@ strings). Miscapture evidence (user frustration: 'obvious miscaptures'):
 フスターソード = OCR マ->フ misread with EN faithful to the WRONG JA (same
 string correct later as マスターソード) = recognition variance, not translation
 hallucination - pairs harvested in corpus.
+
+## 2026-11-12 - translation-crash ROOT CAUSE PROVEN + UX wave live-confirmed (ledger catch-up)
+
+TRANSLATION CRASH - CAUSATION, NOT CORRELATION (fix = b599d82, revert:
+revert commit-precheck; full evidence in the commit message):
+- Fault: 0xC0000005 in torch_cpu.dll offset 0x8e4a279 (build 0x6a48329e),
+  stack from_pretrained -> load_shard_file ->
+  _load_state_dict_into_meta_model -> torch.storage.__getitem__, ~2-3s into
+  the 4-bit weight load. 11 Windows Event-1000 AVs, ALL at the identical
+  offset (Oct 23 x7, Nov 12 x2) = deterministic, not random corruption.
+- Trigger: system-wide FREE commit (GlobalMemoryStatusEx ullAvailPageFile;
+  the total-avail form is CHARGE - a sign bug in repro v1 burned an hour on
+  this) below ~11GB at the instant the load spikes ~6.7GB of commit in 1s.
+  diag_cat_load.csv 26 boots: pre-spike free commit separates perfectly -
+  3 crashes at 9284/10641/10675MB, 17 clean all >=12215MB, zero overlap
+  -> threshold 11500MB (WUNDER_CAT_MIN_FREE_COMMIT_MB).
+- EXONERATED with evidence: availPhys (clean Nov-11 boot survived dipping
+  to 3462MB mid-load; repro crashed at 8.88GB avail); fullscreen-timing
+  (purity repro: pressure held by a SEPARATE process, no game, no display
+  change anywhere in the run, byte-identical AV); model shards (untouched
+  since Aug 30, clean loads through Nov 11); packages, OS/driver,
+  DeepL/network, zombies, batches 4-7.
+- Three repros: v1 sign bug -> overshot to total commit exhaustion ->
+  clean MemoryError, weights never ran (the exhaustion class is a clean
+  MemoryError, NOT this AV - distinct classes); v2 same-process eater ->
+  AV; v3 purity separate-process -> AV. All memory auto-released; machine
+  recovered (avail ~20GB).
+- Fix mirrors the existing VRAM pre-check in _load_cat_stage (same spot,
+  same fail-open, same env-override pattern - extended machinery, no
+  parallel gate): checked right before from_pretrained; skip -> READY
+  cat=disabled-low-commit + reason cat-low-commit + /health ok_states
+  whitelist. cat_service.py was untracked production code -> a0582bd
+  tracks it as-is FIRST so the revert contract covers the file.
+- Gates: Test A (override 99999 -> skip fires, no lazy re-trigger) PASS;
+  Test C (healthy 22761MB -> full load -> ready -> translation
+  unreliable=False) PASS; Test B pressure integration THE A/B (eater held
+  freeCommit=10257MB avail=6289MB = the exact natural-crash band, real
+  production cat_service boots -> skip line, /health status=ok
+  cat=disabled-low-commit, /translate blank + reason=cat-low-commit, no
+  AV; same state pre-fix = deterministic AV) PASS; catstats A/B vs
+  i5_catstats_H PER-CORPUS IDENTICAL (466 common, 0 changed; +1 = new
+  corpus Big_Walk_20261112_121913 from the live session, not a change).
+  Live: `host-commit check: 12495MB free, proceeding`, no chip.
+
+UX WAVE LIVE-CONFIRMED (user session 15:25:48-15:27:37 + explicit
+confirmation of all three remaining checks 2026-11-12):
+- commit-precheck: healthy-path line above, zero error chips all session.
+- b7 dock-hide/dockvis: True fullscreen (game rect == monitor exactly) ->
+  False windowed -> True fullscreen -> False after game close; correct
+  throughout, including the 150ms-tick re-checks.
+- b4 calib-cover: [calibrate] pass=2 converged=True scale=1.250x1.250
+  (ctor was 1.50x1.50 = the stale-144-ghost disease); USER re-dragged the
+  calibration window to the true screen bottom and the overlay lands
+  right = live pass.
+- b5 feed-defer: `Settings saved` fires post-move, not mid-drag; USER
+  reports no mid-drag freeze = live pass.
+- b6 feed-resize: USER drag-resized the popped-out feed, reflow + persist
+  across pop-out/dock = live pass.
+- b1 pop-out feed: restored feed position (1569.6,75.2), hotkey
+  Ctrl+Shift+D, DETACHED flips - live-used all session.
+- Still owed: b2 hdr-detect E9 wording eyeball + HDR-on proof, b3
+  capture-swap engage/miss arm - both need an HDR-enabled display (this
+  box: DELL G2724D + ASUS VP228 both hdr=on-supported/enabled=0); trust
+  until a friend tests.
+
+TWO NEW OBSERVATIONS FROM THAT SESSION - root-caused in code, batches
+APPROVED but NOT YET BUILT (recorded as diagnosis only):
+1. No taskbar button while popped out: only BottomBarWindow.xaml:6 has
+   ShowInTaskbar="True" (title "WunderLanguage"); SidePanelWindow.xaml:5
+   is False by design; popout = bars hidden -> the sole taskbar button
+   disappears until Dock restores the bars. Proposed batch 8 (revert
+   taskbar-feed): toggle the panel's ShowInTaskbar while detached
+   (docked state byte-identical).
+2. Windowed->popout->fullscreen dance: the docked panel z-pairs DIRECTLY
+   ABOVE THE EMULATOR (AppShell.PairGroupAboveEmulator, 150ms tick) - not
+   the topmost band - so a fullscreen game wins the z-fight and hides the
+   docked panel + its Pop-out button; the detached feed is the only
+   topmost-band window (why popout exists at all). The detector already
+   exists = b7's dockvis (game-covers-monitor, re-checked every 150ms +
+   on bounds change). Proposed batch 9 (revert auto-popout): coverage
+   true + docked -> auto-invoke the existing detach path (auto-flag);
+   coverage false + auto-popped -> auto-redock; manual pop stays popped,
+   manual dock clears the flag. User's log shows the exact workaround:
+   15:26:32 windowed -> 15:26:35 DETACHED -> 15:26:37 fullscreen.
