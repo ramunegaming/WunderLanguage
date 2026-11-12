@@ -104,6 +104,21 @@ namespace WunderLanguage.Host
                         Shutdown(covOk ? 0 : 1);
                         return;
                     }
+                    // Feed position-save defer offline gate (2026-11-12):
+                    // --feeddefer proves the debounce with the real
+                    // DeferredAction: 500 schedules -> 0 fires, then a 1.3s
+                    // quiet pump -> exactly 1. No emulator, no sidecar, no
+                    // GPU; exit 0 only if both hold. Revert: revert
+                    // feed-defer (delete this block + DeferredAction +
+                    // the AppShell defer/throttle wiring).
+                    if (args[i] == "--feeddefer")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool deferOk = DeferredAction.RunOfflineTest();
+                        FileLogger.Log($"[feeddefer] exit ok={deferOk}");
+                        Shutdown(deferOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

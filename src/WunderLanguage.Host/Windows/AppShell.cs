@@ -165,13 +165,19 @@ namespace WunderLanguage.Host.Windows
         private bool _detached;
         private IntPtr _sidePanelPreDetachExStyle;
         private bool _hotkeysRegistered;
-        private DateTime _lastFeedPosSave = DateTime.MinValue;
+        private DateTime _lastFeedOpacityCheck = DateTime.MinValue;
+        private readonly DeferredAction _feedPosSaveDefer;
 
         public AppShell(IntPtr emulatorHandle, GameRegion gameRegion, AppSettings settings)
         {
             _emulatorHandle = emulatorHandle;
             _gameRegion = gameRegion;
             _settings = settings;
+            // Position save deferred until 1s after movement stops (revert:
+            // revert feed-defer): DragMove pumps LocationChanged per pixel
+            // and Save() re-encrypts the key + writes settings.json on the
+            // UI thread - that was the live drag freeze.
+            _feedPosSaveDefer = new DeferredAction(TimeSpan.FromSeconds(1), PersistFeedPosition);
             _topBar = new TopBarWindow();
             _sidePanel = new SidePanelWindow();
             _bottomBar = new BottomBarWindow();
@@ -200,7 +206,7 @@ namespace WunderLanguage.Host.Windows
             // silently truncating session .gz files. All closes funnel
             // here; controller.Stop is idempotent for repeats.
             _topBar.Closed += (_, _) => ShutdownCapture();
-            _sidePanel.Closed += (_, _) => { UnregisterDetachHotkeys(); ShutdownCapture(); };
+            _sidePanel.Closed += (_, _) => { _feedPosSaveDefer.Flush(); UnregisterDetachHotkeys(); ShutdownCapture(); };
             _bottomBar.Closed += (_, _) => ShutdownCapture();
             _captureController = BuildCaptureController();
             _zOrderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -1077,18 +1083,32 @@ namespace WunderLanguage.Host.Windows
             catch { }
         }
 
-        // Throttled: DragMove pumps a LocationChanged per pixel of travel and
-        // Save() rewrites settings.json (plus re-encrypts the key).
+        // DragMove pumps a LocationChanged per pixel of travel, so both
+        // chores here are throttled to keep the drag pump cheap (the live
+        // drag freeze: 2 DWM calls + a DPAPI/2-write settings save per
+        // pixel). Opacity at most ~4Hz; the position SAVE is deferred until
+        // 1s after movement stops - the fields below update per pixel for
+        // free, so any Save() from elsewhere still persists fresh coords.
+        // Revert: revert feed-defer.
         private void OnFeedLocationChanged(object? sender, EventArgs e)
         {
             if (!_detached) return;
-            RefreshFeedOpacity();
-            if ((DateTime.UtcNow - _lastFeedPosSave) < TimeSpan.FromSeconds(1)) return;
-            _lastFeedPosSave = DateTime.UtcNow;
+            _settings.FeedLeft = _sidePanel.Left;
+            _settings.FeedTop = _sidePanel.Top;
+            if ((DateTime.UtcNow - _lastFeedOpacityCheck) >= TimeSpan.FromMilliseconds(250))
+            {
+                _lastFeedOpacityCheck = DateTime.UtcNow;
+                RefreshFeedOpacity();
+            }
+            _feedPosSaveDefer.Schedule();
+        }
+
+        // The deferred half of the position save: runs once, 1s after
+        // movement stops (or on feed close via Flush). Revert: revert feed-defer.
+        private void PersistFeedPosition()
+        {
             try
             {
-                _settings.FeedLeft = _sidePanel.Left;
-                _settings.FeedTop = _sidePanel.Top;
                 _settings.Save();
             }
             catch (Exception ex)
