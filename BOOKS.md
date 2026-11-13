@@ -113,7 +113,7 @@ The understand-the-GPU book. Usable content was small but load-bearing.
 - Quantization discipline via degenerate guards (the `nocatfb` reflex).
 - Device-name logging covers the device-query lesson.
 
-**Rejected with data — crop collaging (`25c7b64`):** batching N crops
+**Rejected with data — crop collaging (`8cc79e5`):** batching N crops
 into one recognition call is 2–7× faster (launch/transfer overhead
 dominates small calls) but destroys accuracy on real frames — stacked
 layout + gutter breaks the manga-page-trained model (merged lines,
@@ -135,7 +135,7 @@ experiment (run, rejected).
 
 Goal: survive the insane variety of Windows machines/users. Six items,
 each implemented as one small batch, each live-proven, each with a
-revert phrase. Commits `9bd5c5d` through `0e3fe9f` (+`15d70c1`).
+revert phrase. Commits `b29c393` through `2155ce0` (+`f872bea`).
 
 | # | Item (source) | Shipped | Proof |
 |---|---|---|---|
@@ -568,7 +568,7 @@ rule). Revisit only on evidence:**
   Wedge/Biggs NOT pinned (absent from manual pages — no source, no
   pin). Replay 0 / 263-identical. Revert: restore Matthew pin, drop
   the rest.
-- Unknown-name mask SHIPPED (`67066d0`): runs of [?？]{2,} masked
+- Unknown-name mask SHIPPED (`9e9483b`): runs of [?？]{2,} masked
   with private-use tokens pre-translate, restored after (fire + update
   paths, provider-blind); single ? stays punctuation; CAT-eaten tokens
   keep EN as-is + [qmask-lost] log. Round-trip verified (multi-run,
@@ -1356,7 +1356,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   still unpinned (no manual source). Revert: revert namemask.
 
 ## Session state - 2026-10-20 shipped (gated, revertible)
-- Z1 dup fix SHIPPED (1f2f66a): quote/bracket family ＂“”「」『』 added to
+- Z1 dup fix SHIPPED (2bdb05b): quote/bracket family ＂“”「」『』 added to
   StripForOverlap + FoldedCommonSuffixLength two-anchor clause in
   FireHistoryCovers (prefix>=10 AND suffix>=6 folded+stripped,
   direction-free; growth exempt by construction). Gate: 412-corpus
@@ -1365,7 +1365,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   covered by sibling), 情報 ghost killed on today's + 7 historical
   Zelda corpora; live run 11/11 blocks posted once each.
   Revert: revert two-anchor.
-- Zelda intro 1:1 SHIPPED (5cafd30): OCR-LM fabricates punctuation the
+- Zelda intro 1:1 SHIPPED (4644d39): OCR-LM fabricates punctuation the
   screen lacks (、 at wide gaps, trailing 。, ！ where screen has …).
   Restored via pack tables: DisplayFixups +9 intro-unique keys
   (はるか昔/ハイラルの大地/しかし/そこで x2/封印させたそうです/封印は/
@@ -1389,7 +1389,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   compared char-for-char - gap 　, … tails, only アグニム + ささげていった
   blocks keep 。). Both Z1 defects CLOSED live: two-anchor (block 8/11) +
   intro-punct (fabricated 。/、, ささばられる, 消えていきました).
-- しかし-line tail strip SHIPPED (6a819cb, joins revert intro-punct):
+- しかし-line tail strip SHIPPED (cc4decb, joins revert intro-punct):
   ("わきでてきたと言うことです。" -> no 。) in ZeldaPack DisplayFixups,
   comment carries revert phrase. Gate: A/B ReplayChecker 52-corpus sweep
   (49 Zelda + 2 Legend + hwnd; set = baseline-50 + today's live corpus
@@ -1404,7 +1404,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   Old gate_diff/sibling_check/zelda_replay scripts + drift_classified.txt
   are GONE (temp cleanup) - ReplayChecker A/B diff done ad hoc in PS.
 
-## Session state - 2026-10-21 T2 title episode SHIPPED (3558867, live gate owed)
+## Session state - 2026-10-21 T2 title episode SHIPPED (cdc7128, live gate owed)
 - Root cause of no-post-intro-title (investigated, reported): quiet-timer
   TITLE mints via edge-exact `_quietCount == titleBar` (CaptureController
   CheckQuietTitle); the single post-intro attempt (08:29:05, corpus loop ~186)
@@ -1435,7 +1435,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   gameplay silent). Note: corpus boot-title evidence live at sim=1.00 within
   3 loops (loops 21-23) - faster than the old quiet bar=10.
 
-## Session state - 2026-10-21 T2.5 (round-1 live FAILED, root-caused, fixed: 2851b11 + 904e02d, live round 2 owed)
+## Session state - 2026-10-21 T2.5 (round-1 live FAILED, root-caused, fixed: 547bd91 + a222797, live round 2 owed)
 - Round-1 live (20:56-21:01): boot posted (quiet fallback), post-intro title did
   NOT post, reset-title posted. ZERO [title] episode evidence/publish lines in
   app.log - detector ran (call site shares the try with the quiet path that
@@ -1449,7 +1449,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   session, quiet fallback covered boot+reset but not post-intro (old veto/edge
   failure unchanged). Also caught: python gate used difflib where C# uses
   Levenshtein - gate/runtime mismatch, fixed for parity.
-- T2.5 (2851b11, revert: revert title-episode): TitleNorm strips ー/―/—/‐/－
+- T2.5 (547bd91, revert: revert title-episode): TitleNorm strips ー/―/—/‐/－
   on both sides of evidence (key on the word, not the diacritic); matcher
   rewritten as mirror of gate title_sim (TitleNorm containment both ways +
   Unvoice containment + ComputeSimilarity(bn,pn)>=0.85, len>=4 post-norm);
@@ -1458,7 +1458,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   stamps _lastDialogueFireLoop so quiet's internal 60-loop veto blocks it -
   mutual exclusion both directions; _titleFireLoop inits -1000 = cold start
   never blocks).
-- Intro fixups (904e02d, revert: revert intro-punct), both flagged/evid-
+- Intro fixups (a222797, revert: revert intro-punct), both flagged/evid-
   enced from tonight's live run: DisplayFixup 伝説となったころ…？ -> …ころ…
   (raw L101 ！？ -> pair ころ！ consumes ！ leaving …？ ; key placed AFTER the
   ころ！ pair so it matches the post-pair state); DisplayFixups
@@ -1512,7 +1512,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   CaptureController 1349-1392). A/B owed: stash-revert merged-corpus
   replay (running at session end; expect only L54-family deltas).
 - Confirmed WORKING round-2: ころ line posted 伝説となったころ… with NO ?
-  (904e02d pair proven live); T2.5 evidence matcher proven live (evidence
+  (a222797 pair proven live); T2.5 evidence matcher proven live (evidence
   lines at both dwells - the ー-strip did its job, no zero-evidence
   recurrence).
 - OPEN THREAD (not reported, noticed): block 11 posted with trailing
@@ -1576,7 +1576,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
 - NO REVERT of this session's commits: diagnosis complete, revert to
   pre-session state would have failed round-3 identically (quiet's bar
   also never reached in the aborted ~10-loop dwell; dialogue loss was
-  sidecar/loop-rate). e9caa52/f0109d2 proven innocent of the 3/11 outcome.
+  sidecar/loop-rate). e74db88/dd7998a proven innocent of the 3/11 outcome.
 - ROUND 4 GATE: rebuild, boot title posts, intro posts ~all blocks (infra
   permitting), post-intro title posts, gameplay silent, no ハロハ dup.
   If any title post missing, read [title] episode BLOCKED lines (now show
@@ -1636,7 +1636,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
     episode owns both visits; anti-double held.
   * T2 = done: TITLE posts once per visit, knows via pack FullTitle
     matching (voicing/dash/misread tolerant), re-Posts on return, silent
-    in gameplay. Detector shipped across 3558867..355dd23.
+    in gameplay. Detector shipped across cdc7128..39a8bf6.
 - Round-5 defect (reported, fixed same session): TITLE bubble showed
   EN but NO JAPANESE. Cause: the TITLE payload has been (0,"",false) since
   the quiet era - TranslateAndPublishMenuAsync's TITLE branch falls back
@@ -1654,7 +1654,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
 
 ## Session state - 2026-10-22 round-6: JA title body CONFIRMED live; boot double-post ROOT-CAUSED + FIXED
 - Round-6 (04:25): intro 11/11 clean, post-intro title single, TITLE bubble
-  now shows TITLE / ゼルダの伝説 神々のトライフォース / EN (1cd1125 fix
+  now shows TITLE / ゼルダの伝説 神々のトライフォース / EN (3f001e6 fix
   proven live). ONE defect: boot title posted TWICE (04:25:17 + 04:25:19).
 - Root cause (log + code): bubble#1 = [title] episode publish (L29, correct
   path). Bubble#2 = [menu] publish TITLE lines=1 (L31) - the MENU TRACKER's
@@ -1681,7 +1681,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   publish with evidenceAge=0 (boot 07:22:40, post-intro 07:24:54, and the
   hard one: played gameplay (rupee NPC dialogue 07:26:02) then RETURNED to
   title -> third post 07:26:29). Zero tracker mints, zero quiet mints,
-  zero BLOCKED lines. The 8b4c6ec shared-clock anti-double held: single
+  zero BLOCKED lines. The a867a43 shared-clock anti-double held: single
   bubbles everywhere. Intro 11/11 (one OCR garbage variant on block 10 -
   pre-existing class, translation followed the misread - OCR quality, not
   machinery).
@@ -1735,13 +1735,13 @@ non-seal Dolphin game contributing). Amendment appended to ROADMAP
 now requires every future knowledge item to have a path to a shared
 store.
 
-## G1 AUDIT COMPLETE + FIX BATCH SHIPPED - 2026-10-22 (commit 013c5bc; live gate owed)
+## G1 AUDIT COMPLETE + FIX BATCH SHIPPED - 2026-10-22 (commit 8b50b17; live gate owed)
 Audit findings (evidence-first, all mechanism-proven):
 1) THE 100s FREEZE, fully mapped: OcrClient.cs:42 + Offlinetranslationprovider.cs:48
    built new HttpClient() with NO Timeout = the 100s default = the entire
    round-4 wedge window. A hung translate ALSO held one of the 4 _catGate GPU
    slots the whole time (4 wedges = every future translate queued behind dead
-   requests). Loop survived (355dd23) but froze request-lifetime.
+   requests). Loop survived (39a8bf6) but froze request-lifetime.
 2) W1b RECLASSIFICATION (CORRECTION to rounds 3-4 entries below - entries stay
    as written, this supersedes their attribution): job events come ONLY from
    the sidecar's job tree (SidecarProcessManager assigns _process only - the
@@ -1781,7 +1781,7 @@ Audit findings (evidence-first, all mechanism-proven):
    confirmed for Zelda) is Zelda-PACK-scoped = zero live cross-game
    exposure (universal/PM packs lack it; replay's cross-game hits are the
    documented "replay defaults to Zelda chains" artifact). T2.6 CLOSED.
-Fixes shipped (013c5bc): (a) revert g1-timeouts - OCR 15s, translate 30s;
+Fixes shipped (8b50b17): (a) revert g1-timeouts - OCR 15s, translate 30s;
 (b) revert g1-single-instance - named mutex Local\WunderLanguage_SingleInstance
 at [ModuleInitializer] (before App.Main, zero parked-file edits; --replay/
 --simcheck/--simreplay exempt; second launch logs + message + exit 1; static
@@ -1801,7 +1801,7 @@ the G1 resilience batch active (timeouts/circuit breaker inert on healthy
 paths = as designed). No nested-timeout spam reported. Double-launch dialog
 not exercised manually - it self-validates on the first accidental
 double-launch ([single-instance] log line is the proof). Parked W1b files
-remain uncommitted as required. G1 closed: audit + fixes (013c5bc) + A/B
+remain uncommitted as required. G1 closed: audit + fixes (8b50b17) + A/B
 (zero delta) + live gate. NEXT: C1 (category measurement pass, offline,
 corpus-only, no behavior change - ROADMAP line for scope).
 
@@ -2078,7 +2078,7 @@ save-point x2, 説明を聞きますか？, PLAYER SELECT どのデーターを�
 7 rows, gambler さあ、どうする？ しょうぶする) + 4 named FPs = the Zelda
 hermit dialogue (ちゃんと、きこえましたか？ | わっうーんぜん family -
 question+hiragana callout, label-only under the safety valve).
-A/B vs base (base = 5c95072, sweep catstats_c3_v1_new.log): the
+A/B vs base (base = f536a06, sweep catstats_c3_v1_new.log): the
 checkpoint claim "base mints ZERO DECISION" was WRONG - base mints 8.
 All 8 identified via publish-context extraction: 152248 x2 (ユーまどう
 そうそうですウェッジビックス, ハイウェイス…ティナ ？ | まほうアイテム), 144032 x2
@@ -2623,7 +2623,7 @@ double-post (probe-pass sets menuSignature, which suppresses the dwell
 road that fired it as dialogue).
 
 GATES (2026-10-26): build BOTH sides 0 err / 17 warn exact baseline
-(base = HEAD ccc5291 stashed; new restored hash-verified byte-identical).
+(base = HEAD 3946ecc stashed; new restored hash-verified byte-identical).
 catstats A/B full sweep 443 corpora both sides (Temp\opencode\
 catstats_base.log 192,183 lines / catstats_new.log 194,422; prior-batch
 base preserved as catstats_base_prevbatch.log):
@@ -2713,7 +2713,7 @@ PublishDecisionAsync and at TranslateAndPublishMenuAsync entry; dispose
 in Stop. -> revert publish-dump
 
 GATES (2026-10-27): build BOTH sides 0 err / 17 warn exact baseline
-(base = HEAD 43cdd1a stashed; new restored). catstats A/B full sweep 445
+(base = HEAD 350dfa0 stashed; new restored). catstats A/B full sweep 445
 corpora both sides (Temp\opencode\applog_catstats_base.log vs
 applog_catstats_new.log; analysis ab_diff.py / ab_percorpus.py /
 ab_lost.py / probe_losses.py / probe2.py):
@@ -2899,7 +2899,7 @@ hallucination - pairs harvested in corpus.
 
 ## 2026-11-12 - translation-crash ROOT CAUSE PROVEN + UX wave live-confirmed (ledger catch-up)
 
-TRANSLATION CRASH - CAUSATION, NOT CORRELATION (fix = b599d82, revert:
+TRANSLATION CRASH - CAUSATION, NOT CORRELATION (fix = 25904c6, revert:
 revert commit-precheck; full evidence in the commit message):
 - Fault: 0xC0000005 in torch_cpu.dll offset 0x8e4a279 (build 0x6a48329e),
   stack from_pretrained -> load_shard_file ->
@@ -2927,7 +2927,7 @@ revert commit-precheck; full evidence in the commit message):
   same fail-open, same env-override pattern - extended machinery, no
   parallel gate): checked right before from_pretrained; skip -> READY
   cat=disabled-low-commit + reason cat-low-commit + /health ok_states
-  whitelist. cat_service.py was untracked production code -> a0582bd
+  whitelist. cat_service.py was untracked production code -> 2001f2e
   tracks it as-is FIRST so the revert contract covers the file.
 - Gates: Test A (override 99999 -> skip fires, no lazy re-trigger) PASS;
   Test C (healthy 22761MB -> full load -> ready -> translation
@@ -2986,7 +2986,7 @@ APPROVED but NOT YET BUILT (recorded as diagnosis only):
 GEOMETRY ROOT CAUSE (three commits, gates green each, catstats A/B
 PER-CORPUS IDENTICAL each - 466 common, 0 changed, 0 lost):
 
-BATCH 8 `3c3401d` taskbar-feed (revert taskbar-feed) - LIVE PASS.
+BATCH 8 `0da1cf1` taskbar-feed (revert taskbar-feed) - LIVE PASS.
 - Fix: SidePanelWindow.SetDetached flips Title="WunderLanguage" FIRST
   (button born labeled) then ShowInTaskbar=true; redock restores
   byte-identical (flag false + empty title) so the window-picker
@@ -3007,7 +3007,7 @@ BATCH 8 `3c3401d` taskbar-feed (revert taskbar-feed) - LIVE PASS.
   existed. Gate now asserts the exact post-flip state
   pre|APPWINDOW|WINDOWEDGE + an in-gate ResizeMode provenance control.
 
-BATCH 9 `066cf98` auto-popout (revert auto-popout) - LIVE PASS.
+BATCH 9 `db2ddef` auto-popout (revert auto-popout) - LIVE PASS.
 - Live-confirmed: windowed->fullscreen auto-popped within a tick, back to
   windowed auto-redocked ("other than that it looked to work").
 - Policy = AutoDetachForCoverage pure fn evaluated ONLY on coverage
@@ -3016,7 +3016,7 @@ BATCH 9 `066cf98` auto-popout (revert auto-popout) - LIVE PASS.
   writes FeedDetached. Gate truth table 6/6 + flag table 4/4 +
   sequences S1-S4.
 
-BATCH 10 `0a4808a` popout-anchor (revert popout-anchor) - OFFLINE
+BATCH 10 `154245b` popout-anchor (revert popout-anchor) - OFFLINE
 COMPLETE, LIVE OWED (relaunch-straight-into-fullscreen check).
 - BUG (reported): game already fullscreen -> start WunderLanguage -> attach
   -> set region -> feed invisible somewhere; only the windowed->fullscreen

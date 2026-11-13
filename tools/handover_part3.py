@@ -3,7 +3,7 @@ SECTIONS = [
 ("8. Current state per game (measured, not claimed)", [
 "b:FFVI old corpus: 117 fires, overlap 76/83, missed 7, extra 41, NE 0.36, latency budget OK. FFVI new corpus: 104 fires, overlap 46/50, missed 4, extra 58. Zelda long: 71-72 fires, overlap 50/60, missed 10, extra 21-22, panellat EXCEEDED pre-existing (identical stash baseline — not a regression). Zelda intro: 4 growth fires, overlap 0 (fast-scroll pages outrun stability). Paper Mario clean run: 485 reads, 28 fires all intro, sim reproduces 28/28 with zero extras; gameplay silence = sidecar deaths plus focus holds plus static skips (diagnosed, not policy). Dims banked per session (PM 788x583). Exact-match overlap understates under variant churn (proven: clean-form recovery scores as miss plus extra).",
 ]),
-("9. Truth eval set v1 (Step 1, 7e4977a)", [
+("9. Truth eval set v1 (Step 1, 040bd3d)", [
 "b:eval/truth.jsonl: 40 rows from 36 banked shots, game pane read directly (never OCR as ground truth). Dev 28 (17/18h sessions, tuning allowed), heldout 12 (22/23h, verification only). Verdicts: 17 miss-complete, 6 false-pub, 4 fidelity-error, 5 correct-silence controls, 2 hits, plus stale/dup/menu cases. Contexts span dialogue, typewriter partials (labeled by visible text), crawl pages, signs, 2 decision-box misses, game-over/menu, JA and Latin titles, prompt-leak garbage, ?-junk, blends, dups. Initial set only — no Paper Mario yet, not cross-game proof. Data-only batch. Revert: revert truth-set.",
 ]),
 ("10. Failure taxonomy and residue inventory", [
