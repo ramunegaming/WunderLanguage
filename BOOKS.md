@@ -2979,3 +2979,88 @@ APPROVED but NOT YET BUILT (recorded as diagnosis only):
    coverage false + auto-popped -> auto-redock; manual pop stays popped,
    manual dock clears the flag. User's log shows the exact workaround:
    15:26:32 windowed -> 15:26:35 DETACHED -> 15:26:37 fullscreen.
+
+
+2026-11-13 - UX WAVE BATCHES 8/9 LIVE-CONFIRMED + BATCH 10 LAUNCH-
+GEOMETRY ROOT CAUSE (three commits, gates green each, catstats A/B
+PER-CORPUS IDENTICAL each - 466 common, 0 changed, 0 lost):
+
+BATCH 8 `3c3401d` taskbar-feed (revert taskbar-feed) - LIVE PASS.
+- Fix: SidePanelWindow.SetDetached flips Title="WunderLanguage" FIRST
+  (button born labeled) then ShowInTaskbar=true; redock restores
+  byte-identical (flag false + empty title) so the window-picker
+  empty-title skip contract is unchanged; CloseShouldExit => _detached
+  wired into AppShell's existing _sidePanel.Closed handler ->
+  Application.Current.Shutdown() when the popped-out feed closes.
+- Proven, not assumed: batch-1's raw WS_EX_NOACTIVATE survives WPF's
+  ShowInTaskbar hide/show cycle because OnShowInTaskbarChanged reads
+  the LIVE ex-style via GetWindowLong and SetTaskbarStatus touches only
+  WS_EX_APPWINDOW (Window.cs source), and AppShell already applies the
+  raw style before panel SetDetached.
+- Gate first run FAILED onlyBitDiffers; diagnosed with a stage trace
+  BEFORE touching the assertion: ShowInTaskbar alone moved
+  0x8080000 -> 0x80C0000 = EXACTLY WS_EX_APPWINDOW; the stray 0x100
+  landed with the ResizeMode.CanResize line (= batch-6's
+  WS_EX_WINDOWEDGE) and left with NoResize. Production corroborates:
+  batch-1's redock read 0x8080108 on 2026-11-12, before batch 8
+  existed. Gate now asserts the exact post-flip state
+  pre|APPWINDOW|WINDOWEDGE + an in-gate ResizeMode provenance control.
+
+BATCH 9 `066cf98` auto-popout (revert auto-popout) - LIVE PASS.
+- User: windowed->fullscreen auto-popped within a tick, back to
+  windowed auto-redocked ("other than that it looked to work").
+- Policy = AutoDetachForCoverage pure fn evaluated ONLY on coverage
+  edges; flag = NextAutoFlag (only an AUTO pop claims, every dock
+  releases); auto moves persist:false so a transient fullscreen never
+  writes FeedDetached. Gate truth table 6/6 + flag table 4/4 +
+  sequences S1-S4.
+
+BATCH 10 `0a4808a` popout-anchor (revert popout-anchor) - OFFLINE
+COMPLETE, LIVE OWED (relaunch-straight-into-fullscreen check).
+- BUG (user): game already fullscreen -> start WunderLanguage -> attach
+  -> set region -> feed invisible somewhere; only the windowed->fullscreen
+  cycle made it appear. Players launch straight into fullscreen, so the
+  pop must place itself.
+- ROOT CAUSE, proven from the user's mirrored log (app2.log 12:35:44,
+  full chain):
+  1. OnBoundsChanged at Start positioned the DOCKED panel against the
+     fullscreen rect: "actual sidePanel rect: (L2557,T-77,...)" =
+     right of a monitor-covering game (= DELL/ASUS seam) and the
+     fullscreen top-bar position (0 - 80 + 3 shadow comp = -77).
+  2. 66 ms later the batch-9 coverage edge fired the auto-pop, which
+     INHERITED that anchor: "feed DETACHED at (2045.6,-61.6)" = phys
+     (2557,-77) - straddling the seam, top off-screen = "invisible
+     somewhere".
+  3. The working cycle (12:36:11) popped from a windowed anchor
+     (2050,59) over the game - why windowed-first worked.
+- Fix = ClampFeedRect (pure full-containment clamp; coverage-aware
+  generalization of b4's ClampToVirtualScreen, which stays the
+  restore-path guard with its looser 40-DIP grab rule) +
+  AnchorFeedOnPop from SetDetached(true): covered -> clamp fully inside
+  the game monitor, else into batch-3's raw GetVirtualScreenRect;
+  raw USER32 space throughout (TryGetUserRect documented
+  same-coordinates as SetWindowPos - no DIP/DWM ambiguity).
+- PMv2 DPI-SEAM INSIGHT, PROVEN by the gate's first failure (not
+  assumed): clamped with the window at 304px wide, settled readback
+  380px wide - raw px write -> move across this box's 125%/100% seam ->
+  WPF re-applies its DIP cache at the new DPI -> SIZE changes AFTER the
+  clamp. Position top-left survives the dance exactly; size does not.
+  AnchorFeedOnPop is therefore a CONVERGENCE LOOP (clamp -> move ->
+  Pump(60) -> re-read -> re-clamp, max 3, identity breaks,
+  non-convergence logged). Gate log: pass 1 (2557,-77)304x938 ->
+  (2256,0), pass 2 (2256,0)380x1173 -> (2180,0), pass 3 contained.
+- Gate --popanchor (real HWND, contract-based assertions because the
+  DPI dance legitimately moves size): covered repro lands 2180,0 fully
+  inside + top-0; uncovered clamps into virtual screen; windowed
+  (2050,59) position-identity (live 12:36:11 spot); covered identity;
+  pure oversized pin (0,0); pure pull-in (0,414). All ok, exit 0.
+
+Evidence, every batch: build 0 err/17 warn = baseline; gates
+popanchor/autopopout/taskbarfeed/dockvis/feedresize/feeddefer/
+captureswap/calibcover/hdrtest all exit 0; errortest PASS 7/7 (taskkill
+harness - by design it never exits); catstats A/B vs i5_catstats_H
+PER-CORPUS IDENTICAL each time (+3rd Big_Walk corpus today = the user's
+own 12:35 repro session, pre-existing on disk).
+
+Still owed: batch 10 live relaunch check; batches 2/3 HDR proofs (no
+HDR on this box - trust until a friend tests).

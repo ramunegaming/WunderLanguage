@@ -3,10 +3,10 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## HANDOVER STATE (2026-10-26 — refreshed 2026-11-12, read this first)
+## HANDOVER STATE (2026-10-26 — refreshed 2026-11-13, read this first)
 
-> Checkpoint of record: **`CHECKPOINT-2026-11-09.md`** (issue-1 phantom-fire closure, OFFLINE COMPLETE, live gate still owed — ledgers deliberately NOT updated for it until live confirmation). `CHECKPOINT-2026-10-26.md` (bulk live session checklist), `CHECKPOINT-2026-10-21.md` and `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-11-12 catch-up — UX wave batches 1-7 + commit-precheck all live-confirmed (only HDR batches 2/3 proofs still owed, no HDR on this box); BOOKS tail = 2026-11-12 translation-crash root cause proven (free commit <~11GB at weight load) + fix b599d82. **NEXT = batch 8 taskbar-in-popout (revert taskbar-feed), batch 9 auto-popout-on-fullscreen (revert auto-popout) — both approved 2026-11-12, taskbar first; then Phase 0 onboarding for the 5 R2-R4 games (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0); then beta/alpha release build. Still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
+> Checkpoint of record: **`CHECKPOINT-2026-11-13.md`** (UX wave batches 8/9/10 state, batch-10 launch-geometry root cause, next = 5-game onboarding). `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, OFFLINE COMPLETE, live gate still owed — ledgers deliberately NOT updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md` are superseded.
+> Newest ledger entries: ROADMAP tail = 2026-11-13 — batches 8 (`3c3401d` taskbar-feed) + 9 (`066cf98` auto-popout) LIVE-CONFIRMED, batch 10 (`0a4808a` popout-anchor, launch-into-fullscreen fix) offline-complete/live-owed; BOOKS tail = same date, full root-cause chains (incl. PMv2 DPI-seam proof). **NEXT = Phase 0 onboarding for the 5 R2-R4 games (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then beta/alpha release build. Live-owed: batch 10 relaunch check + batches 2/3 HDR proofs (no HDR on this box). Still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs user's official script
@@ -686,3 +686,53 @@ auto-popout-on-fullscreen-coverage (revert: revert auto-popout) -
 taskbar first; then Phase 0 onboarding for the five R2-R4 picks (Okami /
 NieR Replicant / KH3D / Persona 5 / Yakuza 0), then the beta/alpha
 release build.
+
+2026-11-13 - UX wave batches 8, 9, 10 committed; 8+9 LIVE-CONFIRMED,
+10 offline-complete (live-owed with the next session). Three commits,
+gates green each, catstats A/B PER-CORPUS IDENTICAL each (466 common,
+0 changed -> zero dialogue losses):
+- `3c3401d` batch 8 taskbar-feed (revert: revert taskbar-feed) - the
+  popped-out feed carries the app's taskbar button (Title first, then
+  ShowInTaskbar; docked restores byte-identical so the window picker
+  contract is unchanged) + CloseShouldExit so closing the popped-out
+  feed exits the app (mirrors BottomBarWindow). Gate --taskbarfeed
+  includes a ResizeMode provenance control: the first run failed
+  onlyBitDiffers, stage-traced BEFORE touching the assertion - the flip
+  adds EXACTLY WS_EX_APPWINDOW (0x8080000 -> 0x80C0000), the stray
+  0x100 is batch-6's ResizeMode.CanResize WS_EX_WINDOWEDGE (corroborated
+  by production 0x8080108 redock read predating this batch). LIVE
+  CONFIRMED (user 2026-11-13: "seems to work fine great").
+- `066cf98` batch 9 auto-popout (revert: revert auto-popout) -
+  coverage edge + docked -> auto-pop via the existing SetDetached (auto
+  flag, persist:false so transients never write settings); edge cleared
+  + auto-popped -> auto-redock; manual pop never yanked, manual dock
+  holds until the next edge (edges only, never mid-state). Pure policy
+  AutoDetachForCoverage + flag NextAutoFlag; gate --autopopout truth
+  table 6/6, flag table 4/4, sequences S1-S4. LIVE CONFIRMED (user
+  2026-11-13: windowed->fullscreen auto-popped, back to windowed
+  auto-redocked).
+- `0a4808a` batch 10 popout-anchor (revert: revert popout-anchor) -
+  launch-straight-into-fullscreen fix. ROOT CAUSE PROVEN from the
+  user's own mirrored log (app2.log 12:35:44, full chain in BOOKS
+  tail): OnBoundsChanged anchored the DOCKED panel to the fullscreen
+  rect (sidePanel L2557 T-77 = seam + off-screen top), the batch-9
+  auto-pop 66ms later INHERITED that anchor -> feed DETACHED at
+  (2045.6,-61.6) = the user's "invisible somewhere". Fix =
+  ClampFeedRect (pure full-containment, coverage-aware generalization
+  of b4's restore-path ClampToVirtualScreen) + AnchorFeedOnPop (raw
+  USER32 space, game monitor when covered else virtual screen,
+  CONVERGENCE LOOP max 3 passes). The PMv2 DPI-seam hazard was PROVEN
+  by the gate's first failure: raw write -> move across the 125%/100%
+  seam -> WPF re-applies its DIP cache -> size changes after the clamp
+  (304px clamped, 380px settled); position survives, size does not, so
+  re-clamp until stable. Gate --popanchor: real-HWND contract
+  assertions (repro lands 2180,0 fully inside + top-0; uncovered ->
+  virtual screen; windowed (2050,59) position-identity; covered
+  identity; oversized pin; pull-in) - all ok, exit 0.
+Live-owed: batch 10 relaunch-into-fullscreen check (start game
+fullscreen first, then WunderLanguage, attach, set region -> transparent
+popout appears on the game screen) + batches 2/3 HDR proofs (no HDR on
+this box). NEXT: Phase 0 onboarding for the five R2-R4 picks (Okami /
+NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then the
+beta/alpha release build. Still open user-side: P6 shop-play signal +
+PM glossary EN confirmations.
