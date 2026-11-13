@@ -207,7 +207,18 @@ namespace WunderLanguage.Host.Windows
             // silently truncating session .gz files. All closes funnel
             // here; controller.Stop is idempotent for repeats.
             _topBar.Closed += (_, _) => ShutdownCapture();
-            _sidePanel.Closed += (_, _) => { _feedPosSaveDefer.Flush(); UnregisterDetachHotkeys(); ShutdownCapture(); };
+            _sidePanel.Closed += (_, _) =>
+            {
+                _feedPosSaveDefer.Flush();
+                UnregisterDetachHotkeys();
+                ShutdownCapture();
+                // Taskbar feed (revert: revert taskbar-feed): popped out, the
+                // feed carries the app's taskbar button - closing that button
+                // must exit the way BottomBarWindow's close does, not strand
+                // a hidden shell (the bars are down while detached). Docked
+                // close keeps the old capture-stop-only semantics.
+                if (_sidePanel.CloseShouldExit) Application.Current.Shutdown();
+            };
             _bottomBar.Closed += (_, _) => ShutdownCapture();
             _captureController = BuildCaptureController();
             _zOrderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };

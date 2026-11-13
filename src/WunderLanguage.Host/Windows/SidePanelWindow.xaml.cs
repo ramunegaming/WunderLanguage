@@ -160,9 +160,37 @@ namespace WunderLanguage.Host.Windows
         // title out. Pure presentation - positioning and z-order stay AppShell's
         // job.
         private bool _detached;
+
+        // Taskbar feed (revert: revert taskbar-feed): while popped out the
+        // bars (and with them the app's only taskbar button) are hidden, so
+        // the feed window carries the button instead - and closing that
+        // button must exit the app the way BottomBarWindow's close does.
+        // Docked the flag is false: the old capture-stop-only close stays.
+        public bool CloseShouldExit => _detached;
+
         public void SetDetached(bool detached)
         {
             _detached = detached;
+            // Taskbar feed (revert: revert taskbar-feed): the popped-out feed
+            // is the app's taskbar presence (the bars hide while detached, so
+            // their button vanishes). Title first - the button is born
+            // labeled; ShowInTaskbar second - WPF's hide/show cycle reads the
+            // live ex-style, so the raw WS_EX_NOACTIVATE applied by
+            // ApplyDetachedPanelStyle survives (that step flips only
+            // WS_EX_APPWINDOW; the ResizeMode line below separately carries
+            // batch-6's WS_EX_WINDOWEDGE - gate-proven, predates this batch).
+            // Docked restores byte-identical: flag false + empty title keeps
+            // the panel out of the window picker's title-less skip list.
+            if (detached)
+            {
+                Title = "WunderLanguage";
+                ShowInTaskbar = true;
+            }
+            else
+            {
+                ShowInTaskbar = false;
+                Title = "";
+            }
             // Feed resize (revert: revert feed-resize): only the popped-out
             // feed may be dragged-resized - the docked panel's size is owned
             // by OnBoundsChanged (SetWindowPos against the game rect) and
@@ -320,6 +348,23 @@ namespace WunderLanguage.Host.Windows
         private const uint SWP_NOZORDER = 0x4;
         private const uint SWP_NOACTIVATE = 0x10;
 
+        // Gate-only readback (revert: revert taskbar-feed): --taskbarfeed
+        // asserts on the REAL window styles/title/visibility, not on WPF
+        // properties, so it catches a flip that "worked" in managed state
+        // but never reached the HWND.
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_APPWINDOW = 0x00040000;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+        private const int WS_EX_WINDOWEDGE = 0x00000100;
+
         // Offline gate (2026-11-12): --feedresize proves the resize contract
         // with the REAL panel: docked = NoResize, detached = CanResize, the
         // 340x220 minimums with WPF coercion, SizeChanged carrying the new
@@ -392,6 +437,98 @@ namespace WunderLanguage.Host.Windows
             finally
             {
                 try { w?.Close(); } catch { }
+            }
+            return ok;
+        }
+
+        // Offline gate (2026-11-12): --taskbarfeed proves the taskbar-feed
+        // flip on the REAL panel HWND: docked start = no taskbar flag, empty
+        // title, CloseShouldExit false; a ResizeMode provenance control pins
+        // WS_EX_WINDOWEDGE to batch-6 (not this flip); after SetDetached(true)
+        // (raw WS_EX_NOACTIVATE pre-applied like the real AppShell order
+        // 973 -> 974) the ex-style is EXACTLY pre+APPWINDOW+WINDOWEDGE,
+        // window still visible, title readable back from Win32,
+        // CloseShouldExit true; redock = byte-identical to the baseline.
+        // No emulator, no sidecar, no GPU; exit 0 only if every assertion
+        // holds. Revert: revert taskbar-feed (delete this method + the
+        // --taskbarfeed block in App.xaml.cs + the SetDetached title/taskbar
+        // flip + CloseShouldExit + the AppShell Closed-handler shutdown).
+        public static bool RunTaskbarFeedOfflineTest()
+        {
+            bool ok = true;
+            SidePanelWindow? p = null;
+            try
+            {
+                p = new SidePanelWindow();
+                p.Show();
+                Pump(250);
+                IntPtr h = new System.Windows.Interop.WindowInteropHelper(p).EnsureHandle();
+                int baseline = GetWindowLong(h, GWL_EXSTYLE);
+                bool startDocked = !p.ShowInTaskbar && string.IsNullOrEmpty(p.Title) && !p.CloseShouldExit;
+                FileLogger.Log($"[taskbarfeed] baseline ex-style 0x{baseline:X} ShowInTaskbar={p.ShowInTaskbar} title='{p.Title}' closeExits={p.CloseShouldExit} (want False/''/False)");
+                ok &= startDocked;
+
+                // Provenance control (gate 2026-11-13): WS_EX_WINDOWEDGE
+                // (0x100) rides along with ResizeMode.CanResize - batch-6's
+                // feed-resize, NOT the taskbar flip. Stage-traced both ways
+                // (CanResize adds it, NoResize clears it) and it predates
+                // this batch: batch-1's redock read 0x8080108 in production.
+                // Prove that here so the post-flip equality below is an
+                // exact, fully-attributed contract.
+                p.ResizeMode = ResizeMode.CanResize;
+                Pump(150);
+                int rc = GetWindowLong(h, GWL_EXSTYLE);
+                bool rcOn = rc == (baseline | WS_EX_WINDOWEDGE);
+                p.ResizeMode = ResizeMode.NoResize;
+                Pump(150);
+                int rd = GetWindowLong(h, GWL_EXSTYLE);
+                bool rcOff = rd == baseline;
+                FileLogger.Log($"[taskbarfeed] resize-mode control CanResize=0x{rc:X} NoResize=0x{rd:X} (baseline 0x{baseline:X}) on={rcOn} off={rcOff} (want +0x100 / byte-identical)");
+                ok &= rcOn && rcOff;
+
+                // Mirror ApplyDetachedPanelStyle: the raw WS_EX_NOACTIVATE is
+                // live BEFORE the flip, exactly like the real detach flow.
+                int pre = baseline | WS_EX_NOACTIVATE;
+                SetWindowLong(h, GWL_EXSTYLE, pre);
+
+                p.SetDetached(true);
+                Pump(250);
+                int post = GetWindowLong(h, GWL_EXSTYLE);
+                bool appWindow = (post & WS_EX_APPWINDOW) != 0;
+                bool noActivate = (post & WS_EX_NOACTIVATE) != 0;
+                // Exact: the flip may add APPWINDOW and the SetDetached
+                // ResizeMode step may add WINDOWEDGE (control-proven above) -
+                // nothing else, nothing removed. WPF's hide/show cycle reads
+                // the live ex-style, so the raw NOACTIVATE must survive whole.
+                bool exact = post == (pre | WS_EX_APPWINDOW | WS_EX_WINDOWEDGE);
+                bool visible = IsWindowVisible(h);
+                var sb = new System.Text.StringBuilder(256);
+                GetWindowText(h, sb, sb.Capacity);
+                string readback = sb.ToString();
+                bool flip = p.ShowInTaskbar && p.Title == "WunderLanguage" && p.CloseShouldExit;
+                FileLogger.Log($"[taskbarfeed] detached ex-style 0x{post:X} (want 0x{(pre | WS_EX_APPWINDOW | WS_EX_WINDOWEDGE):X}) appWindow={appWindow} noActivate={noActivate} exact={exact} visible={visible} title='{p.Title}' readback='{readback}' closeExits={p.CloseShouldExit}");
+                ok &= appWindow && noActivate && exact && visible && flip
+                      && readback == "WunderLanguage";
+
+                // Redock: mirror AppShell's RestoreDockedPanelStyle (raw bit
+                // cleared) then the flip back - must land byte-identical.
+                SetWindowLong(h, GWL_EXSTYLE, baseline);
+                p.SetDetached(false);
+                Pump(250);
+                int back = GetWindowLong(h, GWL_EXSTYLE);
+                bool restored = back == baseline && !p.ShowInTaskbar
+                                && string.IsNullOrEmpty(p.Title) && !p.CloseShouldExit;
+                FileLogger.Log($"[taskbarfeed] redocked ex-style 0x{back:X} (baseline 0x{baseline:X}) ShowInTaskbar={p.ShowInTaskbar} title='{p.Title}' closeExits={p.CloseShouldExit} (want byte-identical/False/''/False)");
+                ok &= restored;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[taskbarfeed] ERROR: {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { p?.Close(); } catch { }
             }
             return ok;
         }

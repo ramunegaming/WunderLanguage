@@ -154,6 +154,28 @@ namespace WunderLanguage.Host
                         Shutdown(visOk ? 0 : 1);
                         return;
                     }
+                    // Taskbar-feed flip offline gate (2026-11-12):
+                    // --taskbarfeed = the REAL panel HWND across the
+                    // detached/docked flip: a ResizeMode provenance control
+                    // pins WS_EX_WINDOWEDGE to batch-6, then the ex-style
+                    // after the flip must be EXACTLY pre+APPWINDOW+
+                    // WINDOWEDGE (raw WS_EX_NOACTIVATE preserved), window
+                    // stays visible, title reads back from Win32,
+                    // CloseShouldExit flips with the mode, redock lands
+                    // byte-identical. No emulator, no sidecar, no GPU;
+                    // exit 0 only if every assertion holds.
+                    // Revert: revert taskbar-feed (delete this block +
+                    // SidePanelWindow.RunTaskbarFeedOfflineTest + the
+                    // SetDetached title/taskbar flip + CloseShouldExit +
+                    // the AppShell Closed-handler shutdown).
+                    if (args[i] == "--taskbarfeed")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool tbOk = SidePanelWindow.RunTaskbarFeedOfflineTest();
+                        FileLogger.Log($"[taskbarfeed] exit ok={tbOk}");
+                        Shutdown(tbOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log
