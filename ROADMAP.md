@@ -3,13 +3,15 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## HANDOVER STATE (2026-10-26 — refreshed 2026-11-13, read this first)
+## Current state (refreshed 2026-11-13)
 
-> Checkpoint of record: **`CHECKPOINT-2026-11-13.md`** (UX wave batches 8/9/10 state, batch-10 launch-geometry root cause, next = 5-game onboarding). `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, OFFLINE COMPLETE, live gate still owed — ledgers deliberately NOT updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md` are superseded.
-> Newest ledger entries: ROADMAP tail = 2026-11-13 — batches 8 (`3c3401d` taskbar-feed) + 9 (`066cf98` auto-popout) LIVE-CONFIRMED, batch 10 (`0a4808a` popout-anchor, launch-into-fullscreen fix) offline-complete/live-owed; BOOKS tail = same date, full root-cause chains (incl. PMv2 DPI-seam proof). **NEXT = Phase 0 onboarding for the 5 R2-R4 games (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then beta/alpha release build. Live-owed: batch 10 relaunch check + batches 2/3 HDR proofs (no HDR on this box). Still open user-side: P6 shop-play signal + PM glossary EN confirmations.**
+- Checkpoint of record: `CHECKPOINT-2026-11-13.md` (local file, gitignored — batches 8/9/10 status, batch-10 root cause, next steps). Superseded: `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
+- Latest ledger entries: ROADMAP tail = 2026-11-13 — batches 8 (`3c3401d` taskbar-feed) + 9 (`066cf98` auto-popout) live-confirmed; batch 10 (`0a4808a` popout-anchor, launch-into-fullscreen fix) offline-complete, live-owed. BOOKS tail = same date, root-cause chains (incl. the PMv2 DPI-seam proof).
+- Next: Phase 0 onboarding for the five R2-R4 picks (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then the beta/alpha release build.
+- Outstanding live gates: batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine). Open items: P6 shop-play signal, PM glossary EN confirmations.
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
-- **11/11 blocks, one bubble each**, byte-identical vs user's official script
+- **11/11 blocks, one bubble each**, byte-identical vs the reference script
   (char-for-char: gap 　, … tails, only アグニム + ささげていった blocks keep 。,
   ささげられる, 消えていました, no fabricated 。 anywhere). Title posted once.
 - Both defects closed live: two-anchor (`1f2f66a`) + intro-punct (`5cafd30`).
@@ -57,23 +59,23 @@ Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — onl
 
 ## Campaign plan (2026-10-20 — session restart, the wrap order)
 
-Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, then extend the resolution matrix. Every onboard must strengthen the shared game-blind systems so untested future games inherit the gains (Scalability — never a collection of unrelated hand-tuned implementations).
+Agreed strategy: wrap Zelda, wrap FFVI, focused Paper Mario week, then extend the resolution matrix. Every onboard must strengthen the shared game-blind systems so untested future games inherit the gains (Scalability — never a collection of unrelated hand-tuned implementations).
 
 ### Immediate queue (work in this order)
-1. **✅ Z1 — Zelda intro 11/11 — DONE (live pass 2026-10-21).** Standing user demand: nothing else until it works. Two defects: **A** block 8 double-post (similarity 0.89 sits inside the 0.85–0.90 gap, both fire via script-anchored); **B** block 11 wobble twin (ささげられる vs ささばられる posted as separate lines). Fix by extending the B19 twin/wobble machinery, not by bolting on a threshold. Proof: fresh live run + screenshot; commit with revert phrase. Lesson on file: proper edit tools only — no PowerShell line-splicing on CaptureController.cs (213 build errors, reverted). **Closed: 11/11 blocks byte-identical vs official script, one bubble each, 1:1 punctuation — see HANDOVER STATE (2026-10-21).**
-2. **G1 — Debugging-workflow & hardware audit** (user-approved brief; audit first — no logger/architecture rewrites). Deliverable: prioritized improvement plan with affected files. Known breakpoint spots: CaptureController.cs 1202–1219 (scriptFresh), 1349–1392 (growth-fast/wobble-publish); main.py 1108–1130 (/ocr), 767–780 (_script_match).
+1. **✅ Z1 — Zelda intro 11/11 — DONE (live pass 2026-10-21).** Standing demand: nothing else until it works. Two defects: **A** block 8 double-post (similarity 0.89 sits inside the 0.85–0.90 gap, both fire via script-anchored); **B** block 11 wobble twin (ささげられる vs ささばられる posted as separate lines). Fix by extending the B19 twin/wobble machinery, not by bolting on a threshold. Proof: fresh live run + screenshot; commit with revert phrase. Lesson on file: proper edit tools only — no PowerShell line-splicing on CaptureController.cs (213 build errors, reverted). **Closed: 11/11 blocks byte-identical vs official script, one bubble each, 1:1 punctuation - see BOOKS session state (2026-10-21).**
+2. **G1 - Debugging-workflow & hardware audit** (approved brief; audit first — no logger/architecture rewrites). Deliverable: prioritized improvement plan with affected files. Known breakpoint spots: CaptureController.cs 1202–1219 (scriptFresh), 1349–1392 (growth-fast/wobble-publish); main.py 1108–1130 (/ocr), 767–780 (_script_match).
 3. **C1 — Category measurement pass** — ✅ **DONE 2026-10-22** (observe-only `CatStats` harness, revert: `revert catstats`; artifact `gate\catstats_c1_v3.log`): 431 corpora / 45,369 lines through the REAL pipeline offline, two truth levels (sim attempts = pre-guard; publish-truth = stamped live bubbles joined to sampled frame state). Frame census: 88.9% in-game, 7.0% transient menu-shaped (crawls), 3.1% stable menu, 0.86% battle-shaped. Attempts: 8.1% of dialogue fires land on non-ingame frames; the live funnel absorbs nearly all where a bolt-on exists (FFVI 220→1) but has none elsewhere (Zelda 18→14). Publish truth: 16/563 flagged (2.8%), ALL flagged corpora content-spot-checked → **real junk = menu garbage, 3–4 instances, a UNIVERSAL class** (Zelda save-menu rows, FFVI magic-menu spell lists, PM date-screen garbage ≈0.6% of stamped publishes) + **14 battle flags were FALSE POSITIVES** (correct dialogue on date-stamped text screens — BattleFrame.Classify misreads non-FFVI layouts). **DECISION: Option 1 (display tagging)** + evidence-triggered guards stay; no universal routing layer (see watch item). C2 = the menu-garbage class fix.
 4. **C2 — Menu-garbage class fix** — ✅ **DONE 2026-10-22** (live gate evaluated on the 20:25–20:35 run — verdict at end of item; revert: `revert c2-menu-hold`): single-choke hold inside `PublishDecisionAsync` (post sim-record, pre-RecordFire, live-only) withholds dialogue fires whose candidate matches the STABLE menu's rows (`HeldByStableMenu`: same-frame OCR identity via equality/fragment/merged-rows containment, length floors ≥4/≥8); omission-only, candidate stays (fires later or dies by staleness = delayed label, never a suppressed line); transient menu-shaped text (crawls) and updates untouched. Gates: replay A/B ZERO DELTA (stash/pop, identical extraction) + catstats full-sweep A/B ZERO DELTA on all 431 corpora + SUMMARY. **Part-2 RE-SCOPED** (evidence-based): loosening BattleFrame would ship C1's convicted false-positive class into a routing path — instead an observe-only probe (`bFfviProbe` = Classify with FFVI labels on non-FFVI corpora): 102 loops total, all in real-battle Zelda sessions (59/23), universal ≈ boundary frames — label-free shape detection stays future work, must pass the Zelda date-screen test. Named residual: cursor-moving menus stay transient (unheld) → F2x/tier-2. **Live gate verdict (2026-10-22 run): outcome criteria MET** — zero dialogue bubbles of stable-menu rows (GAME OVER/save, inventory, PLAYER SELECT), MENU mints unchanged, dialogue fired after menus; the specific `[publish] menu-hold` line never appeared because upstream guards pre-empted every instance (subpart-suppressed on the save rows) = hold is an unengaged backstop, first-fire evidence still unobserved. C2 = CLOSED with that note.
-5. **T3 — Boot-title fastpath** — ✅ **CODED + OFFLINE-GATED 2026-10-22** (live gate owed; revert: `revert title-fastpath`): first-visit title post failed because the episode detector needs 3 evidence loops and the boot logo window offered ≤2 settled reads before the game's own **auto-advance timer** moved on (user correction 2026-10-22: title→intro is automatic, not user-driven — the window is game-determined and identical for every player; full root-cause chain in BOOKS T3+C3 entry; NOT pack lag — the window-title heal ran 1s after the logo appeared)). One settled block containing the full TitleNorm'd pack title (bn ⊇ pn, or the unvoiced variant) now accelerates `_titleEpisodeHits` straight to the publish threshold; the veto block is unchanged; Latin titles stay inert behind HasJapanese; T2-mined justification (0 false matches in 3,632 dialogue reads). Offline-inert by construction (title path does not run in replay/catstats — measured) → the live gate is the only gate: cold boot must post the title on the FIRST visit even at the game's own auto-advance speed (no input — the title→intro transition is a timer); return visits still exactly one post per visit.
+5. **T3 — Boot-title fastpath** — ✅ **CODED + OFFLINE-GATED 2026-10-22** (live gate owed; revert: `revert title-fastpath`): first-visit title post failed because the episode detector needs 3 evidence loops and the boot logo window offered ≤2 settled reads before the game's own **auto-advance timer** moved on (corrected 2026-10-22: title→intro is automatic, not player-driven — the window is game-determined and identical for every player; full root-cause chain in BOOKS T3+C3 entry; NOT pack lag — the window-title heal ran 1s after the logo appeared)). One settled block containing the full TitleNorm'd pack title (bn ⊇ pn, or the unvoiced variant) now accelerates `_titleEpisodeHits` straight to the publish threshold; the veto block is unchanged; Latin titles stay inert behind HasJapanese; T2-mined justification (0 false matches in 3,632 dialogue reads). Offline-inert by construction (title path does not run in replay/catstats — measured) → the live gate is the only gate: cold boot must post the title on the FIRST visit even at the game's own auto-advance speed (no input — the title→intro transition is a timer); return visits still exactly one post per visit.
 6. **C3 — Overlay readback run-guard** — ✅ **CODED + OFFLINE-GATED 2026-10-22** (live gate owed; revert: `revert readback-run-guard`): 4-of-4 flagged "hallucination" posts were the overlay re-reading its own recent posts with mutated edges (the feed renders inside the capture region; every pre-existing dupe rule is head-anchored and the fire history is capped at 8 fires/10 loops — a middle-run mutation older than 10 loops leaked everything). Fix = `_postedTexts` long-horizon store (RecordFire, 400-loop horizon/cap 200, B19's cap-8/window-10 untouched) + one rule at the `FireHistoryCovers` tail: contiguous shared run ≥8 chars at ANY position parks pre-translate; strict growth (incoming containing shown) and exact/superset re-shows exempt. Gate: catstats full-sweep A/B base 108 → 615 parks — **all 321 unique new-parked texts audited line-by-line = duplicate/wobble/merge/battle-command/party-row/item-menu re-reads of content already shown, zero clean first-time dialogue lines**. Replay delta=0 proves fixup-path neutrality only (the replay harness runs extraction, measured caveat on file). Live gate: a replayed session must show zero overlay re-reads ([publish] history-parked lines carry the class) with no real dialogue missing.
-7. **D1 — DECISIONS category (user item 2)** — **CODED + OFFLINE-GATED 2026-10-23; first live session evaluated + D-SUB sub-line fix + D2 era-tiering in (revert: `revert d1-decisions`, `revert decision-sublines`, `revert decision-tiering`)**. C1 Option-1 display tagging applies (tag at display, no routing/suppression change). Root causes from the 6 troubleshoot fixtures (now in `Roaming\WunderLanguage\troubleshoot\`, forensics in BOOKS D1 entry): the `<3 blocks` gate dropped 2-block decision frames; tall cls-mirror blocks arrive BOTH Y-grouped and re-attached, so ？-bearing merged text landed in the options bucket and the question check rejected the box (killed the shop); the builder hard-required ？-plus-options shape; OCR flattens multi-line boxes into one block (unsplittable without sub-line geometry). Final design — all universal structure, no per-game strings: tall-block contract (tall JA blocks appear exactly once as their own row); decision check runs FIRST (`decHit` gates the two fragment gates); ？-echo pieces SKIPped + `options.Distinct()`; options-only branch for no-？pickers (`texts.Count` 3–4, length-spread <2x, sentence punctuation rejected); question gates = length ≤20, no speaker bracket 「 (prompt uses 『 in the one real quoted prompt), no space (a prompt is one unbroken phrase — also catches the detached-？battle rows); option-nature gate (must be hiragana-bearing, pure digit, or bracket-led — else it is a name cell like ウェッジビックス). Sweep ladder on the 433-corpus `--catstats` A/B: 186 → 120 → 41 → 23 → **13 mints = 9/9 real fixtures** (raft, crossroads, status, party, save-point ×2, explain, PLAYER SELECT, gambler) **+ 4 named FPs** (Zelda hermit Q + hiragana callout; label-only under the safety valve). Base A/B (base = `5c95072`): all 8 base DECISION mints identified via publish-context as battle/name-pair FPs (4 of them NRE immediately after — the pre-existing `[menu] ERROR` class, 391 in both C3 logs); zero real decisions lost; MENU 301→300 = two FFVI MENU(3)→DECISION swaps with content intact + Zelda hermit re-shaping; TITLE 16=16, gameover 17=17. Named residuals: shop `かう` sits on a chest sprite so the detector never fires a clean box (mints Q + `いらない` until the detector keeps the line); hermit 4 FP; flattened no-？pickers stay MENU by design (2-row no-question). **First live session 2026-10-23 03:36–03:48 (cold boot + decisions route): D1 minted live (DECISION tag + rows at 03:46:54) but short — the merged box dropped `逃げだす`, and the picker posted IN-GAME TEXT → root cause = chain-merged multi-line block + single-line recognizer; D-SUB (revert `revert decision-sublines`) recs detector sub-boxes for question-bearing n≥2 h≥40 blocks and ships per-line `lines`; gambler frame test recovered all 3 rows; sweep A/B: 433 pre-session corpora byte-identical (12 distinct row-sets = v5), delta = the 2 new corpora from the session itself; corpora schema strips `lines` → sub-line path is live-only verified (caveat on file).** T3 **CLOSED** (title posted on first visit 03:37:34.997, exactly one post per visit ×3 visits) + C3 **CLOSED** (4 history-parked intro re-reads, zero re-posts, no dialogue missing, 0 errors) from the same session's log. D1 live gate remaining: gambler DECISION with BOTH options + shop DECISION tag, dialogue path byte-identical. **D2 decision tiering (2026-10-23, user-raised scaling hole: the absolute caps are SNES-era-calibrated and would degrade verbose modern prompts; brainstormed constraint = no new detector, structure-only):** ？-tail prompt gate on sub-line-sourced question rows (must END with ？ — mid-？ dialogue rows die at any length; merged/replay rows keep the lenient first-？ split) + question/option caps tiered on option-cluster strength (strong = ≥2 judgeable options each ≤ prompt length → 40/16; weak → exact 20/12). Sweep A/B on all 435 corpora: base == r1 == r2, DECISION=14, byte-count identical — zero delta by design (no SNES prompt >17; no FP carries a strong cluster; tail gate dormant on replay via the schema caveat above). The bundle buys future-path (long modern prompt + real choice column mints) paid for by live strictness. Live gate with D1 pass 2.
+7. **D1 - DECISIONS category (agreed item 2)** — **CODED + OFFLINE-GATED 2026-10-23; first live session evaluated + D-SUB sub-line fix + D2 era-tiering in (revert: `revert d1-decisions`, `revert decision-sublines`, `revert decision-tiering`)**. C1 Option-1 display tagging applies (tag at display, no routing/suppression change). Root causes from the 6 troubleshoot fixtures (now in `Roaming\WunderLanguage\troubleshoot\`, forensics in BOOKS D1 entry): the `<3 blocks` gate dropped 2-block decision frames; tall cls-mirror blocks arrive BOTH Y-grouped and re-attached, so ？-bearing merged text landed in the options bucket and the question check rejected the box (killed the shop); the builder hard-required ？-plus-options shape; OCR flattens multi-line boxes into one block (unsplittable without sub-line geometry). Final design — all universal structure, no per-game strings: tall-block contract (tall JA blocks appear exactly once as their own row); decision check runs FIRST (`decHit` gates the two fragment gates); ？-echo pieces SKIPped + `options.Distinct()`; options-only branch for no-？pickers (`texts.Count` 3–4, length-spread <2x, sentence punctuation rejected); question gates = length ≤20, no speaker bracket 「 (prompt uses 『 in the one real quoted prompt), no space (a prompt is one unbroken phrase — also catches the detached-？battle rows); option-nature gate (must be hiragana-bearing, pure digit, or bracket-led — else it is a name cell like ウェッジビックス). Sweep ladder on the 433-corpus `--catstats` A/B: 186 → 120 → 41 → 23 → **13 mints = 9/9 real fixtures** (raft, crossroads, status, party, save-point ×2, explain, PLAYER SELECT, gambler) **+ 4 named FPs** (Zelda hermit Q + hiragana callout; label-only under the safety valve). Base A/B (base = `5c95072`): all 8 base DECISION mints identified via publish-context as battle/name-pair FPs (4 of them NRE immediately after — the pre-existing `[menu] ERROR` class, 391 in both C3 logs); zero real decisions lost; MENU 301→300 = two FFVI MENU(3)→DECISION swaps with content intact + Zelda hermit re-shaping; TITLE 16=16, gameover 17=17. Named residuals: shop `かう` sits on a chest sprite so the detector never fires a clean box (mints Q + `いらない` until the detector keeps the line); hermit 4 FP; flattened no-？pickers stay MENU by design (2-row no-question). **First live session 2026-10-23 03:36–03:48 (cold boot + decisions route): D1 minted live (DECISION tag + rows at 03:46:54) but short — the merged box dropped `逃げだす`, and the picker posted IN-GAME TEXT → root cause = chain-merged multi-line block + single-line recognizer; D-SUB (revert `revert decision-sublines`) recs detector sub-boxes for question-bearing n≥2 h≥40 blocks and ships per-line `lines`; gambler frame test recovered all 3 rows; sweep A/B: 433 pre-session corpora byte-identical (12 distinct row-sets = v5), delta = the 2 new corpora from the session itself; corpora schema strips `lines` → sub-line path is live-only verified (caveat on file).** T3 **CLOSED** (title posted on first visit 03:37:34.997, exactly one post per visit ×3 visits) + C3 **CLOSED** (4 history-parked intro re-reads, zero re-posts, no dialogue missing, 0 errors) from the same session's log. D1 live gate remaining: gambler DECISION with BOTH options + shop DECISION tag, dialogue path byte-identical. **D2 decision tiering (2026-10-23, scaling hole raised in review: the absolute caps are SNES-era-calibrated and would degrade verbose modern prompts; constraint: no new detector, structure-only):** ？-tail prompt gate on sub-line-sourced question rows (must END with ？ — mid-？ dialogue rows die at any length; merged/replay rows keep the lenient first-？ split) + question/option caps tiered on option-cluster strength (strong = ≥2 judgeable options each ≤ prompt length → 40/16; weak → exact 20/12). Sweep A/B on all 435 corpora: base == r1 == r2, DECISION=14, byte-count identical — zero delta by design (no SNES prompt >17; no FP carries a strong cluster; tail gate dormant on replay via the schema caveat above). The bundle buys future-path (long modern prompt + real choice column mints) paid for by live strictness. Live gate with D1 pass 2.
 8. **CAT reliability — translator crash class HARDENED 2026-10-23 (revert: `revert cat-reliability`; fix lives in the PARKED uncommitted files `SidecarProcessManager.cs` + `AppShell.cs` per W1b protocol — a checkout of those files drops it)**. The 09:18 live session posted only the title: the CAT translator sidecar segfaulted (0xC0000005, the 2026-10-14/10-17 "4-bit weight load" family in cross-process form — load window overlapping OCR model load + emulator) 4× inside a ~105s window, the 3×25s retry budget burned inside it, and exhaustion was silently log-only. Detection was healthy all session (9 `[sublines]` events incl. the gambler live split さあ、どうする？ | しょうぶする | 逃げだす — **first live D-SUB proof**). Fixes: `HF_HUB_DISABLE_MMAP=1` on the CAT spawn (the segfault mechanism, documented Windows mitigation), CAT restart backoff 10s/60s/240s, and the terminal panel notice now fires for CAT exhaustion too with role wording (the "fallback covers" assumption is false for the Offline provider). Gates: GREEN; mmap-off load ready (weights 14.5s); induced-death spacing measured ~12s/~62s. Live gate owed: next session translates normally; no silent dead sessions.
   - **2026-10-23 pm — crash-diag logger + Windows event-log forensics** (revert: `revert crash-diag-logger`; same parked/uncommitted files). Read the Application log for the first time: **56 python crash events in 7 days (10-16 x2, 10-17 x46 storm, 10-19 x2, 10-23 x6), 56 of 56 at a fixed instruction** — 55x `torch_cpu.dll+0x8e4a279` + 1x `c10.dll+0x90514`, all `0xC0000005` → the class is 8 days old, deterministic, and streaky (the 4 quiet days were state, not the 10-23 fixes; venv/driver/torch all unchanged). Death forensics now embed the fault event (module/offset), a system memory snapshot, and a 1s python RAM/commit/VRAM timeline — the next AV death answers "pressure or deterministic?" by itself. 6 minidumps preserved for exact-function analysis. Details + gates: BOOKS CRASH-DIAG entry.
 
 ### Campaign phases (after the immediate queue)
-- **Z2 — Zelda wrap: inventory menu.** Parked until T3/C3 gates + D1 close (user directive 2026-10-22: "park this until after we wrap up the other 3 things"). Menu routing has burned us before (B19 MENU attempt reverted) — evidence-first, small gated steps. **Design spec on file (user, 2026-10-22; SVG: `D:\Wunderlanguage\zelda-inventory-mockup.svg`, original `Downloads\ui SVG\Zelda inventory screen.svg`):** the inventory translation feed = 5 fixed boxes — top-left empty, **top-right = item name, the ONLY text that changes with selection**, bottom-left = action words (static — "what you can do", not selectable), middle-right = static non-changing text, bottom-right = "EQUIPTMENT" (already English). Box art/sprites = nothing to translate, render blank. Engine implication: the inventory feed view needs exactly ONE extracted field (the selected item name); the other four boxes are fixed chrome.
+- **Z2 - Zelda wrap: inventory menu.** Parked until T3/C3 gates + D1 close (directive 2026-10-22: park until the other 3 tracks wrap). Menu routing has regressed before (B19 MENU attempt reverted) - evidence-first, small gated steps. **Design spec on file (2026-10-22; SVG: `D:\Wunderlanguage\zelda-inventory-mockup.svg`, original `Downloads\ui SVG\Zelda inventory screen.svg`):** the inventory translation feed = 5 fixed boxes — top-left empty, **top-right = item name, the ONLY text that changes with selection**, bottom-left = action words (static — "what you can do", not selectable), middle-right = static non-changing text, bottom-right = "EQUIPTMENT" (already English). Box art/sprites = nothing to translate, render blank. Engine implication: the inventory feed view needs exactly ONE extracted field (the selected item name); the other four boxes are fixed chrome.
 - **F2x — FFVI wrap arc:** title, intro all blocks, first town (most/all text), battle UI (F1 exists — validate), shop UI (P6, blocked on shop-play signal), inventory UI.
-- **PM1 — Paper Mario focused week:** intro stability, title posting, inventory, menus. User plays; no alt-tab; our Shot button; collects N1–N6 proofs.
+- **PM1 - Paper Mario focused week:** intro stability, title posting, inventory, menus. Played live; no alt-tab; in-app Shot button; collects N1-N6 proofs.
 - **R1–R4 — Resolution matrix, 2 games per generation:**
   - R1 240p: Zelda + FFVI (both onboarded ✓)
   - R2 480p: Paper Mario + **Okami** (PICKED 2026-10-29)
@@ -83,7 +85,7 @@ Strategy agreed with the user: wrap Zelda, wrap FFVI, focused Paper Mario week, 
 
 ### Feed categories (agreed 2026-10-20)
 Five exclusive categories for the translation feed: **Title** (title screens only) · **In-game text** (NPC dialogue, signs — the default) · **Decisions** (option lists with selector arrow/finger) · **MENU** (inventory, save select, game over, map, pause, main menu) · **BATTLE** (battle screens, JRPG-flavored — command windows, status, FFVI the model case).
-Current reality: Title works and is gated; In-game is the solid default; Battle is an FFVI-only bolt-on; Menu is fragile; Decisions does not exist. Untested games leak menu/battle junk through the default path — that is the mass-release hole C1/C2 target. Safety-valve design rule: **default to in-game; route away only on strong evidence; misclassification costs a label, never a suppressed line.** C1 measured (2026-10-22): the hole is NOT a flood (universal publish-truth junk = 0/15 stamped; attempt-level 2.7%) — the real class is menu garbage, rare (~0.6% content-verified) but hits EVERY game (Zelda/FFVI/PM), and battle-shape routing would over-suppress (14 correct publishes flagged). Decision: Option 1, C2 fixes the class — C2 coded + offline-gated 2026-10-22 (single-choke menu-row hold in PublishDecisionAsync; zero-delta A/B on replay + catstats). **2026-10-22 evening: C2 CLOSED** (live outcome met — zero menu-row dialogue bubbles across a multi-menu session; hold = unengaged backstop); **T3 (title fastpath) + C3 (overlay readback guard) coded + offline-gated** after the user's live run exposed the first-visit title failure and the overlay self-readback class (root causes in BOOKS T3+C3 entry); their live gates are owed; **D1 (decisions) = next build**.
+Current reality: Title works and is gated; In-game is the solid default; Battle is an FFVI-only bolt-on; Menu is fragile; Decisions does not exist. Untested games leak menu/battle junk through the default path — that is the mass-release hole C1/C2 target. Safety-valve design rule: **default to in-game; route away only on strong evidence; misclassification costs a label, never a suppressed line.** C1 measured (2026-10-22): the hole is NOT a flood (universal publish-truth junk = 0/15 stamped; attempt-level 2.7%) — the real class is menu garbage, rare (~0.6% content-verified) but hits EVERY game (Zelda/FFVI/PM), and battle-shape routing would over-suppress (14 correct publishes flagged). Decision: Option 1, C2 fixes the class — C2 coded + offline-gated 2026-10-22 (single-choke menu-row hold in PublishDecisionAsync; zero-delta A/B on replay + catstats). **2026-10-22 evening: C2 CLOSED** (live outcome met — zero menu-row dialogue bubbles across a multi-menu session; hold = unengaged backstop); **T3 (title fastpath) + C3 (overlay readback guard) coded + offline-gated** after a live run exposed the first-visit title failure and the overlay self-readback class (root causes in BOOKS T3+C3 entry); their live gates are owed; **D1 (decisions) = next build**.
 
 ## Complete
 
@@ -214,16 +216,16 @@ Pre-existing (stash-proven, not a regression). Investigate when profiling time c
 Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/titles/name-entry/singleton-glimpse (B10-T2, B12, title/menu/battle paths). Queued, unmeasured: fading text, moving/animated text + transient notifications (damage numbers, pickups), per-line replacement, timed-vs-advance-controlled distinction. Each needs a priced miss set before any build.
 
 ## Open questions (restored 2026-10-15 - blocks FFVI names work until answered)
-- Mash memo policy: **RESOLVED + EXECUTED 2026-10-29 = expired to empty** (user confirmed "Expire now"; `expire_memo.py` wiped the 9 pairs → 0, provider field preserved for relearn). Evidence: memo/ffvi.json = 9 pairs / 538 B, written 2026-10-13 under provider "DeepL (unreliable-offline fallback)"; entries include garble-key junk ('ただから'→"Just Because" — a garble of たたかう=Fight, which the same memo also holds correctly) and dialogue leaking into battle-name rows ('またな。'→"See you later."). The provider guard keeps the file inert while the primary provider is active, but it would serve junk in any future fallback window; fast-track keeps the bad keys; expire = one 9-entry relearn against a permanent correctness risk, and matches the Loop-3 "deliberately unseeded memo" doctrine (relearns live, cap 200).
+- Mash memo policy: **RESOLVED + EXECUTED 2026-10-29 = expired to empty** (decision: expire now; `expire_memo.py` wiped the 9 pairs → 0, provider field preserved for relearn). Evidence: memo/ffvi.json = 9 pairs / 538 B, written 2026-10-13 under provider "DeepL (unreliable-offline fallback)"; entries include garble-key junk ('ただから'→"Just Because" — a garble of たたかう=Fight, which the same memo also holds correctly) and dialogue leaking into battle-name rows ('またな。'→"See you later."). The provider guard keeps the file inert while the primary provider is active, but it would serve junk in any future fallback window; fast-track keeps the bad keys; expire = one 9-entry relearn against a permanent correctness risk, and matches the Loop-3 "deliberately unseeded memo" doctrine (relearns live, cap 200).
 - Wedge/Biggs official English forms: **RESOLVED 2026-10-29 → "Biggs" / "Wedge"** (Matthew precedent: manual wins — the 2026-10-09 pin rule is literally "manual differs from Woolsey, manual wins", and Vicks IS the Woolsey form). Evidence: ウェッジ = "Wedge" in every official source; ビックス = "Vicks" only in the 1994 Woolsey NA localization (SNES script + official Player's Guide), "Biggs" in every official re-release since (incl. the official FFVI Advance EN manual) and in Japanese materials that use English text; series canon = Star Wars Biggs Darklighter/Wedge Antilles (FFVI is the sole game spelling it ビックス). Not yet pinned in code (BOOKS: "absent from manual pages — no source") — sources cited here; pin ready when FFVI names work resumes.
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
 - P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done — **RESOLVED 2026-10-28: declare done, moved to P3** (recommended option; 0/0 truth-set evidence never convicted the re-OCR build).
-- Resolution matrix picks: **RESOLVED 2026-10-29 (user) → R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** — matrix complete, next-game onboarding unblocked.
+- Resolution matrix picks: **RESOLVED 2026-10-29 (agreed) → R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** — matrix complete, next-game onboarding unblocked.
 - Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
 - Watch items: two crash-truncated corpus gzips (Snes9x_1.60_20261019_035824 + one Zelda_no_Densetsu tail file; scanners skip them cleanly, not blocking); one orphaned PM miner file under pre-paren versioned id (negligible — but see P4(5): it can defeat the ≥2-file promotion gate if an identical pair lands in both PM files); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
 
-## SCALING DOCTRINE (standing policy, 2026-10-22, user-set)
+## SCALING DOCTRINE (standing policy, 2026-10-22)
 Two tiers: (1) THE FLOOR - a universal game-blind core strong enough that
 UNSEEN games work out of the box; this is where effort goes by default.
 (2) THE SEAL - gradually certified playtested games (guaranteed list at
@@ -234,14 +236,14 @@ LEARNING mechanism - prefer strengthening mined corrections / gates /
 thresholds so the system learns per-game (ML direction) over hand rules;
 (3) PACK DATA - static pairs only inside a pack, seal-tier games only,
 never engine logic keyed on a game name; (4) ONE-OFF ENGINE BRANCH -
-forbidden without explicit user sign-off. Verification substitute for
+forbidden without explicit sign-off. Verification substitute for
 "can't playtest every game": every engine fix runs the merged-corpus
 replay A/B (all recorded games at once); unseen games have no corpora,
 which is exactly why their fixes must be class-level. Zelda/FFVI fixup
 accumulation = legacy bootstrapping; STOP adding new per-game fixups by
-default (user directive 2026-10-22).
+default (directive 2026-10-22).
 
-CONTINUOUS STRENGTHENING (user, 2026-10-22): knowledge COMPOUNDS - every
+CONTINUOUS STRENGTHENING (2026-10-22): knowledge COMPOUNDS - every
 onboarded game is a training session for the WHOLE system; older games
 must get stronger as new ones onboard (new words, error patterns,
 structure). Reference implementation already live: Loop 1 compounding
@@ -272,9 +274,9 @@ chasing that phantom - remaining unknown = round-4 launch-1 silent death
 delta across 429 corpora; bare pair 消えていきました Zelda-pack-scoped =
 no live cross-game exposure). Live gate PASSED 2026-10-22: title posted
 before + after intro, all intro blocks posted, healthy-path behavior
-byte-compatible with round-7. NEXT (2026-10-22 evening update): C2 live gate evaluated on the 20:25–20:35 run = **outcome MET** (zero menu-row dialogue bubbles; the hold was pre-empted by upstream guards every instance) → **C2 CLOSED**; same evening, the user's run exposed two defects whose root causes are on file in the BOOKS T3+C3 entry — the first-visit title failure (**T3** fastpath, revert `revert title-fastpath`) and four overlay self-readback "hallucinations" (**C3** run-guard, revert `revert readback-run-guard`) — both coded + offline-gated (catstats A/B, 321 audited parks), commits this file. Live gates owed: (T3) cold boot — no input needed, the title→intro transition is the game's own timer — must post the title on the first visit; (C3) zero overlay re-reads with no real dialogue missing. Build work while awaiting that play session: **D1 decisions**.
+byte-compatible with round-7. NEXT (2026-10-22 evening update): C2 live gate evaluated on the 20:25–20:35 run = **outcome MET** (zero menu-row dialogue bubbles; the hold was pre-empted by upstream guards every instance) → **C2 CLOSED**; same evening, a live run exposed two defects whose root causes are on file in the BOOKS T3+C3 entry — the first-visit title failure (**T3** fastpath, revert `revert title-fastpath`) and four overlay self-readback "hallucinations" (**C3** run-guard, revert `revert readback-run-guard`) — both coded + offline-gated (catstats A/B, 321 audited parks), commits this file. Live gates owed: (T3) cold boot — no input needed, the title→intro transition is the game's own timer — must post the title on the first visit; (C3) zero overlay re-reads with no real dialogue missing. Build work while awaiting that play session: **D1 decisions**.
 
-- **2026-10-23 pm — error-code feed** (revert: `revert error-codes`; parked/uncommitted batch + new `Diagnostics/ErrorCodes.cs`): ONE central registry (code -> chip line + detailed What-happened/What-to-do popup) so chip and popup wording can never drift; ONE amber chip per session updated in place, clickable (popup, no focus steal). E1 = CAT load-window death (retrying burst now visible instead of silent), E2/E3 = budget exhaustion (EngineDown now carries the code, role resolves in the manager), E4 = window lost (chip REPLACES the blocking MessageBox — flagged to user), pending-signal replay closes the fired-before-Connect hole (one-shot errors used to be lost forever; healthy restart of the same role clears the pending code). E5/E6 registry-ready, unwired: need a VRAM reading (nvidia-smi pressure tick is the likely hook) and a provider-health probe. Gated: `--errortest` 8/8 incl. real-click popup + visual-tree PNG dumps (coordinate screenshots/clicks banned — user's emulator was live behind the test panel), real-host E1 emission + pending clear. Details: BOOKS ERROR-CODE FEED entry.
+- **2026-10-23 pm — error-code feed** (revert: `revert error-codes`; parked/uncommitted batch + new `Diagnostics/ErrorCodes.cs`): ONE central registry (code -> chip line + detailed What-happened/What-to-do popup) so chip and popup wording can never drift; ONE amber chip per session updated in place, clickable (popup, no focus steal). E1 = CAT load-window death (retrying burst now visible instead of silent), E2/E3 = budget exhaustion (EngineDown now carries the code, role resolves in the manager), E4 = window lost (chip REPLACES the blocking MessageBox - surfaced to the player), pending-signal replay closes the fired-before-Connect hole (one-shot errors used to be lost forever; healthy restart of the same role clears the pending code). E5/E6 registry-ready, unwired: need a VRAM reading (nvidia-smi pressure tick is the likely hook) and a provider-health probe. Gated: `--errortest` 8/8 incl. real-click popup + visual-tree PNG dumps (coordinate screenshots/clicks banned - the emulator was live behind the test panel), real-host E1 emission + pending clear. Details: BOOKS ERROR-CODE FEED entry.
 
 2026-10-24 - every-block-post batch landed (code uncommitted, build
 pending): dwell-sight1 + salvage-starved (starvation class dead:
@@ -303,7 +305,7 @@ revert decision-echo-split, revert jp-first.
 
 2026-10-26 - F1-F4 occlusion/miss/decision batch (committed this date).
 Post-run forensics on the 2026-10-24 10:29-10:43 run closed all three
-user complaint classes with evidence: (a) phantom posts = CAPTURE
+reported complaint classes with evidence: (a) phantom posts = CAPTURE
 OCCLUSION - the hot path bitblts the SCREEN at the game rect, a
 persistent foreign window (webpage/video, cross-game, recurring since
 2026-10-07) covered it for ~45s while focus still read emulator; (b) the
@@ -468,7 +470,7 @@ variance - matcher artifact, not an engine miss).
      classes it dictionary/beam - P2 already priced that surface at 0
      corrections. Vision class, no engine build.
   c. 184850_950 - FFVI intro-crawl never OCRs (fast auto-advance):
-     the known READ-limited class (user speed, not engine); live gate.
+     the known READ-limited class (reading speed, not engine); live gate.
 
 (4) False-pub rows = phantom family, SOURCE SOLVED. The phantom
 ('外国よりうつわをみつけたパートのレベルが１つあがった トのうつわをみつけた' and
@@ -619,12 +621,12 @@ Data note: 2 corpus gzips are crash-truncated (Snes9x_1.60_20261019_
 035824, a Zelda_no_Densetsu tail file) - scanners skip them cleanly;
 watch item updated from one to two files.
 
-2026-10-30 - bulk live session EXECUTED (5 legs, user-played; keep-log.armed
+2026-10-30 - bulk live session EXECUTED (5 legs, played live; keep-log.armed
 validated across all 5 launches; R2-R4 matrix locked: Okami / NieR+KH3D /
 Yakuza 0; mash memo expired 9->0). Full evidence + three silent-death root
 causes in BOOKS tail "2026-10-30 BULK LIVE SESSION". Outcomes: B1/B2 titles
 NOT MET (latin-logo titles cannot fire CheckTitleEpisode - HasJapanese gate;
-user spec: title text only, flashing start line excluded), B3 FFVI wrap died
+spec: title text only, flashing start line excluded), B3 FFVI wrap died
 mid-leg on sidecar accept-loop death (OCR connection-refused x120, no chip),
 B4 PM froze on translation circuit-open loop-hold (83/115 holds, pending EN
 never retried, no chip), B5 Zelda = TITLE + DECISION posted, phantom probes
@@ -632,14 +634,14 @@ dead, B16b unmet, B6 Z2 5-box PASS + v2 spec. NEXT BUILD QUEUE (offline-
 verifiable, evidence-first): (1) Z2 v2 - bottle tall-box merge + EN mirror
 grid (corpus rows already harvested); (2) transport-death E-code surface +
 sidecar restart watchdog (silent class 1); (3) circuit-open chip +
-capture-continue + pending-EN late retry (user directive, silent class 2);
+capture-continue + pending-EN late retry (directive, silent class 2);
 (4) latin-title path PRICED over harvested title frames before any build
 (silent class 3 - HasJapanese gate is deliberate, price first). Watch item:
 THIRD crash-truncated corpus gzip (Zelda_20261030_142705, taskkill /F
 finalizes nothing) - harvest/validate corpus BEFORE any forced kill.
 
 2026-11-12 - LEDGER CATCH-UP: UX wave batches 1-7 + cat_service tracking +
-commit-precheck all live-confirmed (user session 15:25:48-15:27:37 +
+commit-precheck all live-confirmed (live session 15:25:48-15:27:37 +
 explicit confirmation of the b4/b5/b6 checks; root-cause chain in BOOKS
 tail). Nine commits, gates green each:
 - `20d7768` batch 1 pop-out feed (revert: revert popout-feed) - detached
@@ -648,13 +650,13 @@ tail). Nine commits, gates green each:
   flips correct).
 - `676ce65` batch 2 HDR detection (revert: revert hdr-detect) -
   advanced-color query + sustained-blank probe -> E9 chip; OFFLINE-GATED,
-  live proof still owed (no HDR on this box - friend's machine).
+  live proof still owed (no HDR on this machine; deferred to an HDR-capable display).
 - `9dc398b` batch 3 capture-swap (revert: revert capture-swap) -
   PrintWindow adopt when BitBlt returns a degenerate frame; engage/miss
   arm live-owed with the same HDR proof.
 - `dd5c404` batch 4 calib-cover (revert: revert calib-cover) - raw PMv2
-  virtual screen + <=3-pass measure-and-correct overlay; LIVE PASS: user
-  re-dragged to the true screen bottom and the overlay lands right
+  virtual screen + <=3-pass measure-and-correct overlay; LIVE PASS:
+  calibration window was re-dragged to the true screen bottom and the overlay lands right
   (pass=2 converged scale=1.250x1.250 - fixed the stale 1.50 ctor scale).
 - `c3dd833` batch 5 feed-defer (revert: revert feed-defer) - 1s
   post-movement Settings save debounce + 4Hz opacity; LIVE PASS: no
@@ -687,8 +689,8 @@ taskbar first; then Phase 0 onboarding for the five R2-R4 picks (Okami /
 NieR Replicant / KH3D / Persona 5 / Yakuza 0), then the beta/alpha
 release build.
 
-2026-11-13 - UX wave batches 8, 9, 10 committed; 8+9 LIVE-CONFIRMED,
-10 offline-complete (live-owed with the next session). Three commits,
+2026-11-13 - UX wave batches 8, 9, 10 committed; 8+9 live-confirmed,
+10 offline-complete (live gate owed with the next session). Three commits,
 gates green each, catstats A/B PER-CORPUS IDENTICAL each (466 common,
 0 changed -> zero dialogue losses):
 - `3c3401d` batch 8 taskbar-feed (revert: revert taskbar-feed) - the
@@ -700,28 +702,27 @@ gates green each, catstats A/B PER-CORPUS IDENTICAL each (466 common,
   onlyBitDiffers, stage-traced BEFORE touching the assertion - the flip
   adds EXACTLY WS_EX_APPWINDOW (0x8080000 -> 0x80C0000), the stray
   0x100 is batch-6's ResizeMode.CanResize WS_EX_WINDOWEDGE (corroborated
-  by production 0x8080108 redock read predating this batch). LIVE
-  CONFIRMED (user 2026-11-13: "seems to work fine great").
+  by production 0x8080108 redock read predating this batch). Live-confirmed
+  2026-11-13 (taskbar button + close-exits behavior as designed).
 - `066cf98` batch 9 auto-popout (revert: revert auto-popout) -
   coverage edge + docked -> auto-pop via the existing SetDetached (auto
   flag, persist:false so transients never write settings); edge cleared
   + auto-popped -> auto-redock; manual pop never yanked, manual dock
   holds until the next edge (edges only, never mid-state). Pure policy
   AutoDetachForCoverage + flag NextAutoFlag; gate --autopopout truth
-  table 6/6, flag table 4/4, sequences S1-S4. LIVE CONFIRMED (user
-  2026-11-13: windowed->fullscreen auto-popped, back to windowed
-  auto-redocked).
+  table 6/6, flag table 4/4, sequences S1-S4. Live-confirmed 2026-11-13:
+  windowed->fullscreen auto-popped, back to windowed auto-redocked.
 - `0a4808a` batch 10 popout-anchor (revert: revert popout-anchor) -
-  launch-straight-into-fullscreen fix. ROOT CAUSE PROVEN from the
-  user's own mirrored log (app2.log 12:35:44, full chain in BOOKS
+  launch-straight-into-fullscreen fix. Root cause proven from the
+  mirrored session log (app2.log 12:35:44, full chain in BOOKS
   tail): OnBoundsChanged anchored the DOCKED panel to the fullscreen
   rect (sidePanel L2557 T-77 = seam + off-screen top), the batch-9
   auto-pop 66ms later INHERITED that anchor -> feed DETACHED at
-  (2045.6,-61.6) = the user's "invisible somewhere". Fix =
+  (2045.6,-61.6) = the reported "invisible somewhere". Fix =
   ClampFeedRect (pure full-containment, coverage-aware generalization
   of b4's restore-path ClampToVirtualScreen) + AnchorFeedOnPop (raw
   USER32 space, game monitor when covered else virtual screen,
-  CONVERGENCE LOOP max 3 passes). The PMv2 DPI-seam hazard was PROVEN
+  CONVERGENCE LOOP max 3 passes). The PMv2 DPI-seam hazard was proven
   by the gate's first failure: raw write -> move across the 125%/100%
   seam -> WPF re-applies its DIP cache -> size changes after the clamp
   (304px clamped, 380px settled); position survives, size does not, so
@@ -729,10 +730,10 @@ gates green each, catstats A/B PER-CORPUS IDENTICAL each (466 common,
   assertions (repro lands 2180,0 fully inside + top-0; uncovered ->
   virtual screen; windowed (2050,59) position-identity; covered
   identity; oversized pin; pull-in) - all ok, exit 0.
-Live-owed: batch 10 relaunch-into-fullscreen check (start game
+Live gates owed: batch 10 relaunch-into-fullscreen check (start game
 fullscreen first, then WunderLanguage, attach, set region -> transparent
 popout appears on the game screen) + batches 2/3 HDR proofs (no HDR on
-this box). NEXT: Phase 0 onboarding for the five R2-R4 picks (Okami /
+this machine). Next: Phase 0 onboarding for the five R2-R4 picks (Okami /
 NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then the
-beta/alpha release build. Still open user-side: P6 shop-play signal +
+beta/alpha release build. Open items: P6 shop-play signal +
 PM glossary EN confirmations.

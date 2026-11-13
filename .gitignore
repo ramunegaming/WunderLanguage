@@ -13,3 +13,7 @@ dumps/
 *.pyc
 .vscode/
 .idea/
+
+# session handover / checkpoint notes (local only)
+CHECKPOINT-*.md
+PM-HANDOVER.md

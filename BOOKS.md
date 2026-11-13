@@ -316,7 +316,7 @@ rule). Revisit only on evidence:**
 - Veto first light (offline, 122 crops): mystery bright-box fires read
   bright=0.87/edge~4 vs dialogue boxes (bright 0.05–0.2, edge 1–4) and
   copyright (edge~14, bright 0.28). Signal-shaped but thin (2 instances).
-  CORRECTION 2026-10-08: ZELDA's overworld map carries NO text (user) —
+  CORRECTION 2026-10-08: ZELDA's overworld map carries NO text (reported) -
   Zelda map negatives can only ever be image-level (frames of the map
   screen for a no-text-screen veto), never text. This is game-specific,
   not a general claim: other games' maps may carry text, and the veto
@@ -1370,7 +1370,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   Restored via pack tables: DisplayFixups +9 intro-unique keys
   (はるか昔/ハイラルの大地/しかし/そこで x2/封印させたそうです/封印は/
   伝説となったころ/もうそこまでせまっていました), OcrFixups +2
-  (ささばられる, 消えていきました - user script truth), + $-anchored
+  (ささばられる, 消えていきました - reference script truth), + $-anchored
   伝説となったころ ellipsis anchor in ApplyZeldaOcrFixups.
   Gate insight: simreplay is fixup-INERT (decision seam feeds the
   banked `extracted` string, never re-runs the chain) - so fixup
@@ -1379,13 +1379,13 @@ troubleshoot/ wipes per launch (pull before relaunch).
   (26 unique 1:1 forms, intro lines only) + 57 pre-existing key-free
   (blend-collapse + remembered/mined raw!=recorded classes);
   non-Zelda raw scan (364 corpora + 2 repaired) 0 key hits -> other
-  games byte-identical by input-level proof. Live intro run vs user
-  script pending. Revert: revert intro-punct.
+  games byte-identical by input-level proof. Live intro run vs the
+  reference script pending. Revert: revert intro-punct.
 
 ## Session state - 2026-10-21 Z1 WRAPPED (live proof landed)
 - Live intro run 08:27-08:29 (log: app-log-intro-live-pass-2026-10-21.log,
   474KB): 11/11 blocks posted once each + title, zero double-posts/wobble
-  twins, byte-identical 1:1 vs user's official script (all 11 lines
+  twins, byte-identical 1:1 vs the reference script (all 11 lines
   compared char-for-char - gap 　, … tails, only アグニム + ささげていった
   blocks keep 。). Both Z1 defects CLOSED live: two-anchor (block 8/11) +
   intro-punct (fabricated 。/、, ささばられる, 消えていきました).
@@ -1405,14 +1405,14 @@ troubleshoot/ wipes per launch (pull before relaunch).
   are GONE (temp cleanup) - ReplayChecker A/B diff done ad hoc in PS.
 
 ## Session state - 2026-10-21 T2 title episode SHIPPED (3558867, live gate owed)
-- Root cause of no-post-intro-title (investigated, user report): quiet-timer
+- Root cause of no-post-intro-title (investigated, reported): quiet-timer
   TITLE mints via edge-exact `_quietCount == titleBar` (CaptureController
   CheckQuietTitle); the single post-intro attempt (08:29:05, corpus loop ~186)
   was refused by BOTH the 60-loop gameplay veto (block 11 fired ~11 loops
   prior) AND logo geometry (only JA block = the 1995-copyright line
   x=331 w=256 h=38, not a full-bleed band) - and the edge was consumed, so
   no retry existed for the rest of the dwell. Boot worked because the veto
-  clock defaults ancient. Fire-history ring (user's sign model) never applied:
+  clock defaults ancient. Fire-history ring (the sign model) never applied:
   TITLE bypasses the dialogue path entirely.
 - T2 replacement (revert: revert title-episode): POSITIVE detection -
   evidence = any JA block matching pack FullTitle voicing-tolerant (the B13
@@ -1458,7 +1458,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   stamps _lastDialogueFireLoop so quiet's internal 60-loop veto blocks it -
   mutual exclusion both directions; _titleFireLoop inits -1000 = cold start
   never blocks).
-- Intro fixups (904e02d, revert: revert intro-punct), both user-flagged/evid-
+- Intro fixups (904e02d, revert: revert intro-punct), both flagged/evid-
   enced from tonight's live run: DisplayFixup 伝説となったころ…？ -> …ころ…
   (raw L101 ！？ -> pair ころ！ consumes ！ leaving …？ ; key placed AFTER the
   ころ！ pair so it matches the post-pair state); DisplayFixups
@@ -1500,7 +1500,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   [title] episode BLOCKED loop=N menu= candTitle= battle= fire=
   cand="..." menuSig="..." - the next live run names the exact blocker
   if one remains. Quiet path UNTOUCHED (agreed fallback scope).
-- Round-2 defect #2 (user-flagged): "ハロハのノハ”多くの人々...消えていきました"
+- Round-2 defect #2 (reported): "ハロハのノハ”多くの人々...消えていきました"
   posted as a duplicate of intro block 4 at 02:41:28. Root cause =
   crossfade frame corpus L54 (block4->5 transition): OCR read the
   half-faded row as ghost prefix + line with a いきました tail; growth
@@ -1515,7 +1515,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   (904e02d pair proven live); T2.5 evidence matcher proven live (evidence
   lines at both dwells - the ー-strip did its job, no zero-evidence
   recurrence).
-- OPEN THREAD (not user-flagged, noticed): block 11 posted with trailing
+- OPEN THREAD (not reported, noticed): block 11 posted with trailing
   。(もうそこまでせまっていました。) + raw-form prefix イケーエにささばられる
   選命 - but corpus L145/L152 extracted are CLEAN (chain fixups fired:
   はまって->せまって ✓ 。 stripped ✓). Posted bubble = RAW L145 text ->
@@ -1549,10 +1549,10 @@ troubleshoot/ wipes per launch (pull before relaunch).
   zero unrelated deltas (replay_base2/new2 in gate dir).
 
 ## Session state - 2026-10-22 T2 round-3 live: INFRA failure run (not code); title veto NOW NAMED + overridden; round 4 owed
-- Round-3 (03:06-03:10, user ABORTED mid-intro): 3/11 intro posts, no title.
+- Round-3 (03:06-03:10, aborted mid-intro): 3/11 intro posts, no title.
   Root causes, all infrastructure:
   1) TWO emulator job ABNORMAL-exits at startup (03:06:49 pid 40544, 03:07:26
-     pid 20760) - W1b family, user relaunched twice. + sidecar process
+     pid 20760) - W1b family, relaunched twice. + sidecar process
      ABNORMAL-exit 03:10:23 at shutdown (3 total tonight).
   2) Translation sidecar (127.0.0.1:8001) REFUSED at 03:08:08-11 exactly when
      intro block 1 fired: fire went out, translation ERRORed -> bubble lost.
@@ -1560,7 +1560,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
      blocks 2 and 4 were never captured as frames at all; blocks 3/5/6 reads
      were suppressed by the DIALOGUE hold machinery (fuzzy-window-keep /
      subpart-suppressed / hold-weak-challenger - untouched by T2 commits).
-     Only ころ/アグニム/城の兵達 fired = user's 3 posts.
+     Only ころ/アグニム/城の兵達 fired = the 3 posts.
   4) 城の兵達をあやつって？ = script-row promotion fired a PARTIAL weak read
      with hallucinated ？ (round-2 posted the full line; degraded OCR +
      script-promotion behavior) - G1-adjacent, no pair yet (one occurrence).
@@ -1584,7 +1584,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   absent + battle/fire).
 
 ## Session state - 2026-10-22 T2 round-4 live: ZERO posts - environment never ran the code; real loop-killer FOUND + FIXED
-- Round-4 (03:30:51-03:34:16): user saw NOTHING. Full forensic chain:
+- Round-4 (03:30:51-03:34:16): nothing on screen. Full forensic chain:
   1) Emulator crashed TWICE at startup again (03:30:55, 03:31:15 -
      W1b family continues) and came up with a BARE window title (no ROM
      name) -> 03:31:36 [pack] session Snes9x_1.60 -> universal: the whole
@@ -1600,7 +1600,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
      (pressure logs: sidecar=idle, gpu=u99% 5691/6144MB VRAM, mem=high) ->
      100s HttpClient timeout fired 03:33:38 - and the timeout KILLED THE
      CAPTURE LOOP (03:33:39 loop cancelled/exited, session loops=20). The
-     user's entire intro played during that frozen window. Quit 03:34:16.
+     the entire intro played during that frozen window. Quit 03:34:16.
 - ROOT CODE BUG FOUND + FIXED (commit, revert loop-timeout-hold): the
   loop's catch (OperationCanceledException) broke on ANY OCE - but
   HttpClient timeouts throw TaskCanceledException which DERIVES from OCE,
@@ -1615,7 +1615,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   watchdog + shorter timeouts + sidecar restart on VRAM exhaustion -
   exactly the G1 debugging/hardware audit already queued (hotspots
   CaptureController 1202-1219/1349-1392, main.py 1108-1130/767-780).
-- HARDWARE NOTE for the user: RTX 3060 laptop = 6GB VRAM; emulator +
+- HARDWARE NOTE: RTX 3060 laptop = 6GB VRAM; emulator +
   sidecar model + overlay at 99% GPU / 5691MB = the wedge precondition.
   Closing other GPU apps before runs may prevent recurrence.
 - T2 status unchanged in substance: detector proven firing (rounds 2-3
@@ -1637,7 +1637,7 @@ troubleshoot/ wipes per launch (pull before relaunch).
   * T2 = done: TITLE posts once per visit, knows via pack FullTitle
     matching (voicing/dash/misread tolerant), re-Posts on return, silent
     in gameplay. Detector shipped across 3558867..355dd23.
-- Round-5 defect (user-flagged, fixed same session): TITLE bubble showed
+- Round-5 defect (reported, fixed same session): TITLE bubble showed
   EN but NO JAPANESE. Cause: the TITLE payload has been (0,"",false) since
   the quiet era - TranslateAndPublishMenuAsync's TITLE branch falls back
   to pack FullTitle for the TRANSLATION line (ApplyTitleFixup TitleMap
@@ -1719,14 +1719,14 @@ troubleshoot/ wipes per launch (pull before relaunch).
   conditional on marker=="" = universal only).
 
 ## STANDING POLICY - 2026-10-22 (see ROADMAP "SCALING DOCTRINE")
-User directive: 1 person cannot playtest every game -> default to
+Directive: a single person cannot playtest every game -> default to
 universal/scalable fixes, stop one-game fixups as the default move.
 Every future defect goes through the fix ladder (engine/class ->
 self-learning -> pack data -> [forbidden] one-off). Zelda/FFVI pairs =
 legacy bootstrapping, ease off going forward. Codified in ROADMAP.
 
 ## CONTINUOUS STRENGTHENING confirmed - 2026-10-22
-User doctrine extension: every onboarded game teaches ALL games (words,
+Doctrine extension: every onboarded game teaches ALL games (words,
 error patterns, structure); older games strengthen as new ones onboard.
 Verified live in code: Loop 1 compounding (per-game mined -> >=2-game
 agreement -> _global.json -> loaded for all games, 89 global pairs,
@@ -1752,16 +1752,16 @@ Audit findings (evidence-first, all mechanism-proven):
    of "App exiting - stopping sidecar"). Round-4's "emulator crashed at
    03:30:55/03:31:15" = those probes from TWO APP launches (03:30:51 and
    03:31:12) - launch #1 died silently mid-warmup (log stops 03:31:11.087, no
-   OnExit, no DispatcherUnhandledException, no WER dump) and the user
+   OnExit, no DispatcherUnhandledException, no WER dump) and it was
    relaunched. Round-3's REAL story: up to FIVE app launches with TWO RUNNING
    SIMULTANEOUSLY (duplicate [env] lines 82ms apart, "log-cost probe failed:
    file being used by another process", second boot's lines interleaved with
    the first instance's live OCR loops) = the app has NO single-instance
    guard; two hosts = two sidecars fighting :8000/:8001 + two capture loops
    + split GPU - that IS round-3's 6x OCR collapse + sidecar-refused outage.
-   The user-witnessed Snes9x crashes are real but live outside our process;
+   The reported Snes9x crashes are real but live outside our process;
    only the bare-window-title aftermath is visible to us. REMAINING UNKNOWN:
-   launch #1's silent death (round-4) - no dump, no exception log = user kill
+   launch #1's silent death (round-4) - no dump, no exception log = manual kill
    or sub-handler native crash; instrumentation (warmup-tick heartbeat +
    crash handlers + WER armed) is already sufficient, wait for recurrence.
 3) VRAM: precondition confirmed (round-4 boot 5691/6144MB, ~453MB free under
@@ -1778,7 +1778,7 @@ Audit findings (evidence-first, all mechanism-proven):
    expected families (crossfade tail + intro pairs retroactively cleaning
    old raws); anchored pairs narrow (聖地へと/伝説となった/もうそこまで);
    the single BARE pair 消えていきました->消えてしました (line 19,
-   user-confirmed for Zelda) is Zelda-PACK-scoped = zero live cross-game
+   confirmed for Zelda) is Zelda-PACK-scoped = zero live cross-game
    exposure (universal/PM packs lack it; replay's cross-game hits are the
    documented "replay defaults to Zelda chains" artifact). T2.6 CLOSED.
 Fixes shipped (013c5bc): (a) revert g1-timeouts - OCR 15s, translate 30s;
@@ -1795,17 +1795,17 @@ running" and exit, first unaffected; (3) no [g1] lines + no nested-timeout
 spam on a healthy run. G1 close + C1 start after the gate.
 
 ## G1 LIVE GATE PASSED - 2026-10-22 (G1 = DONE)
-User clean run (title + intro movie only): title posted BEFORE and AFTER the
+Clean run (title + intro movie only): title posted BEFORE and AFTER the
 intro, all intro blocks posted - the round-7 reference behavior held with
 the G1 resilience batch active (timeouts/circuit breaker inert on healthy
 paths = as designed). No nested-timeout spam reported. Double-launch dialog
-not exercised by the user - it self-validates on the first accidental
+not exercised manually - it self-validates on the first accidental
 double-launch ([single-instance] log line is the proof). Parked W1b files
 remain uncommitted as required. G1 closed: audit + fixes (013c5bc) + A/B
 (zero delta) + live gate. NEXT: C1 (category measurement pass, offline,
 corpus-only, no behavior change - ROADMAP line for scope).
 
-## C1 CATEGORY MEASUREMENT PASS - DONE 2026-10-22 (handover of record)
+## C1 CATEGORY MEASUREMENT PASS - DONE 2026-10-22 (full record)
 Observe-only harness `src/WunderLanguage.Host/Capture/CatStats.cs`
 (revert: `revert catstats` + the --catstats line in SingleInstanceGuard;
 zero engine edits - reflection-samples private tracker state, feeds
@@ -1818,7 +1818,7 @@ METHOD (two truth levels - the honesty core): (1) SIM ATTEMPTS = dialogue
 fires captured in the seam, PRE-guard (live-funnel guards don't run in
 sim - SimReplay B4 note); (2) PUBLISH TRUTH = recorded live dialogue
 bubbles (loop-stamped, B6) joined to the sampled frame category at their
-live loop = what the user actually saw. Frame classes from REAL state:
+live loop = what was actually seen on screen. Frame classes from REAL state:
 stable menu (_menuSignature && _menuStableCount>=2 = mint-eligible),
 transient menu-shaped (count<2 = crawls/moving text), battle
 (BattleFrame.Classify>0 called directly - the in-engine battle tracker
@@ -1916,7 +1916,7 @@ FFVI-shape detector is therefore NEAR-ZERO outside real battle
 sessions: a label-free shape detector remains FUTURE work and must
 pass the Zelda date-screen test before any engine use.
 
-LIVE GATE OWED (user): stable menu screens show zero dialogue bubbles
+LIVE GATE OWED (manual): stable menu screens show zero dialogue bubbles
 of their rows ([publish] menu-hold lines in app.log prove the hold);
 MENU tracker mints unchanged; dialogue after menu exit fires normally;
 round-7 title/intro behavior unchanged. NAMED RESIDUAL: cursor-moving
@@ -1927,7 +1927,7 @@ scope or a future tier-2 content guard.
 ## T3+C3 - BOOT-TITLE FASTPATH + OVERLAY READBACK GUARD
 ### (2026-10-22 - CODED + OFFLINE-GATED; live gates owed)
 
-Trigger: the user's 40-min Zelda live run (20:25-20:35, interleaved
+Trigger: a 40-min Zelda live run (20:25-20:35, interleaved
 with decision mockups) reported (1) first load posted neither title
 nor intro while the return visit posted both - "work out why, we need
 100% reliability"; (3) four "hallucination" posts - "stop them for
@@ -1940,9 +1940,9 @@ fewer. Forensics chain: iterations 18-30 = "[loop N] frame unchanged,
 skipping OCR" while mockup #2 covered the screen (correct skips, no
 logo reads exist for them - corpus rows confirm loop 17 = mockup,
 not logo); when the mockup cleared (~20:27:26) the logo was up only
-~2-4s before the game AUTO-ADVANCED into the intro crawl - user
-correction 2026-10-22: the title->intro transition is the game's own
-timer, NOT user input (the click-through theory was wrong). The
+~2-4s before the game AUTO-ADVANCED into the intro crawl -
+corrected 2026-10-22: the title->intro transition is the game's own
+timer, NOT player input (the click-through theory was wrong). The
 window is therefore game-determined and identical for every player:
 the fastpath is the correct UNIVERSAL fix, and the live gate needs no
 input at all - cold boot, watch (loop 40+ already reads crawl
@@ -1966,7 +1966,7 @@ already measured full-title containment at 102/102 title frames and
 3-hit soft confirmation by construction. Latin titles (FFVI) stay
 inert behind HasJapanese exactly as before. Intro blocks on a fast
 first pass remain READ-limited (mid-scroll fragments never give the
-script matcher a clean sighting - user speed, not engine; watch in
+script matcher a clean sighting - reading speed, not engine; watch in
 the live gate).
 
 C3 ROOT CAUSE (hallucinations) - TWO classes, evidence-split.
@@ -2137,7 +2137,7 @@ Sweep A/B (435 corpora): the 433 pre-session corpora are byte-
 identical in DECISION content (12 distinct row-sets = v5's, zero new
 FP shapes); the +1 DECISION / +2 MENU / +2 TITLE delta = the 2 NEW
 corpora from the 03:37 session itself (20261023_033712/033733) replaying
-your own captures (gambler rows identical); [sublines] never fires in
+the on-disk captures (gambler rows identical); [sublines] never fires in
 replay; two runs r1==r2 deterministic. VERIFICATION CAVEAT: the corpus
 JSONL schema strips blocks to t/x/y/w/h/c/n/s/d, so future corpora do
 NOT carry lines either - the sub-line path is live-only verified
@@ -2157,13 +2157,14 @@ gate remaining: gambler DECISION with BOTH options + shop DECISION
 tag, dialogue path byte-identical.
 
 D2 (decision tiering) CODED + SWEEP-GATED 2026-10-23, live gate owed
-with D1 pass 2 (revert: revert decision-tiering). User-raised scaling
-hole: the D1 absolute length caps (question ≤20, option ≤12) were
+with D1 pass 2 (revert: revert decision-tiering). Scaling hole
+raised in review: the D1 absolute length caps (question ≤20,
+option ≤12) were
 calibrated on SNES-era corpora (real prompts 8-17 chars, dialogue-
 question FPs 27-41) - a verbose modern prompt would fail the gate and
 the screen would degrade to IN-GAME TEXT (late label, never
-suppressed, but the category is lost). User constraints for the
-brainstorm: no new detector (sprites stay invisible), structure-only,
+suppressed, but the category is lost). Constraints: no new detector
+(sprites stay invisible), structure-only,
 universal. Design - length was proxying for "prompt, not dialogue
 line", so swap the proxy for structure. Three gates: (1) ？-tail
 prompt gate, applied to SUB-LINE-sourced question rows only: the
@@ -2203,7 +2204,7 @@ CAT-RELIABILITY (translator crash class) INVESTIGATED + HARDENED
 2026-10-23, live gate owed (revert: revert cat-reliability; NOTE: the
 fix LIVES in the parked uncommitted files SidecarProcessManager.cs +
 AppShell.cs per the W1b protocol - a git checkout of those files
-would silently drop it). The user's post-D2 live session
+would silently drop it). The post-D2 live session
 (09:18:19-09:25:08) posted ONLY the title; every other line died at
 translation. Forensics: the CAT sidecar (port 8001, translator)
 segfaulted (exit -1073741819 = 0xC0000005) 4x during safetensors
@@ -2221,7 +2222,7 @@ Title posted from the translation cache. Class history: this is the
 SidecarProcessManager W1 note "CAT 4-bit weight load segfaults...
 on 6GB VRAM"; the 10-17 fix was the process split) in its CROSS-
 PROCESS form: the process was clean, but the CAT load window
-overlapped the OCR model load + the user's emulator/game = transient
+overlapped the OCR model load + the emulator/game = transient
 system pressure on the mmap'd shard reads. Verified transient:
 standalone loads succeeded 2/2 outside the window (09:37 pre-fix and
 the mmap-off gate below). No drift anywhere: cat_service.py unchanged
@@ -2247,14 +2248,14 @@ restart-spacing on the live host: death1 09:53:23.9 -> attempt=1 ->
 respawn 09:53:35.9 (~12s), death2 09:54:14.6 -> attempt=2 -> respawn
 09:55:16.6 (~62s) - both backoff steps measured, the third (240s)
 shares the code path.
-Live gate owed: next user session loads CAT and translations flow;
+Live gate owed: next live session loads CAT and translations flow;
 if a crash window recurs, watch [job:cat] attempt= spacing and the
 panel notice on exhaustion (no more silent dead sessions).
 
 CRASH-DIAG LOGGER + WINDOWS EVENT-LOG FORENSICS (the "why NOW" set)
-2026-10-23, after the run-2/run-3 analysis (user order: analyze
-first, then "improve the logger to find the information you need to
-sus the problem"; revert: revert crash-diag-logger; NOTE both files
+2026-10-23, after the run-2/run-3 analysis (order: analyze
+first, then improve the logger so the data needed for diagnosis is
+actually captured; revert: revert crash-diag-logger; NOTE both files
 are again UNCOMMITTED by protocol - SidecarProcessManager.cs parked
 W1b, cat_service.py untracked - this entry is the revert map).
 Findings, in order:
@@ -2285,7 +2286,7 @@ split never removed the real trigger).
 Roaming\WunderLanguage\dumps (exists, empty - dumps land in
 LOCALAPPDATA\CrashDumps instead). Optional next step: disassemble a
 dump's exception thread for the torch_cpu function at 0x8e4a279.
-(4) THE LOGGER GAP (user's point, confirmed): total RAM was logged at
+(4) THE LOGGER GAP (confirmed): total RAM was logged at
 boot, available RAM/commit/VRAM NEVER at death; stderr ring truncated
 faulthandler to 3KB (run-3 torch frames lost); the event log was never
 read. Built (engine-class, revert: revert crash-diag-logger): [C#]
@@ -2327,7 +2328,7 @@ ERROR-CODE FEED BUILT + GATED — 2026-10-23 (revert: revert error-codes)
 Same parked/uncommitted batch as cat-reliability (App.xaml.cs, AppShell.cs,
 SidecarProcessManager.cs parked) plus uncommitted SidePanelWindow.xaml.cs
 and new untracked Diagnostics/ErrorCodes.cs — nothing committed until W1b
-unparks, per protocol. User-approved spec: compact "Error Code N" chips in
+unparks, per protocol. Approved spec: compact "Error Code N" chips in
 the translation feed, clickable -> popup, wording "slightly more detailed"
 than the starter set. Build: ONE central registry (ErrorCodes.cs: code ->
 chip line / popup title / What-happened / What-to-do) so chip text and
@@ -2352,7 +2353,7 @@ retrying burst visible instead of silent; E2/E3 = budget exhaustion via
 EngineDown, which now carries the CODE instead of free text (role
 resolves to E2/E3 inside the manager - the registry owns all wording);
 E4 = OnCaptureWindowLost, where the blocking MessageBox was REPLACED by
-the chip (no focus steal; flagged to the user - object and it comes
+the chip (no focus steal; flagged to the player - object and it comes
 back). PENDING-SIGNAL REPLAY (closes a pre-existing hole): all three
 signals are one-shot, but the only subscriber (AppShell
 BuildCaptureController) exists from Connect onward - an error fired
@@ -2367,7 +2368,7 @@ no GPU); chip and popup render to PNGs OFF THE VISUAL TREE
 (RenderTargetBitmap) after a REAL handler click (TestClickChip ->
 OnChipClicked - the exact path a mouse click takes). Why tree-dumps
 instead of screen capture: the first gate attempt used screen
-coordinates and THE USER'S EMULATOR WAS RUNNING with a game open - the
+coordinates and THE EMULATOR WAS RUNNING with a game open - the
 test panel opened behind their fullscreen game and the synthetic click
 landed IN THE GAME (harmless miss on a dialog, but coordinate-based
 clicks/screenshots on a live desktop are now banned; the visual-tree
@@ -2388,7 +2389,7 @@ taskkill): "[job:cat] load-window death - error chip E1 signaled
 (retrying, budget 0/3)" then "[job] restart healthy" (pending signal
 cleared). NOT live-gated (accepted, noted): E4 trigger (WindowLost
 needs a real window death), pending-replay at Connect (connecting
-would attach to the user's live game), panel-side E2/E3 (emission
+would attach to the live game), panel-side E2/E3 (emission
 background-gated; rendering is the same ShowError path gated via
 --errortest). Known cosmetic: in the unsized test panel the chip
 floats mid-feed; the real 380px panel left-anchors it.
@@ -2455,7 +2456,7 @@ app.log + 3 troubleshoot shots) and fixed here:
       option-cap-N) + the decHit outcome. Gate-only: no publish
       change. Next live run names the blocker exactly.
 
-4. JP-FIRST POSTING (user doctrine: 1:1 Japanese at minimum, every
+4. JP-FIRST POSTING (standing doctrine: 1:1 Japanese at minimum, every
    block, every NPC): the panel used to wait for translation - 8-18s
    under GPU load (block 10: fire 03:26:46 -> post 03:27:04 = 18.2s).
    Fix E (revert jp-first): TranslateAndPublishAsync posts the JA
@@ -2484,7 +2485,7 @@ invisible to replay (pre-translate return in sim).
 
 Verification plan: GREEN build, --catstats A/B with the deltas
 explained, then a live session - [loss]/[dec-probe]/[menu] jp-first
-lines + the user's eyeball on the feed (JP within ~1s of every line,
+lines + eyeball checks on the feed (JP within ~1s of every line,
 EN filling in place).
 
 2026-10-24, every-block-post batch GATES: GREEN + catstats A/B PASS
@@ -2545,7 +2546,7 @@ chart-clear-salvage, revert question-cap-scale)
 
 FORENSICS INPUT: live run 2026-10-24 10:29:03-10:43:11 (55 fires; log
 Temp\opencode\app_live_2026-10-24b.log; corpus Zelda 20261024_102851,
-483 records). User's three complaints: phantom posts while roaming; misses
+483 records). Three reported complaints: phantom posts while roaming; misses
 on '...'/'!'/'?'/'1' punctuation; decisions not recognized.
 
 PHANTOM CLASS - ROOT CAUSE PROVEN: capture occlusion (not OCR
@@ -2837,9 +2838,9 @@ names work resumes. Mash memo (memo/ffvi.json) = 9 pairs under provider
 'DeepL (unreliable-offline fallback)' incl garble-key junk ('ただから'
 -> "Just Because" sitting next to the correct たたかう -> "Fight") and
 dialogue leaking into battle-name rows ('またな。' -> "See you later.")
-=> policy recommendation: expire to empty (user go pending).
+=> policy recommendation: expire to empty (pending go-ahead).
 
-2026-10-30 BULK LIVE SESSION (5 launches; user played all legs; keep-log.armed
+2026-10-30 BULK LIVE SESSION (5 launches; played live; keep-log.armed
 sentinel VALIDATED - 5 session banners recovered from app2.log with zero
 loss; lesson: taskkill /F finalizes nothing - the Zelda corpus gzip is the
 THIRD crash-truncated file (recoverable incrementally: 388 lines incl the
@@ -2849,15 +2850,15 @@ THREE DEATH CLASSES, all SILENT (zero error chips across 1.75M log chars):
 asyncio accept_coro ("Task exception was never retrieved" - nobody owns the
 listener), OCR POSTs then connection-refused 127.0.0.1:8000 for 5+ min,
 transport-hold counter 1->120, process stays alive (pressure sidecar:idle)
-so nothing watched it; window handle valid until user quit 14:07:11 (the
-'window died' was the user closing Snes9x AFTER giving up). Context: GPU
+so nothing watched it; window handle valid until quit 14:07:11 (the
+'window died' was Snes9x closed manually AFTER giving up). Context: GPU
 96-100% util, CAT generation 38.1s/20.7s on that leg. => the transport-death
 class has NO E-code surface - holds are logged, never surfaced to the feed.
 (2) PM leg4 = translation circuit open (OfflineTranslationProvider 30s
 timeout x3 while GPU u100% / VRAM 5663/6144MB; health probe failed) ->
 '[g1] circuit open' -> LOOP HOLD (83/115 holds, ocr=25) = CAPTURE FREEZES on
 translator failure, and the jp-first bubble (スターストーンと魔法の地図...) never
-EN-retried - stuck at the pending marker forever. User directive 2026-10-30:
+EN-retried - stuck at the pending marker forever. Directive 2026-10-30:
 capture must not depend on EN - keep capturing + posting JA-pending while
 EN retries in background and late-fills the bubble when it lands.
 Capture-continue + pending-retry = approved design, next build (also surfaces
@@ -2866,7 +2867,7 @@ the circuit as a chip - second silent class).
 AND pack-FullTitle containment, so latin-logo titles (FFVI 'FINAL FANTASY VI'
 logo shot 13:53:25, PM 'Paper Mario' logo) can NEVER produce evidence -
 zero [title] episode lines in both legs (not a veto: the detector never
-ran). User title spec 2026-10-30: post the TITLE TEXT ONLY - FFVI dragon +
+ran). Title spec 2026-10-30: post the TITLE TEXT ONLY - FFVI dragon +
 flame effects over the text are irrelevant ('no matter the effect or
 business of the title, we just want the text itself'); PM's flashing
 start-prompt line under the logo = EXCLUDE ('additional text too complex and
@@ -2875,14 +2876,14 @@ path = price over captured title frames before any build (the HasJapanese
 gate is deliberate - B13/T2 history - do not just delete it).
 Z2 5-box v1 LIVE-VERIFIED (screenshot: outline + 5 boxes + item live-switch
 ブーメラン->カンテラ + EN strip Boomerang; pack-constant chrome correct). v2
-spec (user 2026-10-30): (1) BOTTLE STATE - corpus shows the びん-selection
+spec (2026-10-30): (1) BOTTLE STATE - corpus shows the びん-selection
 fire as ACTION-ONLY rows ('．．．かっくはひっぱる ．．． / よむ はなす' - NO びん row,
 NO ペンダント, NO ＥＧＵＩＰＭＥＮＴ; ペンダント-gated detection therefore failed and
 it fell through to the generic menu path) -> detect this signature and
 render mid+equip as ONE tall box, 1 frame, no animation; every row present
 is chrome. (2) EN MIRROR - below the separator duplicate the whole box grid
 in EN: live item EN top-right, pack-constant action EN bottom-left ('to
-shoulder  to read  to speak' / 'to pull' - user's canonical forms, NOT the
+shoulder  to read  to speak' / 'to pull' - canonical forms, NOT the
 translator's '...and carry it, pull it...' / 'Reading and speaking'),
 'Pendant' mid, EQUIPMENT unchanged. Normal-state corpus confirms EN
 row-alignment already carries 'Boomerang'/'Pendant'/'Cantera'.
@@ -2891,7 +2892,7 @@ appeared once inside OCR garbage at 14:27:04 and was sent-deduped - never
 published; no d=0 fire). DECISION = 1x (さあ、どうする？, 3 rows, no
 question-cap); spawn-choice (2 options, no question row) not decision-shaped
 = D1 class. B16b NOT met - zero runtime absorb lines (only build/miner
-strings). Miscapture evidence (user frustration: 'obvious miscaptures'):
+strings). Miscapture evidence (report: 'obvious miscaptures'):
 フスターソード = OCR マ->フ misread with EN faithful to the WRONG JA (same
 string correct later as マスターソード) = recognition variance, not translation
 hallucination - pairs harvested in corpus.
@@ -2939,26 +2940,26 @@ revert commit-precheck; full evidence in the commit message):
   corpus Big_Walk_20261112_121913 from the live session, not a change).
   Live: `host-commit check: 12495MB free, proceeding`, no chip.
 
-UX WAVE LIVE-CONFIRMED (user session 15:25:48-15:27:37 + explicit
+UX WAVE LIVE-CONFIRMED (live session 15:25:48-15:27:37 + explicit
 confirmation of all three remaining checks 2026-11-12):
 - commit-precheck: healthy-path line above, zero error chips all session.
 - b7 dock-hide/dockvis: True fullscreen (game rect == monitor exactly) ->
   False windowed -> True fullscreen -> False after game close; correct
   throughout, including the 150ms-tick re-checks.
 - b4 calib-cover: [calibrate] pass=2 converged=True scale=1.250x1.250
-  (ctor was 1.50x1.50 = the stale-144-ghost disease); USER re-dragged the
-  calibration window to the true screen bottom and the overlay lands
+  (ctor was 1.50x1.50 = the stale-144-ghost disease); the calibration
+  window was re-dragged to the true screen bottom and the overlay lands
   right = live pass.
-- b5 feed-defer: `Settings saved` fires post-move, not mid-drag; USER
-  reports no mid-drag freeze = live pass.
-- b6 feed-resize: USER drag-resized the popped-out feed, reflow + persist
+- b5 feed-defer: `Settings saved` fires post-move, not mid-drag; no
+  mid-drag freeze observed = live pass.
+- b6 feed-resize: popped-out feed drag-resized, reflow + persist
   across pop-out/dock = live pass.
 - b1 pop-out feed: restored feed position (1569.6,75.2), hotkey
   Ctrl+Shift+D, DETACHED flips - live-used all session.
 - Still owed: b2 hdr-detect E9 wording eyeball + HDR-on proof, b3
   capture-swap engage/miss arm - both need an HDR-enabled display (this
-  box: DELL G2724D + ASUS VP228 both hdr=on-supported/enabled=0); trust
-  until a friend tests.
+  box: DELL G2724D + ASUS VP228 both hdr=on-supported/enabled=0); pending
+  an HDR-capable machine.
 
 TWO NEW OBSERVATIONS FROM THAT SESSION - root-caused in code, batches
 APPROVED but NOT YET BUILT (recorded as diagnosis only):
@@ -2977,7 +2978,7 @@ APPROVED but NOT YET BUILT (recorded as diagnosis only):
    on bounds change). Proposed batch 9 (revert auto-popout): coverage
    true + docked -> auto-invoke the existing detach path (auto-flag);
    coverage false + auto-popped -> auto-redock; manual pop stays popped,
-   manual dock clears the flag. User's log shows the exact workaround:
+   manual dock clears the flag. The session log shows the exact workaround:
    15:26:32 windowed -> 15:26:35 DETACHED -> 15:26:37 fullscreen.
 
 
@@ -3007,7 +3008,7 @@ BATCH 8 `3c3401d` taskbar-feed (revert taskbar-feed) - LIVE PASS.
   pre|APPWINDOW|WINDOWEDGE + an in-gate ResizeMode provenance control.
 
 BATCH 9 `066cf98` auto-popout (revert auto-popout) - LIVE PASS.
-- User: windowed->fullscreen auto-popped within a tick, back to
+- Live-confirmed: windowed->fullscreen auto-popped within a tick, back to
   windowed auto-redocked ("other than that it looked to work").
 - Policy = AutoDetachForCoverage pure fn evaluated ONLY on coverage
   edges; flag = NextAutoFlag (only an AUTO pop claims, every dock
@@ -3017,11 +3018,11 @@ BATCH 9 `066cf98` auto-popout (revert auto-popout) - LIVE PASS.
 
 BATCH 10 `0a4808a` popout-anchor (revert popout-anchor) - OFFLINE
 COMPLETE, LIVE OWED (relaunch-straight-into-fullscreen check).
-- BUG (user): game already fullscreen -> start WunderLanguage -> attach
+- BUG (reported): game already fullscreen -> start WunderLanguage -> attach
   -> set region -> feed invisible somewhere; only the windowed->fullscreen
   cycle made it appear. Players launch straight into fullscreen, so the
   pop must place itself.
-- ROOT CAUSE, proven from the user's mirrored log (app2.log 12:35:44,
+- ROOT CAUSE, proven from the mirrored session log (app2.log 12:35:44,
   full chain):
   1. OnBoundsChanged at Start positioned the DOCKED panel against the
      fullscreen rect: "actual sidePanel rect: (L2557,T-77,...)" =
@@ -3059,8 +3060,8 @@ Evidence, every batch: build 0 err/17 warn = baseline; gates
 popanchor/autopopout/taskbarfeed/dockvis/feedresize/feeddefer/
 captureswap/calibcover/hdrtest all exit 0; errortest PASS 7/7 (taskkill
 harness - by design it never exits); catstats A/B vs i5_catstats_H
-PER-CORPUS IDENTICAL each time (+3rd Big_Walk corpus today = the user's
-own 12:35 repro session, pre-existing on disk).
+PER-CORPUS IDENTICAL each time (+3rd Big_Walk corpus today = the
+12:35 repro session itself, pre-existing on disk).
 
-Still owed: batch 10 live relaunch check; batches 2/3 HDR proofs (no
-HDR on this box - trust until a friend tests).
+Live gates owed: batch 10 relaunch check; batches 2/3 HDR proofs (no
+HDR on this machine - deferred to an HDR-capable display).
