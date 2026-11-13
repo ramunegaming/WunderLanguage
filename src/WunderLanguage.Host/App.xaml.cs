@@ -176,6 +176,29 @@ namespace WunderLanguage.Host
                         Shutdown(tbOk ? 0 : 1);
                         return;
                     }
+                    // Coverage auto-popout offline gate (2026-11-13):
+                    // --autopopout = the REAL policy/flag functions across
+                    // the full truth table (all six coverage/detached/claim
+                    // combos + the four-flag ownership table) and the four
+                    // approved edge sequences: auto pop <-> auto redock,
+                    // manual pop survives a fullscreen cycle, manual dock
+                    // holds until the next edge, settings-restored pop never
+                    // auto-redocks. Coverage detector itself is gated by
+                    // --dockvis (real window). No emulator, no sidecar, no
+                    // GPU; exit 0 only if every assertion holds.
+                    // Revert: revert auto-popout (delete this block +
+                    // AppShell.RunAutoPopoutOfflineTest +
+                    // AutoDetachForCoverage/NextAutoFlag + the _autoPopped
+                    // field/flag line in SetDetached + the coverage-edge
+                    // block in RefreshDockAffordance).
+                    if (args[i] == "--autopopout")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool apOk = AppShell.RunAutoPopoutOfflineTest();
+                        FileLogger.Log($"[autopopout] exit ok={apOk}");
+                        Shutdown(apOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

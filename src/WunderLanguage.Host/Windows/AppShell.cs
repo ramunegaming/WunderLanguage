@@ -923,6 +923,10 @@ namespace WunderLanguage.Host.Windows
         // window that visually covers (maximized) still counts - the DWM
         // frame excludes the 8px invisible border WPF windows carry.
         private bool _gameCoversMonitor;
+        // Auto-popout (revert: revert auto-popout): true while the feed is
+        // popped out BECAUSE of a coverage edge (vs a manual pop, which this
+        // flag must never claim). Ownership rules live in NextAutoFlag.
+        private bool _autoPopped;
         private void RefreshDockAffordance()
         {
             try
@@ -939,6 +943,22 @@ namespace WunderLanguage.Host.Windows
                 {
                     _gameCoversMonitor = covered;
                     FileLogger.Log($"dockvis: game covers its monitor -> {covered} (game={game} monitor={mon})");
+                    // Auto-popout (revert: revert auto-popout): the z-fight is
+                    // decided here - the docked group pairs directly above the
+                    // emulator (PairGroupAboveEmulator), i.e. into the game's
+                    // own z-order neighbourhood a fullscreen game re-claims,
+                    // while only the detached feed rides the topmost band.
+                    // Coverage edges are the only trigger: a manual pop stays
+                    // popped, and a manual dock (flag released) stays docked
+                    // until the NEXT edge - no fighting the user mid-state.
+                    bool? autoTo = AutoDetachForCoverage(covered, _detached, _autoPopped);
+                    if (autoTo.HasValue)
+                    {
+                        FileLogger.Log(autoTo.Value
+                            ? "auto-popout: coverage edge -> feed POPPED OUT (transient, not persisted)"
+                            : "auto-popout: coverage edge cleared -> feed DOCKED (auto pop released)");
+                        SetDetached(autoTo.Value, persist: false, auto: true);
+                    }
                 }
                 _sidePanel.SetGameCoversMonitor(covered);
             }
@@ -947,6 +967,113 @@ namespace WunderLanguage.Host.Windows
                 FileLogger.Log($"dockvis: check failed: {ex.Message}");
             }
         }
+
+        // Auto-popout (revert: revert auto-popout): the coverage policy in
+        // one pure function - true = auto-pop, false = auto-redock, null =
+        // hands off (already popped by us, or a MANUAL pop/dock that must
+        // survive the fullscreen cycle untouched). Evaluated only on
+        // coverage EDGES (RefreshDockAffordance transition block).
+        internal static bool? AutoDetachForCoverage(bool covered, bool detached, bool autoPopped)
+        {
+            if (covered && !detached) return true;                 // fullscreen + docked -> pop
+            if (!covered && detached && autoPopped) return false;  // game left fullscreen -> redock
+            return null;                                           // manual state / nothing to do
+        }
+
+        // Auto-popout (revert: revert auto-popout): the whole flag contract
+        // in one line - only an AUTO pop claims the feed (so a manual pop
+        // is never yanked back), and EVERY dock releases the claim (so a
+        // manual dock is never re-popped until a fresh coverage edge).
+        internal static bool NextAutoFlag(bool detached, bool byAuto) => detached && byAuto;
+
+        // Offline gate (2026-11-13): --autopopout proves the coverage
+        // auto-pop contract on the REAL code paths: the AutoDetachForCoverage
+        // truth table (all six covered/detached/claim combinations), the
+        // NextAutoFlag ownership table, and the four approved scenarios as
+        // edge sequences driven through BOTH real functions - auto pop ->
+        // auto redock, manual pop survives a fullscreen cycle untouched,
+        // manual dock holds until the next coverage edge, restored-from-
+        // settings pop never auto-redocks. The coverage DETECTOR itself is
+        // already real-window-gated by --dockvis; the AppShell glue from
+        // RefreshDockAffordance into SetDetached is the same SetDetached
+        // path every other popout gate exercises (live-owed with the rest).
+        // No emulator, no sidecar, no GPU; exit 0 only if every assertion
+        // holds. Revert: revert auto-popout (delete this method + the
+        // --autopopout block in App.xaml.cs + AutoDetachForCoverage +
+        // NextAutoFlag + the _autoPopped field/flag line in SetDetached +
+        // the coverage-edge block in RefreshDockAffordance).
+        public static bool RunAutoPopoutOfflineTest()
+        {
+            bool ok = true;
+            void Row(string name, bool? got, bool? want)
+            {
+                bool same = got == want;
+                FileLogger.Log($"[autopopout] {name} -> {(got.HasValue ? (got.Value ? "POP" : "DOCK") : "hands-off")} (want {(want.HasValue ? (want.Value ? "POP" : "DOCK") : "hands-off")}) ok={same}");
+                ok &= same;
+            }
+
+            // --- Truth table: every (covered, detached, autoPopped) combo ---
+            Row("covered+docked", AutoDetachForCoverage(true, false, false), true);
+            Row("covered+autoPopped", AutoDetachForCoverage(true, true, true), null);
+            Row("covered+manualPop", AutoDetachForCoverage(true, true, false), null);
+            Row("uncovered+autoPopped", AutoDetachForCoverage(false, true, true), false);
+            Row("uncovered+manualPop", AutoDetachForCoverage(false, true, false), null);
+            Row("uncovered+docked", AutoDetachForCoverage(false, false, false), null);
+
+            // --- Flag ownership table ---
+            bool f1 = NextAutoFlag(true, true), f2 = NextAutoFlag(true, false),
+                 f3 = NextAutoFlag(false, true), f4 = NextAutoFlag(false, false);
+            FileLogger.Log($"[autopopout] flag table auto-pop={f1} manual-pop={f2} auto-dock={f3} manual-dock={f4} (want True/False/False/False)");
+            ok &= f1 && !f2 && !f3 && !f4;
+
+            // --- Scenario sequences: state (detached, autoPopped) driven by
+            // edge -> policy -> move (the exact RefreshDockAffordance/SetDetached
+            // steps, through the real functions). ---
+            bool d = false, a = false;
+            void Edge(bool covered)
+            {
+                bool? want = AutoDetachForCoverage(covered, d, a);
+                if (want.HasValue) { d = want.Value; a = NextAutoFlag(d, byAuto: true); }
+            }
+
+            // S1: fullscreen pops the feed out, leaving fullscreen docks it.
+            Edge(true);
+            bool s1a = d && a;
+            Edge(false);
+            bool s1b = !d && !a;
+            FileLogger.Log($"[autopopout] S1 auto cycle popped={s1a} auto-redocked={s1b} (want True/True)");
+            ok &= s1a && s1b;
+
+            // S2: manual pop survives a whole fullscreen cycle untouched.
+            d = true; a = NextAutoFlag(d, byAuto: false); // user pressed the hotkey
+            Edge(true);
+            bool s2a = d && !a;                            // covered: still ours? no - hands off
+            Edge(false);
+            bool s2b = d && !a;                            // uncovered: manual pop NOT yanked back
+            FileLogger.Log($"[autopopout] S2 manual pop survives cycle stillPopped={s2a && s2b} claimKept={a} (want True/False)");
+            ok &= s2a && s2b && !a;
+
+            // S3: manual dock while covered holds; only the NEXT coverage
+            // edge re-pops it (edges are evaluated, mid-state never is).
+            d = false; a = NextAutoFlag(d, byAuto: false); // user docked manually (covered=true still)
+            Edge(false);
+            bool s3a = !d && !a;                           // uncovered edge: stays docked
+            Edge(true);
+            bool s3b = d && a;                             // fresh edge: auto-pops again
+            FileLogger.Log($"[autopopout] S3 manual dock holds={s3a} fresh edge re-pops={s3b} (want True/True)");
+            ok &= s3a && s3b;
+
+            // S4: state restored from settings (FeedDetached=true) is a
+            // MANUAL pop by definition - never auto-redocked.
+            d = true; a = NextAutoFlag(d, byAuto: false);   // AppShell start restore
+            Edge(false);
+            bool s4 = d && !a;
+            FileLogger.Log($"[autopopout] S4 restored pop stays popped={s4} claim={a} (want True/False)");
+            ok &= s4 && !a;
+
+            return ok;
+        }
+
 
         // ------------------------------------------------------------------
         // Pop-out feed (revert: revert popout-feed).
@@ -971,10 +1098,15 @@ namespace WunderLanguage.Host.Windows
 
         private void ToggleDetach() => SetDetached(!_detached);
 
-        private void SetDetached(bool detached, bool persist = true)
+        private void SetDetached(bool detached, bool persist = true, bool auto = false)
         {
             if (_detached == detached) return;
             _detached = detached;
+            // Auto-popout (revert: revert auto-popout): flag ownership rides
+            // every move - see NextAutoFlag. Set BEFORE the try so a later
+            // presentation failure can't leave the flag claiming a feed that
+            // never actually popped (or vice versa).
+            _autoPopped = NextAutoFlag(detached, auto);
             try
             {
                 if (detached)
