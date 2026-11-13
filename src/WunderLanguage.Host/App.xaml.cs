@@ -199,6 +199,26 @@ namespace WunderLanguage.Host
                         Shutdown(apOk ? 0 : 1);
                         return;
                     }
+                    // Pop-out feed placement offline gate (2026-11-13):
+                    // --popanchor = the REAL placement guard on a real HWND:
+                    // the launch-fullscreen repro (seam-parked, top -77
+                    // off-screen, game covering its monitor) lands fully
+                    // inside the game monitor; uncovered clamps only into the
+                    // virtual screen; validated windowed pop position is
+                    // byte-identity; oversized pins to origin; offscreen
+                    // pulls in. Raw SetWindowPos/TryGetUserRect round-trip.
+                    // No emulator, no sidecar, no GPU; exit 0 only if every
+                    // assertion holds. Revert: revert popout-anchor (delete
+                    // this block + AppShell.RunPopAnchorOfflineTest +
+                    // ClampFeedRect/AnchorFeedOnPop + the SetDetached call).
+                    if (args[i] == "--popanchor")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool paOk = AppShell.RunPopAnchorOfflineTest();
+                        FileLogger.Log($"[popanchor] exit ok={paOk}");
+                        Shutdown(paOk ? 0 : 1);
+                        return;
+                    }
                     if (args[i] == "--replay" && i + 1 < args.Length)
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log

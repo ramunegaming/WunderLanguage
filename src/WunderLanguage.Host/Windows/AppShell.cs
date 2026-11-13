@@ -986,6 +986,80 @@ namespace WunderLanguage.Host.Windows
         // manual dock is never re-popped until a fresh coverage edge).
         internal static bool NextAutoFlag(bool detached, bool byAuto) => detached && byAuto;
 
+        // Pop-out feed placement (revert: revert popout-anchor): full-
+        // containment clamp of a feed rect INSIDE target - the coverage-aware
+        // generalization of batch-4's ClampToVirtualScreen (which stays the
+        // restore-path guard with its looser 40-DIP grab rule; this one runs
+        // at pop time where "fully visible on the screen you're watching" is
+        // the contract). Oversized feed pins to the target origin (most-
+        // visible corner) instead of inverting the clamp. Pure; identical
+        // input -> identical output (already-inside = identity), which is
+        // what keeps the validated windowed pops byte-unchanged.
+        internal static (int Left, int Top) ClampFeedRect(
+            int left, int top, int width, int height, System.Drawing.Rectangle target)
+        {
+            int l, t;
+            if (width >= target.Width) l = target.Left;
+            else l = Math.Min(Math.Max(left, target.Left), target.Right - width);
+            if (height >= target.Height) t = target.Top;
+            else t = Math.Min(Math.Max(top, target.Top), target.Bottom - height);
+            return (l, t);
+        }
+
+        // Pop-out feed placement (revert: revert popout-anchor): read the
+        // feed's CURRENT rect in raw USER32 space (TryGetUserRect = same
+        // coordinate space as SetWindowPos - no DWM-frame/DIP ambiguity),
+        // clamp it fully into the game monitor when the game covers it, else
+        // into the visible virtual screen, and write it back through the
+        // same primitive OnBoundsChanged uses. CONVERGENCE LOOP: the pop
+        // often happens across this box's 125%/100% seam, and WPF's PMv2
+        // handler re-applies its DIP cache at the new DPI right after the
+        // move (proven in the gate's first run: clamped with 304px wide,
+        // landed 380px wide -> poked back out). So re-read and re-clamp
+        // until the rect is stable - max 3 passes, identity breaks. No-op
+        // when already contained (identity is what keeps the validated
+        // windowed pops byte-unchanged).
+        internal static bool AnchorFeedOnPop(IntPtr panelHandle, bool covered, System.Drawing.Rectangle gameMonitor)
+        {
+            try
+            {
+                if (panelHandle == IntPtr.Zero) return false;
+                var target = covered ? gameMonitor : WindowCapture.GetVirtualScreenRect();
+                string what = covered ? "game monitor" : "virtual screen";
+                for (int pass = 1; pass <= 3; pass++)
+                {
+                    if (!WindowCapture.TryGetUserRect(panelHandle, out var feed) ||
+                        feed.Width <= 0 || feed.Height <= 0) return false;
+                    var (l, t) = ClampFeedRect(feed.Left, feed.Top, feed.Width, feed.Height, target);
+                    if (l == feed.Left && t == feed.Top)
+                    {
+                        if (pass == 1)
+                            FileLogger.Log($"popout-anchor: feed ({feed.Left},{feed.Top}) {feed.Width}x{feed.Height} fully contained in {what} - unchanged");
+                        else
+                            FileLogger.Log($"popout-anchor: converged on pass {pass}: ({feed.Left},{feed.Top}) {feed.Width}x{feed.Height} contained in {what}");
+                        return true;
+                    }
+                    if (!SetWindowPos(panelHandle, IntPtr.Zero, l, t, 0, 0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE))
+                    {
+                        FileLogger.Log($"popout-anchor: SetWindowPos to ({l},{t}) FAILED");
+                        return false;
+                    }
+                    FileLogger.Log($"popout-anchor: pass {pass} feed ({feed.Left},{feed.Top}) {feed.Width}x{feed.Height} -> ({l},{t}) target={what} ({target})");
+                    // Let WPF's PMv2 handler re-apply its DIP cache before
+                    // the next read, so the re-clamp sees the settled size.
+                    SidePanelWindow.Pump(60);
+                }
+                FileLogger.Log("popout-anchor: did not converge in 3 passes (final rect still outside target)");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"popout-anchor: failed: {ex.Message}");
+                return false;
+            }
+        }
+
         // Offline gate (2026-11-13): --autopopout proves the coverage
         // auto-pop contract on the REAL code paths: the AutoDetachForCoverage
         // truth table (all six covered/detached/claim combinations), the
@@ -1074,6 +1148,143 @@ namespace WunderLanguage.Host.Windows
             return ok;
         }
 
+        // Offline gate (2026-11-13): --popanchor proves the pop-placement
+        // guard END-TO-END on a REAL HWND (taskbarfeed pattern): the exact
+        // launch-fullscreen repro (raw rect parked at the monitor seam, top
+        // -77 off-screen, game covering its monitor) must land fully inside
+        // the game's monitor; the same clipped rect NOT covered clamps only
+        // into the visible virtual screen; already-contained positions (the
+        // validated windowed pop at 2050,59 - live 12:36:11 - and its
+        // covered twin) must be byte-identity; plus pure rows for the
+        // oversized pin-to-origin and offscreen pull-in cases. Readback is
+        // TryGetUserRect - the SAME raw space AnchorFeedOnPop writes, so
+        // assertions compare like with like. No emulator, no sidecar, no
+        // GPU; exit 0 only if every assertion holds. Revert:
+        // revert popout-anchor (delete this method + the --popanchor block
+        // in App.xaml.cs + ClampFeedRect/AnchorFeedOnPop + the SetDetached
+        // call).
+        public static bool RunPopAnchorOfflineTest()
+        {
+            bool ok = true;
+            Window? w = null;
+            try
+            {
+                var mon = new Rectangle(0, 0, 2560, 1440); // DELL on this box (dockvis table)
+                var virt = WindowCapture.GetVirtualScreenRect();
+                FileLogger.Log($"[popanchor] virtual={virt} game monitor={mon}");
+
+                w = new Window
+                {
+                    Width = 340,
+                    Height = 220,
+                    Left = 60,
+                    Top = 60,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    // NoResize = no thickframe: GetWindowRect == visible rect,
+                    // so raw write/readback round-trips exactly (dockvis).
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Title = "popanchor gate",
+                    Background = System.Windows.Media.Brushes.White,
+                };
+                w.Show();
+                IntPtr h = new WindowInteropHelper(w).Handle;
+
+                void Place(int l, int t, int cw, int ch) =>
+                    SetWindowPos(h, IntPtr.Zero, l, t, cw, ch, SWP_NOZORDER | SWP_NOACTIVATE);
+                // Contract, not exact size: the PMv2 DPI seam legitimately
+                // re-applies WPF's DIP cache (size settles after the move),
+                // so the assertion is the OUTCOME - final rect fully inside
+                // the target (+ position identity where required) - measured
+                // on the settled readback in the same raw space.
+                bool Inside(Rectangle r, Rectangle b) =>
+                    r.Left >= b.Left && r.Top >= b.Top &&
+                    r.Right <= b.Right && r.Bottom <= b.Bottom;
+
+                // 1. THE launch-fullscreen repro: seam-parked + top off-screen,
+                //    covered -> fully inside the game monitor (top-0, the
+                //    clamp pins it to the target's top-right corner).
+                Place(2557, -77, 380, 1173);
+                bool m1 = AnchorFeedOnPop(h, true, mon);
+                bool r1 = m1;
+                if (WindowCapture.TryGetUserRect(h, out var f1))
+                {
+                    bool in1 = Inside(f1, mon) && f1.Top == 0;
+                    FileLogger.Log($"[popanchor] 1 covered repro readback ({f1.Left},{f1.Top}) {f1.Width}x{f1.Height} inside+top0={in1} anchored={m1} ok={in1 && m1}");
+                    r1 = in1 && m1;
+                }
+                else r1 = false;
+                ok &= r1;
+
+                // 2. Same clipped rect, NOT covered -> clamps only into the
+                //    visible virtual screen (fully visible, top pulled in).
+                Place(2557, -77, 380, 1173);
+                bool m2 = AnchorFeedOnPop(h, false, default);
+                bool r2 = m2;
+                if (WindowCapture.TryGetUserRect(h, out var f2))
+                {
+                    bool in2 = Inside(f2, virt) && f2.Top == 0;
+                    FileLogger.Log($"[popanchor] 2 uncovered clamp readback ({f2.Left},{f2.Top}) {f2.Width}x{f2.Height} inside+top0={in2} anchored={m2} ok={in2 && m2}");
+                    r2 = in2 && m2;
+                }
+                else r2 = false;
+                ok &= r2;
+
+                // 3. The validated windowed pop position (live 12:36:11) -
+                //    position byte-identity or the live behavior regressed.
+                //    (Size may settle via the DPI dance - position is the
+                //    contract.)
+                Place(2050, 59, 380, 1026);
+                bool m3 = AnchorFeedOnPop(h, false, default);
+                bool r3 = m3;
+                if (WindowCapture.TryGetUserRect(h, out var f3))
+                {
+                    bool pos3 = f3.Left == 2050 && f3.Top == 59;
+                    FileLogger.Log($"[popanchor] 3 windowed pop readback ({f3.Left},{f3.Top}) {f3.Width}x{f3.Height} posIdentity={pos3} anchored={m3} ok={pos3 && m3}");
+                    r3 = pos3 && m3;
+                }
+                else r3 = false;
+                ok &= r3;
+
+                // 4. Covered + already inside -> position identity as well
+                //    (no jitter).
+                Place(2180, 0, 380, 1026);
+                bool m4 = AnchorFeedOnPop(h, true, mon);
+                bool r4 = m4;
+                if (WindowCapture.TryGetUserRect(h, out var f4))
+                {
+                    bool pos4 = f4.Left == 2180 && f4.Top == 0 && Inside(f4, mon);
+                    FileLogger.Log($"[popanchor] 4 covered identity readback ({f4.Left},{f4.Top}) {f4.Width}x{f4.Height} posIdentity+inside={pos4} anchored={m4} ok={pos4 && m4}");
+                    r4 = pos4 && m4;
+                }
+                else r4 = false;
+                ok &= r4;
+
+                // 5. Pure row: oversized feed pins to the origin (the clamp
+                //    must never invert).
+                var big = ClampFeedRect(100, 100, 3000, 1600, mon);
+                bool r5 = big.Left == 0 && big.Top == 0;
+                FileLogger.Log($"[popanchor] 5 oversized -> ({big.Left},{big.Top}) (want 0,0) ok={r5}");
+                ok &= r5;
+
+                // 6. Pure row: off-left + below-bottom pull-in.
+                var p6 = ClampFeedRect(-50, 1500, 380, 1026, mon);
+                bool r6 = p6.Left == 0 && p6.Top == 414;
+                FileLogger.Log($"[popanchor] 6 pull-in -> ({p6.Left},{p6.Top}) (want 0,414) ok={r6}");
+                ok &= r6;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[popanchor] ERROR: {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { w?.Close(); } catch { }
+            }
+            return ok;
+        }
+
 
         // ------------------------------------------------------------------
         // Pop-out feed (revert: revert popout-feed).
@@ -1119,6 +1330,26 @@ namespace WunderLanguage.Host.Windows
                     // re-applies the stored size - docking force-resized the
                     // HWND to the dock rect along the way.
                     ApplyStoredFeedSize();
+                    // Pop-out feed placement (revert: revert popout-anchor):
+                    // the pop inherits the DOCKED anchor, and against a
+                    // monitor-covering game that anchor is the monitor seam
+                    // with the top off-screen (proven app2.log 12:35:44:
+                    // docked rect L2557 T-77 -> feed DETACHED at
+                    // (2045.6,-61.6) = user's "invisible somewhere" when
+                    // launching straight into fullscreen). While the game
+                    // covers its monitor the feed lands FULLY INSIDE that
+                    // monitor - the spot the windowed pop gets naturally;
+                    // otherwise the existing virtual-screen guard still
+                    // applies. Both in raw SetWindowPos space (TryGetUserRect
+                    // is documented same-coordinates), so no DIP/DPI
+                    // reinterpretation can move it again.
+                    if (_sidePanelHandle != IntPtr.Zero)
+                    {
+                        System.Drawing.Rectangle mon = default;
+                        bool coveredMon = _gameCoversMonitor &&
+                            WindowCapture.TryGetMonitorBounds(_emulatorHandle, out mon);
+                        AnchorFeedOnPop(_sidePanelHandle, coveredMon, mon);
+                    }
                     if (_sidePanelHandle != IntPtr.Zero)
                         SetTopmostLogged(_sidePanelHandle, "sidePanel(detach)");
                     RegisterCopyHotkey();

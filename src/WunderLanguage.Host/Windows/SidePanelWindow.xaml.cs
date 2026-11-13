@@ -328,7 +328,7 @@ namespace WunderLanguage.Host.Windows
             return ok;
         }
 
-        private static void Pump(int ms)
+        internal static void Pump(int ms)
         {
             var deadline = DateTime.UtcNow.AddMilliseconds(ms);
             while (DateTime.UtcNow < deadline)
