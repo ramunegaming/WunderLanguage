@@ -2935,7 +2935,11 @@ namespace WunderLanguage.Host.Capture
                         continue;
                     }
                     IntPtr fgFocus = WindowCapture.GetForegroundWindowHandle();
-                    if (fgFocus != _hWnd && !(_isCompanionWindow?.Invoke(fgFocus) ?? false))
+                    // fullscreen-fg (revert: revert fullscreen-fg): predicate
+                    // moved to WindowCapture.FocusAllowed - the fullscreen
+                    // signature (attached hidden + same-pid fg) passes,
+                    // windowed dialog stays held.
+                    if (!WindowCapture.FocusAllowed(fgFocus, _hWnd, _isCompanionWindow))
                     {
                         _focusHoldActive = true;
                         _costHolds++;
@@ -2945,6 +2949,8 @@ namespace WunderLanguage.Host.Capture
                         await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMs), _clock, token);
                         continue;
                     }
+                    if (fgFocus != _hWnd && iteration % 200 == 1)
+                        FileLogger.Log($"[loop {iteration}] fullscreen-fg pass (fg=0x{fgFocus:X}, attached 0x{_hWnd:X} hidden - same process)");
                     if (_focusHoldActive)
                     {
                         _focusHoldActive = false;

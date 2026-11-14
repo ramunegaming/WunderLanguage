@@ -88,6 +88,24 @@ namespace WunderLanguage.Host
                         Shutdown(swapOk ? 0 : 1);
                         return;
                     }
+                    // Fullscreen focus-gate offline gate (2026-11-13):
+                    // --fullscreenfg proves FocusAllowed on real windows of
+                    // this process: attached-focused passes, companion passes,
+                    // windowed same-pid dialog holds (phantom guard), hidden
+                    // attached + same-pid fg (PCSX2 F11 fullscreen) passes,
+                    // hidden attached + foreign fg holds. No emulator, no
+                    // sidecar, no GPU; exit 0 only if every assertion holds.
+                    // Revert: revert fullscreen-fg (delete this block +
+                    // WindowCapture.FocusAllowed + RunFullscreenFgOfflineTest +
+                    // the CaptureController call-site).
+                    if (args[i] == "--fullscreenfg")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool fullOk = Capture.WindowCapture.RunFullscreenFgOfflineTest();
+                        FileLogger.Log($"[fullscreenfg] exit ok={fullOk}");
+                        Shutdown(fullOk ? 0 : 1);
+                        return;
+                    }
                     // Calibration coverage offline gate (2026-11-11):
                     // --calibcover shows the real overlay, pumps the
                     // dispatcher, and asserts its physical frame covers

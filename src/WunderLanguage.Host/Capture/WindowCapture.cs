@@ -114,6 +114,36 @@ namespace WunderLanguage.Host.Capture
         }
         public static bool IsMinimized(IntPtr hWnd) => IsIconic(hWnd);
         public static IntPtr GetForegroundWindowHandle() => GetForegroundWindow();
+        // fullscreen-fg (revert: revert fullscreen-fg): focus-gate predicate.
+        // PCSX2-style emulators hide their MAIN window and render F11
+        // fullscreen in a NEW top-level window of the SAME process (proven
+        // live 2026-11-13 Okami leg: attached 0xB0B38 hidden at its old
+        // windowed rect, foreground 0xB1560 same-pid for 28 min -> gate
+        // held 4145 loops, 0 publishes; live probe confirmed attached
+        // vis=False + fg pid=37640 both pcsx2-qt). Pass when the
+        // foreground is the attached window (unchanged), a companion
+        // (unchanged), OR the fullscreen signature: attached window NOT
+        // visible + foreground in the attached window's process. The
+        // visible-attached check is the phantom guard: windowed + a
+        // same-process dialog taking foreground (settings over game list)
+        // must still hold - occlusion deliberately skips same-process
+        // windows, so this predicate is the only thing that can. Capture
+        // geometry follows fs-capture (revert: revert fs-capture): the
+        // calibrated slice keeps anchoring on the attached window while
+        // windowed (calibration is relative to that rect); in the
+        // fullscreen signature capture switches to the live game window's
+        // WHOLE frame instead - a scaled stale slice can no longer miss
+        // the dialogue (Okami leg 2 cause A).
+        public static bool FocusAllowed(IntPtr fgFocus, IntPtr attached, Func<IntPtr, bool>? isCompanionWindow)
+        {
+            if (fgFocus == attached) return true;
+            if (isCompanionWindow?.Invoke(fgFocus) ?? false) return true;
+            if (IsWindowVisible(attached)) return false;
+            if (fgFocus == IntPtr.Zero) return false;
+            GetWindowThreadProcessId(fgFocus, out uint fgPid);
+            GetWindowThreadProcessId(attached, out uint attPid);
+            return fgPid != 0 && fgPid == attPid;
+        }
         public static void FocusWindow(IntPtr hWnd)
         {
             RestoreIfMinimized(hWnd);
@@ -684,5 +714,144 @@ namespace WunderLanguage.Host.Capture
             }
             return ok;
         }
+        // --fullscreenfg offline gate (revert: revert fullscreen-fg): proves
+        // the focus-gate predicate on real windows of this process - the
+        // foreground handle, visibility, and PID are read from actual USER32
+        // state, not stubs. Cases: attached focused passes; companion passes;
+        // windowed same-pid fg (dialog over game list) HOLDS (the phantom
+        // guard); hidden attached + same-pid fg (PCSX2 F11 fullscreen) passes;
+        // hidden attached + FOREIGN fg (person alt-tabbed away from the
+        // fullscreen game) HOLDS. No emulator, no sidecar, no GPU; exit 0
+        // only if every assertion holds.
+        public static bool RunFullscreenFgOfflineTest()
+        {
+            bool ok = true;
+            System.Windows.Window? attached = null;
+            try
+            {
+                // Real on-screen window standing in for the emulator's main
+                // window; a second one is unnecessary - the fullscreen case
+                // is the SAME window hidden with a same-pid foreground, and
+                // any other window of ours (or even this one shown again)
+                // gives that. Instead reuse a taskbar/foreign handle for the
+                // foreign case: enumerate the first visible top-level window
+                // whose PID differs from ours.
+                attached = new System.Windows.Window
+                {
+                    Width = 420,
+                    Height = 300,
+                    WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                    Left = 120,
+                    Top = 120,
+                    ShowInTaskbar = false,
+                    Title = "fullscreen-fg gate (attached)",
+                    Background = System.Windows.Media.Brushes.White,
+                };
+                attached.Show();
+                attached.Activate();
+                var deadline = DateTime.UtcNow.AddMilliseconds(300);
+                while (DateTime.UtcNow < deadline)
+                {
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() => frame.Continue = false));
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                    System.Threading.Thread.Sleep(10);
+                }
+                IntPtr hAttached = new System.Windows.Interop.WindowInteropHelper(attached).Handle;
+                if (hAttached == IntPtr.Zero)
+                {
+                    FileLogger.Log("[fullscreenfg] gate window has no HWND");
+                    return false;
+                }
+                // Foreign visible window of a DIFFERENT process (taskbar,
+                // shell, anything) - required for the alt-tab-hold case.
+                IntPtr hForeign = IntPtr.Zero;
+                GetWindowThreadProcessId(hAttached, out uint selfPid);
+                EnumWindows((h, _) =>
+                {
+                    if (h == hAttached || !IsWindowVisible(h)) return true;
+                    GetWindowThreadProcessId(h, out uint pid);
+                    if (pid == 0 || pid == selfPid) return true;
+                    hForeign = h;
+                    return false;
+                }, IntPtr.Zero);
+                if (hForeign == IntPtr.Zero)
+                {
+                    FileLogger.Log("[fullscreenfg] no foreign visible window found (taskbar missing?)");
+                    return false;
+                }
+
+                // Case 1: attached itself holds fg -> pass (baseline).
+                bool c1 = FocusAllowed(hAttached, hAttached, null);
+                FileLogger.Log($"[fullscreenfg] attached-focused pass={c1} (want True)");
+                if (!c1) ok = false;
+
+                // Case 2: companion fg -> pass (unchanged contract; the
+                // predicate must not shadow the companion escape).
+                bool c2 = FocusAllowed(hForeign, hAttached, h => h == hForeign);
+                FileLogger.Log($"[fullscreenfg] companion pass={c2} (want True)");
+                if (!c2) ok = false;
+
+                // Case 3: VISIBLE attached + same-pid fg = windowed dialog
+                // over the game list -> must HOLD (phantom guard). Same pid
+                // is trivially true here (every window in this test is ours),
+                // so the assertion lives entirely on visibility.
+                bool c3 = FocusAllowed(hForeign, hAttached, null);
+                FileLogger.Log($"[fullscreenfg] windowed-foreign hold={!c3} (want True)");
+                if (c3) ok = false;
+                // Same-pid-with-visible-attached: show is not even needed for
+                // a second handle - use hAttached's process == itself via a
+                // freshly shown second window of ours to make "same pid,
+                // different hwnd" real rather than hypothetical.
+                System.Windows.Window? sibling = null;
+                try
+                {
+                    sibling = new System.Windows.Window
+                    {
+                        Width = 200, Height = 120,
+                        WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                        Left = 600, Top = 600, ShowInTaskbar = false,
+                        Title = "fullscreen-fg gate (sibling/dialog)",
+                        Background = System.Windows.Media.Brushes.LightGray,
+                    };
+                    sibling.Show();
+                    IntPtr hSibling = new System.Windows.Interop.WindowInteropHelper(sibling).Handle;
+                    bool c4 = FocusAllowed(hSibling, hAttached, null);
+                    FileLogger.Log($"[fullscreenfg] windowed same-pid dialog hold={!c4} (want True)");
+                    if (c4) ok = false;
+
+                    // Case 5: THE fix - attached hidden (emulator fullscreen)
+                    // + same-pid fg on a different hwnd -> must PASS.
+                    attached.Hide();
+                    bool attachedHidden = !IsWindowVisible(hAttached);
+                    bool c5 = FocusAllowed(hSibling, hAttached, null);
+                    FileLogger.Log($"[fullscreenfg] hidden-attached same-pid pass={c5} hidden={attachedHidden} (want True/True)");
+                    if (!c5 || !attachedHidden) ok = false;
+
+                    // Case 6: hidden attached + FOREIGN fg (alt-tabbed away
+                    // from the fullscreen game) -> must HOLD.
+                    bool c6 = FocusAllowed(hForeign, hAttached, null);
+                    FileLogger.Log($"[fullscreenfg] hidden-attached foreign hold={!c6} (want True)");
+                    if (c6) ok = false;
+                }
+                finally
+                {
+                    try { sibling?.Close(); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[fullscreenfg] ERROR {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { attached?.Close(); } catch { }
+            }
+            return ok;
+        }
+
     }
 }
