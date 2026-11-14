@@ -144,6 +144,64 @@ namespace WunderLanguage.Host.Capture
             GetWindowThreadProcessId(attached, out uint attPid);
             return fgPid != 0 && fgPid == attPid;
         }
+        // fs-capture (revert: revert fs-capture): which window captures THIS
+        // loop, re-resolved from live USER32 state every time - never a
+        // stored handle (design principle: derive from screen state, not
+        // assumptions).
+        //
+        // Windowed (attached visible) -> IntPtr.Zero: the calibrated-slice
+        // path on the attached window runs unchanged. The visibility check
+        // FIRST is the phantom guard, exactly like FocusAllowed: a
+        // same-process dialog over a visible main window must not divert
+        // capture.
+        //
+        // Fullscreen signature (attached hidden - proven live 2026-11-13:
+        // PCSX2 F11 hides the main window and renders in a NEW top-level
+        // HWND of the same process) -> the LARGEST visible top-level window
+        // of the attached window's process:
+        //   * largest, not foreground: a same-process dialog opened OVER
+        //     the fullscreen game (settings etc.) stays a guest on the game
+        //     frame - the game window remains the capture surface, which is
+        //     what the old slice effectively read (screen copy reads
+        //     composited pixels either way);
+        //   * process-derived: a dead/recreated game HWND (display-mode
+        //     churn) is picked up on the next loop;
+        //   * that window's own rect, WHOLE: dialogue anywhere in the frame
+        //     is captured at any aspect/resolution/dialogue position, so
+        //     the Okami leg-2 cause-A class (slice missed 13/13 ink rows at
+        //     y=1152-1200) cannot recur.
+        // Zero whenever the signature is absent -> callers fall back
+        // untouched.
+        public static IntPtr FullscreenCaptureTarget(IntPtr attached)
+        {
+            if (attached == IntPtr.Zero || IsWindowVisible(attached)) return IntPtr.Zero;
+            GetWindowThreadProcessId(attached, out uint attPid);
+            if (attPid == 0) return IntPtr.Zero;
+            IntPtr best = IntPtr.Zero;
+            long bestArea = 0;
+            try
+            {
+                EnumWindows((h, _) =>
+                {
+                    try
+                    {
+                        if (h == attached) return true;
+                        if (!IsWindowVisible(h) || IsIconic(h)) return true;
+                        GetWindowThreadProcessId(h, out uint pid);
+                        if (pid != attPid) return true;
+                        int hr = DwmGetWindowAttribute(h, DWMWA_CLOAKED, out int cloaked, sizeof(int));
+                        if (hr == 0 && cloaked != 0) return true;
+                        if (!TryGetWindowBounds(h, out var r) || r.Width <= 0 || r.Height <= 0) return true;
+                        long area = (long)r.Width * r.Height;
+                        if (area > bestArea) { bestArea = area; best = h; }
+                    }
+                    catch { }
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch { }
+            return bestArea > 0 ? best : IntPtr.Zero;
+        }
         public static void FocusWindow(IntPtr hWnd)
         {
             RestoreIfMinimized(hWnd);
@@ -261,6 +319,26 @@ namespace WunderLanguage.Host.Capture
                 winBounds.Top + rel.Top,
                 rel.Width,
                 rel.Height);
+            return IsScreenRegionOccluded(hWnd, screenRect, out occluder, out occluderTitle);
+        }
+        // fs-capture (revert: revert fs-capture): the same probe anchored on
+        // the window's OWN whole rect - the surface fs-capture captures in
+        // the fullscreen signature. Probe rect and capture rect come from
+        // one bounds read of one window per loop, so the gate can never
+        // gate different pixels than the capture reads.
+        public static bool IsWindowRegionOccluded(IntPtr hWnd, out IntPtr occluder, out string occluderTitle)
+        {
+            occluder = IntPtr.Zero;
+            occluderTitle = string.Empty;
+            if (!IsWindow(hWnd)) return false;
+            if (!TryGetWindowBounds(hWnd, out var winBounds)) return false;
+            return IsScreenRegionOccluded(hWnd, winBounds, out occluder, out occluderTitle);
+        }
+
+        private static bool IsScreenRegionOccluded(IntPtr hWnd, Rectangle screenRect, out IntPtr occluder, out string occluderTitle)
+        {
+            occluder = IntPtr.Zero;
+            occluderTitle = string.Empty;
             if (screenRect.Width <= 0 || screenRect.Height <= 0) return false;
             long minOverlap = Math.Max(4096L, (long)screenRect.Width * screenRect.Height / 50);
             GetWindowThreadProcessId(hWnd, out uint selfPid);
@@ -397,6 +475,37 @@ namespace WunderLanguage.Host.Capture
                     "The calibrated region is outside the current window bounds - try recalibrating.");
             return full.Clone(rect, full.PixelFormat);
         }
+
+        // fs-capture (revert: revert fs-capture). HOT LOOP PATH for the
+        // fullscreen signature: capture the window's OWN rect WHOLE - no
+        // calibrated slice. The window rect is the frame because a
+        // fullscreen game owns its surface: dialogue can sit anywhere in it
+        // (Okami leg 2: ink at y=1152-1200, outside the stale windowed
+        // slice), and the rect is read live in physical pixels from the
+        // window actually rendering the game - any aspect, any resolution,
+        // any display (multi-monitor: the window's own rect, not the
+        // primary's). Screen-copy first (same no-redraw hot path), the
+        // capture-swap blank qualifier applies to the whole frame, and
+        // PrintWindow falls back on a thrown screen-copy error.
+        public static Bitmap CaptureWindowFull(IntPtr hWnd)
+        {
+            if (TryGetWindowBounds(hWnd, out var winBounds) && winBounds.Width > 0 && winBounds.Height > 0)
+            {
+                try
+                {
+                    // PrintWindow-space crop: an oversized rect that the
+                    // swap's Intersect clamps to the WHOLE compat frame -
+                    // full-frame capture has no slice to clone.
+                    return SwapIfDegenerate(CaptureScreenRegion(winBounds), hWnd,
+                        new Rectangle(0, 0, int.MaxValue, int.MaxValue));
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Log($"CaptureWindowFull: screen-copy failed ({ex.Message}) - falling back to PrintWindow.");
+                }
+            }
+            return CaptureWindow(hWnd);
+        }
         public static Bitmap CaptureScreenRegion(Rectangle screenRect)
         {
             if (screenRect.Width <= 0 || screenRect.Height <= 0)
@@ -512,6 +621,12 @@ namespace WunderLanguage.Host.Capture
         }
 
         private static Bitmap SwapIfDegenerate(Bitmap bmp, IntPtr hWnd, GameRegion gameRegion)
+            => SwapIfDegenerate(bmp, hWnd, gameRegion.GetRelativeCropRect());
+
+        // Crop in PrintWindow space: the compat frame is cloned at this rect
+        // (calibrated slice for the GameRegion path; oversized rect clamped
+        // to the whole frame for fs-capture's full-frame path).
+        private static Bitmap SwapIfDegenerate(Bitmap bmp, IntPtr hWnd, Rectangle pwCrop)
         {
             try
             {
@@ -537,7 +652,7 @@ namespace WunderLanguage.Host.Capture
                 bool attempt = _swapMisses < SwapEagerMisses || _swapMisses % SwapRetryEvery == 0;
                 if (!attempt) return bmp;
                 using var full = CaptureWindow(hWnd);
-                var rect = gameRegion.GetRelativeCropRect();
+                var rect = pwCrop;
                 rect.Intersect(new Rectangle(0, 0, full.Width, full.Height));
                 if (rect.Width <= 0 || rect.Height <= 0)
                 {
@@ -853,5 +968,209 @@ namespace WunderLanguage.Host.Capture
             return ok;
         }
 
+        // Gate-only USER32 (fs-capture gate): FindWindow for the taskbar's
+        // foreign handle, SetWindowPos to move OUR OWN gate window onto it
+        // in physical pixels (the probe's coordinate space).
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
+
+        // --fscapture offline gate (revert: revert fs-capture): proves the
+        // fullscreen capture plan on REAL windows of this process - target
+        // resolution, whole-frame geometry, and the re-anchored occlusion
+        // probe - all from live USER32 state, no stubs. Cases: windowed
+        // attached -> no fullscreen target even with a bigger same-pid
+        // window visible (calibrated path untouched); hidden attached ->
+        // the LARGEST visible same-pid window wins (a dialog opened over
+        // the fullscreen game can never become the capture surface);
+        // hiding candidates walks down to Zero (no target -> calibrated
+        // fallback); CaptureWindowFull returns a frame matching the
+        // target's OWN live rect; the occlusion probe reads False when clear
+        // and NAMES the foreign window composited over that rect (its hold
+        // return value awaits batch occlusion-see - see case 7). No emulator,
+        // no sidecar, no GPU; exit 0 only if every assertion holds.
+        public static bool RunFsCaptureOfflineTest()
+        {
+            bool ok = true;
+            System.Windows.Window? attached = null;
+            System.Windows.Window? small = null;
+            System.Windows.Window? large = null;
+            static void Pump(int ms)
+            {
+                var end = DateTime.UtcNow.AddMilliseconds(ms);
+                while (DateTime.UtcNow < end)
+                {
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() => frame.Continue = false));
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                    System.Threading.Thread.Sleep(10);
+                }
+            }
+            try
+            {
+                attached = new System.Windows.Window
+                {
+                    Width = 420,
+                    Height = 300,
+                    WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                    Left = 120,
+                    Top = 120,
+                    ShowInTaskbar = false,
+                    Title = "fs-capture gate (attached)",
+                    Background = new System.Windows.Media.LinearGradientBrush(
+                        System.Windows.Media.Colors.White, System.Windows.Media.Colors.SteelBlue, 45),
+                };
+                small = new System.Windows.Window
+                {
+                    Width = 200,
+                    Height = 120,
+                    WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                    Left = 1500,
+                    Top = 200,
+                    ShowInTaskbar = false,
+                    Title = "fs-capture gate (dialog)",
+                    Background = new System.Windows.Media.LinearGradientBrush(
+                        System.Windows.Media.Colors.LightGreen, System.Windows.Media.Colors.DarkGreen, 45),
+                };
+                large = new System.Windows.Window
+                {
+                    Width = 700,
+                    Height = 500,
+                    WindowStyle = System.Windows.WindowStyle.ToolWindow,
+                    Left = 600,
+                    Top = 400,
+                    ShowInTaskbar = false,
+                    Title = "fs-capture gate (game)",
+                    Background = new System.Windows.Media.LinearGradientBrush(
+                        System.Windows.Media.Colors.Orange, System.Windows.Media.Colors.DarkRed, 45),
+                };
+                attached.Show();
+                small.Show();
+                large.Show();
+                Pump(300);
+                IntPtr hAtt = new System.Windows.Interop.WindowInteropHelper(attached).Handle;
+                IntPtr hSmall = new System.Windows.Interop.WindowInteropHelper(small).Handle;
+                IntPtr hLarge = new System.Windows.Interop.WindowInteropHelper(large).Handle;
+                if (hAtt == IntPtr.Zero || hSmall == IntPtr.Zero || hLarge == IntPtr.Zero)
+                {
+                    FileLogger.Log($"[fscapture] gate windows have no HWND (att=0x{hAtt:X} small=0x{hSmall:X} large=0x{hLarge:X})");
+                    return false;
+                }
+
+                // Case 1 (phantom guard): windowed attached -> Zero, even
+                // though a BIGGER same-pid window is visible. Visibility of
+                // the attached window dominates everything else.
+                var t1 = FullscreenCaptureTarget(hAtt);
+                FileLogger.Log($"[fscapture] windowed target=0x{t1:X} (want Zero, attached visible)");
+                if (t1 != IntPtr.Zero) ok = false;
+
+                // Case 2: THE signature - attached hidden -> largest visible
+                // same-pid window (the fullscreen game's window).
+                attached.Hide();
+                Pump(200);
+                var t2 = FullscreenCaptureTarget(hAtt);
+                FileLogger.Log($"[fscapture] hidden-attached target=0x{t2:X} (want 0x{hLarge:X} largest)");
+                if (t2 != hLarge) ok = false;
+
+                // Case 3: hide the 'game' -> the remaining window wins
+                // (candidate list walks down, no stale handle survives).
+                large.Hide();
+                Pump(200);
+                var t3 = FullscreenCaptureTarget(hAtt);
+                FileLogger.Log($"[fscapture] game hidden target=0x{t3:X} (want 0x{hSmall:X})");
+                if (t3 != hSmall) ok = false;
+
+                // Case 4: every candidate gone -> Zero (calibrated fallback,
+                // the windowed machinery runs untouched).
+                small.Hide();
+                Pump(200);
+                var t4 = FullscreenCaptureTarget(hAtt);
+                FileLogger.Log($"[fscapture] no candidates target=0x{t4:X} (want Zero)");
+                if (t4 != IntPtr.Zero) ok = false;
+
+                // Case 5: whole-frame geometry - the bitmap matches the
+                // target's OWN live rect (DWM bounds, or raw window rect
+                // when the capture-swap adopts the PrintWindow compat
+                // frame), never some stale or scaled slice.
+                large.Show();
+                Pump(300);
+                bool hasDwm = TryGetWindowBounds(hLarge, out var dwm);
+                bool hasRaw = TryGetUserRect(hLarge, out var raw);
+                using (var frame = CaptureWindowFull(hLarge))
+                {
+                    bool matchDwm = hasDwm && Math.Abs(frame.Width - dwm.Width) <= 8 && Math.Abs(frame.Height - dwm.Height) <= 8;
+                    bool matchRaw = hasRaw && Math.Abs(frame.Width - raw.Width) <= 8 && Math.Abs(frame.Height - raw.Height) <= 8;
+                    FileLogger.Log($"[fscapture] full-frame {frame.Width}x{frame.Height} (dwm {dwm.Width}x{dwm.Height} raw {raw.Width}x{raw.Height}) matchDwm={matchDwm} matchRaw={matchRaw}");
+                    if (!(matchDwm || matchRaw)) ok = false;
+                }
+
+                // Case 6: baseline at the resting spot. A foreign window may
+                // legitimately sit over the gate window on a busy desktop
+                // (proven live here: a Brave window was above us), so this
+                // records WHO is there instead of demanding an empty screen
+                // - the move test below compares against this baseline.
+                IsWindowRegionOccluded(hLarge, out IntPtr occAtRest, out string occTitleAtRest);
+                FileLogger.Log($"[fscapture] resting baseline occluder=0x{occAtRest:X} \"{occTitleAtRest}\" (recorded, environment-dependent)");
+
+                // Case 7: a FOREIGN window composited over the target's
+                // whole rect -> the probe FINDS and NAMES it (this is what
+                // fs-capture owns: the re-anchored probe reads the same rect
+                // the capture reads). We move OUR OWN window onto the taskbar
+                // (physical px) - no foreign window is ever touched. The
+                // probe's RETURN value stays False here by a PRE-EXISTING
+                // defect proven by this gate: found=true makes the walk stop
+                // before the target -> sawTarget=false -> found&&sawTarget
+                // can never hold (zero occlusion-hold lines in all of
+                // app2.log history). Fixing that starts real holds and must
+                // ship with the own-window block filter (batch occlusion-see,
+                // adjudication pending) - flip this case to assert True
+                // there. Taskbar auto-hidden = invisible to the probe by
+                // design -> log the skip instead of asserting an environment
+                // we don't have.
+                IntPtr hTray = FindWindow("Shell_TrayWnd", null);
+                var trayRect = Rectangle.Empty;
+                bool trayUp = hTray != IntPtr.Zero && IsWindowVisible(hTray) && TryGetUserRect(hTray, out trayRect) && trayRect.Width > 0;
+                if (!trayUp)
+                {
+                    FileLogger.Log("[fscapture] taskbar not visible (auto-hide?) - occluded case skipped");
+                }
+                else if (hasDwm)
+                {
+                    var prev = dwm;
+                    SetWindowPos(hLarge, IntPtr.Zero, trayRect.Left + 16, trayRect.Bottom - dwm.Height, 0, 0,
+                        SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+                    Pump(250);
+                    bool occTrue = IsWindowRegionOccluded(hLarge, out IntPtr occWin, out string occTitle);
+                    bool foundIt = occWin == hTray && !string.IsNullOrWhiteSpace(occTitle);
+                    FileLogger.Log($"[fscapture] occluder found={foundIt} handle=0x{occWin:X} (want 0x{hTray:X}) \"{occTitle}\" return={occTrue} (False = pre-existing found&&sawTarget defect, see comment)");
+                    if (!foundIt) ok = false;
+                    SetWindowPos(hLarge, IntPtr.Zero, prev.Left, prev.Top, 0, 0,
+                        SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+                    Pump(150);
+                    IsWindowRegionOccluded(hLarge, out var occWin2, out var occTitle2);
+                    bool cleared = occWin2 == occAtRest;
+                    FileLogger.Log($"[fscapture] occluder after move back=0x{occWin2:X} \"{occTitle2}\" baseline=0x{occAtRest:X} restored={cleared} (want True)");
+                    if (!cleared) ok = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[fscapture] ERROR {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { attached?.Close(); } catch { }
+                try { small?.Close(); } catch { }
+                try { large?.Close(); } catch { }
+            }
+            return ok;
+        }
     }
 }

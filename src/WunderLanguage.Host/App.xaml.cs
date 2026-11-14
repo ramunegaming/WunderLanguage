@@ -106,6 +106,28 @@ namespace WunderLanguage.Host
                         Shutdown(fullOk ? 0 : 1);
                         return;
                     }
+                    // Fullscreen capture-plan offline gate (2026-11-13):
+                    // --fscapture proves FullscreenCaptureTarget +
+                    // CaptureWindowFull + the re-anchored occlusion probe on
+                    // real windows of this process: windowed -> no target
+                    // (calibrated path untouched), hidden attached -> the
+                    // largest same-pid window (a dialog can never become the
+                    // capture surface), full-frame geometry matches the
+                    // target's own live rect, occlusion False when clear /
+                    // occluder NAMED under a foreign window (the hold return
+                    // value awaits batch occlusion-see - gate case 7).
+                    // Revert: revert fs-capture (delete this block +
+                    // WindowCapture.FullscreenCaptureTarget/CaptureWindowFull/
+                    // IsWindowRegionOccluded/RunFsCaptureOfflineTest +
+                    // the CaptureController resolve/occlusion/capture wiring).
+                    if (args[i] == "--fscapture")
+                    {
+                        FileLogger.ReplayMode = true;
+                        bool fsOk = Capture.WindowCapture.RunFsCaptureOfflineTest();
+                        FileLogger.Log($"[fscapture] exit ok={fsOk}");
+                        Shutdown(fsOk ? 0 : 1);
+                        return;
+                    }
                     // Calibration coverage offline gate (2026-11-11):
                     // --calibcover shows the real overlay, pumps the
                     // dispatcher, and asserts its physical frame covers

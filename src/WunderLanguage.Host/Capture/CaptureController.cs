@@ -648,6 +648,12 @@ namespace WunderLanguage.Host.Capture
 
         private int _consecutiveCaptureFailures;
         private const int MaxConsecutiveCaptureFailures = 5;
+        // fs-capture (revert: revert fs-capture): last loop's fullscreen
+        // capture target (Zero = windowed, calibrated slice). Re-resolved
+        // from live USER32 state EVERY loop before use - stored here only
+        // to detect transitions (log + frame-hash drop), never trusted as
+        // an assumption.
+        private IntPtr _fsCaptureTarget;
         // Boot/outage survival: consecutive OCR transport failures (see
         // catch below). Reset on every successful OCR read.
         private int _consecutiveOcrTransportFailures;
@@ -2961,6 +2967,41 @@ namespace WunderLanguage.Host.Capture
                         _prevSmall = null;
                         FileLogger.Log($"[loop {iteration}] refocus-catchup (stale frame dropped, OCR now)");
                     }
+                    // fs-capture (revert: revert fs-capture): resolve the
+                    // capture target from LIVE screen state every loop
+                    // (design principle: derive, never assume). Windowed ->
+                    // Zero: the calibrated-slice path below runs exactly as
+                    // before. Fullscreen signature (attached hidden + a
+                    // visible same-process window) -> that process's largest
+                    // visible window - the live game window - captured WHOLE
+                    // below, so the stale-slice geometry class (Okami leg 2
+                    // cause A: slice missed 13/13 dialogue rows) cannot
+                    // recur. Occlusion + capture both read this handle, so
+                    // the gate and the pixels are always the same rect.
+                    IntPtr fsTarget = WindowCapture.FullscreenCaptureTarget(_hWnd);
+                    if (fsTarget != _fsCaptureTarget)
+                    {
+                        if (fsTarget != IntPtr.Zero)
+                        {
+                            _fsCaptureTarget = fsTarget;
+                            if (WindowCapture.TryGetWindowBounds(fsTarget, out var fsB))
+                                FileLogger.Log($"[fs-capture] whole-frame capture ON: live window 0x{fsTarget:X} {fsB.Width}x{fsB.Height} at ({fsB.Left},{fsB.Top}) - attached 0x{_hWnd:X} hidden");
+                        }
+                        else
+                        {
+                            FileLogger.Log("[fs-capture] whole-frame capture OFF - calibrated slice on the attached window");
+                            _fsCaptureTarget = IntPtr.Zero;
+                        }
+                        // Geometry change = new camera: drop the frame-hash
+                        // state exactly like refocus-catchup so a stale
+                        // slice's hash can never suppress the first
+                        // whole-frame OCR (or vice versa on the way back).
+                        _lastFrameHash = null;
+                        _pendingFrameHash = null;
+                        _recentFrameHashes.Clear();
+                        _lastFrameNovel = true;
+                        _prevSmall = null;
+                    }
                     // Occlusion gate (revert: revert occlusion-hold): the focus
                     // gate above checks WHO holds the foreground; this checks
                     // who is PAINTED OVER the game. CaptureWindowRegion copies
@@ -2973,7 +3014,16 @@ namespace WunderLanguage.Host.Capture
                     // of an episode names the occluder so the user can move or
                     // close it, and clearing drops the stale frame hash the
                     // same way refocus does.
-                    if (WindowCapture.IsCapturedRegionOccluded(_hWnd, _gameRegion, out IntPtr occWin, out string occTitle))
+                    // fs-capture (revert: revert fs-capture): probe the rect
+                    // that THIS loop's capture will actually read - the live
+                    // game window's whole frame in the fullscreen signature,
+                    // the calibrated slice otherwise.
+                    IntPtr occWin;
+                    string occTitle;
+                    bool occludedNow = _fsCaptureTarget != IntPtr.Zero
+                        ? WindowCapture.IsWindowRegionOccluded(_fsCaptureTarget, out occWin, out occTitle)
+                        : WindowCapture.IsCapturedRegionOccluded(_hWnd, _gameRegion, out occWin, out occTitle);
+                    if (occludedNow)
                     {
                         if (!_occlHoldActive)
                             FileLogger.Log($"[loop {iteration}] occlusion-hold: 0x{occWin:X} \"{occTitle}\" composited over the game, holding");
@@ -3074,7 +3124,13 @@ namespace WunderLanguage.Host.Capture
                     }
                     if (iteration % 20 == 0) RefreshGameSession();
                     var capSw = System.Diagnostics.Stopwatch.StartNew();
-                    using var bitmap = WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
+                    // fs-capture (revert: revert fs-capture): in the
+                    // fullscreen signature capture the live game window's
+                    // WHOLE frame (own rect, physical px); windowed keeps
+                    // the calibrated slice untouched.
+                    using var bitmap = _fsCaptureTarget != IntPtr.Zero
+                        ? WindowCapture.CaptureWindowFull(_fsCaptureTarget)
+                        : WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
                     _consecutiveCaptureFailures = 0;
 
                     string frameHash = ComputeFrameHash(bitmap);
