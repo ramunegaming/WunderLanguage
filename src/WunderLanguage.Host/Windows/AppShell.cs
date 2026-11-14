@@ -933,9 +933,17 @@ namespace WunderLanguage.Host.Windows
             {
                 bool covered = false;
                 System.Drawing.Rectangle game = default, mon = default;
-                if (_emulatorHandle != IntPtr.Zero &&
-                    WindowCapture.TryGetUserRect(_emulatorHandle, out game) &&
-                    WindowCapture.TryGetMonitorBounds(_emulatorHandle, out mon))
+                // fs-coverage (revert: revert fs-coverage): coverage reads
+                // the window that SHOWS the game this tick (live fullscreen
+                // target when the signature is active, else the attached
+                // window) - never the hidden main's stale windowed rect,
+                // which kept GameCoversMonitor false forever so auto-popout
+                // never fired (Okami leg 2 cause C). Re-resolved every call:
+                // the 150ms tick and any bounds event both re-derive it.
+                IntPtr covWin = WindowCapture.CoverageWindowFor(_emulatorHandle);
+                if (covWin != IntPtr.Zero &&
+                    WindowCapture.TryGetUserRect(covWin, out game) &&
+                    WindowCapture.TryGetMonitorBounds(covWin, out mon))
                 {
                     covered = WindowCapture.GameCoversMonitor(game, mon);
                 }
@@ -1346,8 +1354,13 @@ namespace WunderLanguage.Host.Windows
                     if (_sidePanelHandle != IntPtr.Zero)
                     {
                         System.Drawing.Rectangle mon = default;
+                        // fs-coverage (revert: revert fs-coverage): the anchor
+                        // monitor comes from the SAME live surface the
+                        // coverage edge read - the game's own monitor, not
+                        // the hidden main's - so a fullscreen game on a
+                        // second display anchors the feed onto THAT display.
                         bool coveredMon = _gameCoversMonitor &&
-                            WindowCapture.TryGetMonitorBounds(_emulatorHandle, out mon);
+                            WindowCapture.TryGetMonitorBounds(WindowCapture.CoverageWindowFor(_emulatorHandle), out mon);
                         AnchorFeedOnPop(_sidePanelHandle, coveredMon, mon);
                     }
                     if (_sidePanelHandle != IntPtr.Zero)

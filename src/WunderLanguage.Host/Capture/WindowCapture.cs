@@ -202,6 +202,21 @@ namespace WunderLanguage.Host.Capture
             catch { }
             return bestArea > 0 ? best : IntPtr.Zero;
         }
+        // fs-coverage (revert: revert fs-coverage): the window that SHOWS
+        // the game right now, for coverage/geometry reads - the fullscreen
+        // target while the signature is active, else the attached window
+        // itself. RefreshDockAffordance and the pop anchor both resolve
+        // through this, so the coverage edge and the pop land on the SAME
+        // surface (Okami leg 2 cause C: coverage read the HIDDEN main's
+        // stale windowed rect -> GameCoversMonitor stayed false forever ->
+        // auto-popout never fired -> the docked feed stayed behind the
+        // fullscreen game; proven: zero dockvis/auto-popout lines all
+        // leg). Zero in, zero out (no attached window).
+        public static IntPtr CoverageWindowFor(IntPtr attached)
+        {
+            IntPtr t = FullscreenCaptureTarget(attached);
+            return t != IntPtr.Zero ? t : attached;
+        }
         public static void FocusWindow(IntPtr hWnd)
         {
             RestoreIfMinimized(hWnd);

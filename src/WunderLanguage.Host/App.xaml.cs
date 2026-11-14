@@ -181,11 +181,23 @@ namespace WunderLanguage.Host
                     // --dockvis = pure coverage predicate table + real
                     // monitor readback on a real window (small -> not
                     // covered, stretched to monitor -> covered) + the real
-                    // panel's visibility flips. No emulator, no sidecar,
-                    // no GPU; exit 0 only if every assertion holds.
+                    // panel's visibility flips. Extended by fs-coverage
+                    // (2026-11-13): the coverage INPUT phase - windowed
+                    // resolves to the attached window (unchanged), the
+                    // fullscreen signature resolves to the LIVE game
+                    // window's own rect/monitor (covering surface -> True:
+                    // the cause-C edge that never fired), second-display
+                    // derivation, no-surface fallback, restore. No emulator,
+                    // no sidecar, no GPU; exit 0 only if every assertion
+                    // holds.
                     // Revert: revert dock-hide (delete this block +
                     // SidePanelWindow.RunDockVisOfflineTest + the
                     // WindowCapture detection + the AppShell glue).
+                    // Revert: revert fs-coverage (delete the fs-coverage
+                    // phase + StretchToMonitor from RunDockVisOfflineTest,
+                    // WindowCapture.CoverageWindowFor, and the two
+                    // AppShell call sites - RefreshDockAffordance input +
+                    // SetDetached anchor monitor).
                     if (args[i] == "--dockvis")
                     {
                         FileLogger.ReplayMode = true;

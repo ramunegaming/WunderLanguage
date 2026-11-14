@@ -304,6 +304,146 @@ namespace WunderLanguage.Host.Windows
                 try { w?.Close(); } catch { }
             }
 
+            // === fs-coverage phase (revert: revert fs-coverage): coverage
+            // INPUT resolution - WHICH window's rect/monitor the predicate
+            // reads. Windowed -> the attached window (input byte-unchanged);
+            // fullscreen signature (attached hidden) -> the live game
+            // window's OWN rect and OWN monitor, so a covering game window
+            // flips covered True (the cause-C edge that never fired:
+            // coverage read the hidden main's stale windowed rect forever)
+            // and a game on a second display derives THAT display. Real
+            // windows, real USER32 rects; skipped pieces log why. ===
+            Window? att = null;
+            Window? sib = null;
+            try
+            {
+                att = new Window
+                {
+                    Width = 340,
+                    Height = 220,
+                    Left = 60,
+                    Top = 60,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Title = "dockvis gate (attached)",
+                    Background = Brushes.White,
+                };
+                sib = new Window
+                {
+                    Width = 200,
+                    Height = 150,
+                    Left = 500,
+                    Top = 300,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Title = "dockvis gate (fullscreen surface)",
+                    Background = Brushes.Gainsboro,
+                };
+                att.Show();
+                sib.Show();
+                Pump(200);
+                IntPtr hAtt = new System.Windows.Interop.WindowInteropHelper(att).Handle;
+                IntPtr hSib = new System.Windows.Interop.WindowInteropHelper(sib).Handle;
+                if (hAtt == IntPtr.Zero || hSib == IntPtr.Zero)
+                {
+                    FileLogger.Log("[dockvis] fs-coverage gate windows have no HWND");
+                    ok = false;
+                }
+                else
+                {
+                    // C1: windowed -> resolver returns the ATTACHED window
+                    // and its inset rect does not cover (docked input
+                    // unchanged by this batch).
+                    IntPtr cov1 = Capture.WindowCapture.CoverageWindowFor(hAtt);
+                    var r1 = default(System.Drawing.Rectangle);
+                    var m1 = default(System.Drawing.Rectangle);
+                    bool gotC1 = Capture.WindowCapture.TryGetUserRect(cov1, out r1)
+                              && Capture.WindowCapture.TryGetMonitorBounds(cov1, out m1);
+                    bool c1 = cov1 == hAtt && gotC1 && !Capture.WindowCapture.GameCoversMonitor(r1, m1);
+                    FileLogger.Log($"[dockvis] fs-coverage windowed cov=0x{cov1:X} (want 0x{hAtt:X}) covered=False:{c1} (want True)");
+                    ok &= c1;
+
+                    // C2: THE cause-C case - attached hidden (PCSX2 F11
+                    // signature), surface stretched over the monitor ->
+                    // resolver returns the LIVE surface and coverage reads
+                    // True. This is the edge that fires auto-popout.
+                    att.Hide();
+                    Pump(150);
+                    IntPtr cov2 = Capture.WindowCapture.CoverageWindowFor(hAtt);
+                    bool resolver2 = cov2 == hSib;
+                    bool monitor2 = Capture.WindowCapture.TryGetMonitorBounds(hSib, out var mS)
+                                 && StretchToMonitor(hSib, mS);
+                    bool cov2ok = resolver2 && monitor2
+                               && Capture.WindowCapture.TryGetUserRect(cov2, out var r2)
+                               && Capture.WindowCapture.TryGetMonitorBounds(cov2, out var m2)
+                               && Capture.WindowCapture.GameCoversMonitor(r2, m2);
+                    FileLogger.Log($"[dockvis] fs-coverage fullscreen cov=0x{cov2:X} (want 0x{hSib:X}) resolver={resolver2} covered=True:{cov2ok} (want True/True)");
+                    ok &= resolver2 && cov2ok;
+
+                    // C3 (multi-monitor derivation): park the surface just
+                    // beyond the attached window's monitor. If a second
+                    // monitor lives there, stretch over IT and coverage must
+                    // derive ITS rect/monitor - not the attached window's.
+                    if (Capture.WindowCapture.TryGetMonitorBounds(hAtt, out var mAtt))
+                    {
+                        SetWindowPos(hSib, IntPtr.Zero, mAtt.Right + 50, mAtt.Top + 50, 400, 300, SWP_NOZORDER | SWP_NOACTIVATE);
+                        Pump(200);
+                        bool secondExists = Capture.WindowCapture.TryGetMonitorBounds(hSib, out var mOther) && mOther != mAtt;
+                        if (!secondExists)
+                        {
+                            FileLogger.Log("[dockvis] fs-coverage single monitor - second-display derivation skipped");
+                        }
+                        else
+                        {
+                            bool landed = StretchToMonitor(hSib, mOther);
+                            IntPtr cov3 = Capture.WindowCapture.CoverageWindowFor(hAtt);
+                            var m3 = default(System.Drawing.Rectangle);
+                            var r3 = default(System.Drawing.Rectangle);
+                            bool cov3ok = landed && cov3 == hSib
+                                       && Capture.WindowCapture.TryGetMonitorBounds(cov3, out m3)
+                                       && m3 == mOther
+                                       && Capture.WindowCapture.TryGetUserRect(cov3, out r3)
+                                       && Capture.WindowCapture.GameCoversMonitor(r3, m3);
+                            FileLogger.Log($"[dockvis] fs-coverage second-display cov=0x{cov3:X} mon={m3} (want {mOther}, attached {mAtt}) covered=True:{cov3ok} (want True)");
+                            ok &= cov3ok;
+                        }
+                    }
+
+                    // C4: the surface disappears (game window gone, attached
+                    // still hidden) -> resolver falls back to the attached
+                    // window: no live surface, no coverage claim.
+                    sib.Hide();
+                    Pump(150);
+                    IntPtr cov4 = Capture.WindowCapture.CoverageWindowFor(hAtt);
+                    bool c4 = cov4 == hAtt;
+                    FileLogger.Log($"[dockvis] fs-coverage no-surface cov=0x{cov4:X} (want 0x{hAtt:X}) ok={c4} (want True)");
+                    ok &= c4;
+
+                    // C5: everything restored -> attached visible, its
+                    // visibility dominates again: back to the windowed
+                    // input.
+                    sib.Show();
+                    att.Show();
+                    Pump(200);
+                    IntPtr cov5 = Capture.WindowCapture.CoverageWindowFor(hAtt);
+                    bool c5 = cov5 == hAtt;
+                    FileLogger.Log($"[dockvis] fs-coverage restored cov=0x{cov5:X} (want 0x{hAtt:X}) ok={c5} (want True)");
+                    ok &= c5;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[dockvis] fs-coverage phase ERROR: {ex.Message}");
+                ok = false;
+            }
+            finally
+            {
+                try { att?.Close(); } catch { }
+                try { sib?.Close(); } catch { }
+            }
+
             // --- Real panel: visibility flips ---
             try
             {
@@ -339,6 +479,28 @@ namespace WunderLanguage.Host.Windows
                 Dispatcher.PushFrame(frame);
                 System.Threading.Thread.Sleep(10);
             }
+        }
+
+        // fs-coverage gate helper (revert: revert fs-coverage): stretch a
+        // gate window over a monitor rect with the production SetWindowPos
+        // primitive and CONFIRM the raw rect stuck. WPF re-applies its DIP
+        // cache after a cross-DPI-seam move (proven popout-anchor
+        // convergence class), so re-write until the readback equals the
+        // target - max 3 passes, same budget AnchorFeedOnPop uses.
+        private static bool StretchToMonitor(IntPtr hwnd, System.Drawing.Rectangle target)
+        {
+            for (int pass = 1; pass <= 3; pass++)
+            {
+                if (!SetWindowPos(hwnd, IntPtr.Zero, target.Left, target.Top, target.Width, target.Height, SWP_NOZORDER | SWP_NOACTIVATE))
+                    return false;
+                Pump(180);
+                if (Capture.WindowCapture.TryGetUserRect(hwnd, out var r)
+                    && r.Left == target.Left && r.Top == target.Top
+                    && r.Width == target.Width && r.Height == target.Height)
+                    return true;
+            }
+            FileLogger.Log($"[dockvis] fs-coverage stretch did not settle on {target} after 3 passes");
+            return false;
         }
 
         // Gate-only primitive (revert: revert dock-hide): stretch the test
