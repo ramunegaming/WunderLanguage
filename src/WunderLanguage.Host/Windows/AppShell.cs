@@ -1513,6 +1513,16 @@ namespace WunderLanguage.Host.Windows
         // text reads through it; on its own monitor it's fully opaque. Both
         // rects come from the same Win32 call so the units always agree.
         // Revert: revert popout-feed.
+        //
+        // Opacity-live (leg 4): the game rect reads the LIVE coverage surface
+        // (CoverageWindowFor), never the raw attached handle - in fullscreen
+        // the attached HWND is hidden/stale, so the raw read answered "no
+        // overlap" and the feed sat solid over the game for the whole leg
+        // (proven: "opacity -> 1 (overlaps game=False)" at 16:30:28 while
+        // the game stayed fullscreen; leg-4 log). Windowed,
+        // CoverageWindowFor returns the attached handle unchanged, so the
+        // on-own-monitor path is byte-for-byte the old behavior.
+        // Revert: revert opacity-live.
         private void RefreshFeedOpacity()
         {
             try
@@ -1525,7 +1535,7 @@ namespace WunderLanguage.Host.Windows
                 if (_sidePanelHandle == IntPtr.Zero) return;
                 bool overGame =
                     WindowCapture.TryGetWindowBounds(_sidePanelHandle, out var feedRect) &&
-                    WindowCapture.TryGetWindowBounds(_emulatorHandle, out var gameRect) &&
+                    WindowCapture.TryGetWindowBounds(WindowCapture.CoverageWindowFor(_emulatorHandle), out var gameRect) &&
                     feedRect.IntersectsWith(gameRect);
                 double wanted = overGame ? 0.75 : 1.0;
                 if (Math.Abs(_sidePanel.Opacity - wanted) > 0.01)
