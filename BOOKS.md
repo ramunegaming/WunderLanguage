@@ -3065,3 +3065,110 @@ PER-CORPUS IDENTICAL each time (+3rd Big_Walk corpus today = the
 
 Live gates owed: batch 10 relaunch check; batches 2/3 HDR proofs (no
 HDR on this machine - deferred to an HDR-capable display).
+
+## 2026-11-15 - fullscreen wave + feed-selfmask live-confirmed; leg-4 UX trio root-caused (ledger catch-up)
+
+FULLSCREEN WAVE (Okami legs 3-4; full evidence in each commit message):
+- fullscreen-fg `3120ac1`: 4145 focus-hold loops / 0 publishes over 28
+  min of play = the FOCUS GATE, not OCR, was the leg-2 blocker: PCSX2
+  F11 renders in a NEW top-level HWND of the same process while the
+  attached MAIN window hides, so fg==attached can never match. The
+  predicate moved to WindowCapture.FocusAllowed with the fullscreen
+  signature (attached NOT visible + foreground in the attached
+  process); visible-attached stays first so a windowed same-process
+  dialog (settings over game list) still holds - occlusion skips
+  same-process windows, so this predicate is the only catcher.
+- fs-capture `0e894cc`: stale-rect capture proven - slice anchored at
+  (529,320)-(1831,1066) while live dialogue ink sat at y=1152-1200,
+  0/13 rows inside the picture (slice_now.png = cutscene artwork).
+  Fix direction, now the standing design principle: DERIVE EVERYTHING
+  FROM LIVE SCREEN STATE EACH LOOP - re-resolve the capture target
+  from USER32 every loop (largest visible top-level window of the
+  attached process; largest not foreground, so a dialog over the game
+  can never become the surface), read that window's OWN rect whole in
+  physical pixels (any aspect/resolution/dialog position/monitor),
+  process-derived so a dead/recreated HWND reacquires next loop, frame
+  hash drops on target transitions.
+- fs-coverage `b21db62`: coverage read the same hidden stale rect ->
+  GameCoversMonitor false for the WHOLE F11 session (zero dockvis/
+  auto-popout lines all leg) -> the coverage edge never fired, and the
+  docked bars + feed stayed z-paired above the hidden main = BEHIND
+  the fullscreen game (z probe: bars idx 36, game idx 30). Fix =
+  CoverageWindowFor, the single resolver for "the surface SHOWING the
+  game right now", consumed by RefreshDockAffordance + the pop anchor
+  (and, from today, RefreshFeedOpacity). Live-confirmed leg 3.
+- feed-selfmask `2be72c8`: the whole-frame win created a NEW failure
+  class - our own popped-out feed inside the frame, OCR reading its
+  history UI as dialogue (leg-3 garbage: fullwidth suspect-holds,
+  stableCount starved 1-2, rec p50 394ms -> 4877ms by 13 crops/frame).
+  Root fix = MaskOwnUi black-fills same-process windows out of the
+  bitmap BEFORE any metric or OCR - pixel masking, not a block filter,
+  because the sidecar merges rawText from the same pixels (a filter
+  would leave candidates dirty while the feed stayed clean). Leg-4
+  proof: 370 mask lines, 0 Macebook, stableCount 27, loop p50
+  ~5000ms -> 45-48ms (~10x), suspect-hold holds real JP (頭突き/
+  ジャンプ), 367 OCR results / 39 publishes, autonomous pop->dock, 0
+  exceptions. The 69 leg-4 losses are all starved sc=1/2 singletons
+  (decode-disagree 14, already-fired 15, menu-or-title 14, salvage 12,
+  continuation 5, junk 4) - pre-training, deliberately untouched.
+- Env-only gate fixes (zero product code): case7-env-tolerant
+  `560e8e4` (fscapture case-7 tray pick made Z-order-tolerant for a
+  fullscreen occluder above the taskbar), captureswap-topmost
+  `96596ac` (raw-BitBlt test window enforces its own on-screen
+  precondition).
+
+LEG-4 UX TRIO (user's two observations, both root-caused with
+evidence; commit messages carry the full chains):
+- opacity-live `ecc4d8f`: the log line IS the proof - `popout: feed
+  opacity -> 1 (overlaps game=False)` at 16:30:28 while the game
+  stayed fullscreen all leg. RefreshFeedOpacity intersected the RAW
+  attached HWND (hidden/stale in fullscreen) so intersection answered
+  "no overlap" and the feed sat solid over the game. Same resolver
+  class as fs-coverage: read CoverageWindowFor; windowed path
+  byte-identical (resolver returns the handle unchanged).
+- opacity-release `15fa964`: the position refresh runs on a 250ms
+  LocationChanged throttle, and DragMove blocks until button-up - so
+  the final drop position can be missed entirely (user report: "if I
+  move the popout it still gets stuck in solid mode"). Fix: DragEnded
+  event raised in the finally after DragMove (fires exactly once per
+  finished drag) -> AppShell refreshes opacity UNSthrottled at the
+  true drop -> feed fades back to resting 0.75 over the game.
+- edge-resize `525c991`: user report "we can't currently resize the
+  popout". feed-resize (b6aa8a1) already shipped CanResize + size
+  persistence, but there was ZERO hit-test machinery in the codebase.
+  Empirical gate FIRST (production styles + real injected input):
+  pre-fix edge drag ours=True thick=True layered=True dwmInset=0 yet
+  dw=0 - a WindowStyle=None WPF window answers WM_NCHITTEST itself
+  (HTCLIENT), so the native WS_THICKFRAME sizing border can never
+  engage; WM_NCLBUTTONDOWN passes through to DefWindowProc fine, so
+  an NCHITTEST-only fix sufficed. Post-fix A/B: same drag dw=-40
+  exact. Hook answers the native HT codes via pure EdgeHitTest (corner
+  beats its two edges and moves BOTH axes; sides one axis; interior
+  passes through to WPF; 7px band at window DPI; DETACHED only -
+  docked size stays owned by OnBoundsChanged). Gate adds a 12-point
+  table + three real drags: bottom-right corner dW=dH=-30 uniform,
+  top-right corner uniform, side clamp to MinWidth 340 exact with
+  dH=0 (the user's "corner = uniform, sides from 1 side" contract).
+  ENVIRONMENT FINDINGS (log-only, never asserted): (a) this box
+  intermittently refuses WS_EX_TOPMOST - SetWindowPos reports
+  ok=True lastErr=0 while the bit stays unset (observed green ->
+  red -> green across identical runs), so the gate owns its
+  on-screen precondition by GEOMETRY (second-monitor park + readback
+  loop, HWND_TOP push) + WindowFromPoint proof AT THE POINT, never a
+  style bit; (b) AllowsTransparency + the root Border's CornerRadius=8
+  leave the outer arc pixels fully transparent, and Windows passes
+  clicks on transparent pixels through to the window below - ALPHA
+  BEATS Z-ORDER (proven: ours=False at (Right-2,Bottom-2) with
+  topmostNow=True while center and side points resolve to us) - so
+  corner test points sit 3px inside: opaque AND within the band,
+  exactly where a real user's cursor lands. Revert-phrase compile
+  check run for edge-resize (revert -> 0 errors -> restore).
+HARNESS NOTES: --errortest never exits by design (the dispatch comment
+  says taskkill; sequence completes in ~16s, then the process sits) -
+  the runner must kill it ~20s after start and judge by the dumped
+  PNGs + log lines, not by exit code. Two gate runs in parallel trip
+  the single-instance guard ("already running - two copies would fight
+  the GPU"); dismissing that popup only makes the EXTRA copy back off
+  (exit 1) - gates run strictly one at a time. Log rotation is
+  per-startup with a 3-file window: mid-suite runs lose their lines -
+  trust exit codes, re-run standalone for detail.

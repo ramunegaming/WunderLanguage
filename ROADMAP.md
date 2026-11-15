@@ -3,12 +3,12 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## Current state (refreshed 2026-11-13)
+## Current state (refreshed 2026-11-15)
 
-- Checkpoint of record: `CHECKPOINT-2026-11-13.md` (local file, gitignored — batches 8/9/10 status, batch-10 root cause, next steps). Superseded: `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
-- Latest ledger entries: ROADMAP tail = 2026-11-13 — batches 8 (`0da1cf1` taskbar-feed) + 9 (`db2ddef` auto-popout) live-confirmed; batch 10 (`154245b` popout-anchor, launch-into-fullscreen fix) offline-complete, live-owed. BOOKS tail = same date, root-cause chains (incl. the PMv2 DPI-seam proof).
-- Next: Phase 0 onboarding for the five R2-R4 picks (Okami / NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then the beta/alpha release build.
-- Outstanding live gates: batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine). Open items: P6 shop-play signal, PM glossary EN confirmations.
+- Checkpoint of record: `CHECKPOINT-2026-11-15.md` (local file, gitignored — fullscreen wave + leg-4 UX trio status, revert phrases, environment findings). Superseded: `CHECKPOINT-2026-11-13.md` (batches 8/9/10 status, batch-10 root cause), `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
+- Latest ledger entries: ROADMAP tail = 2026-11-15 — fullscreen wave (`3120ac1`/`0e894cc`/`b21db62`) live-confirmed at Okami leg 3, feed-selfmask (`2be72c8`) live-confirmed at leg 4; three leg-4 UX batches (`ecc4d8f` opacity-live, `15fa964` opacity-release, `525c991` edge-resize) offline-green, live-owed with NieR leg 1. BOOKS tail = same date, root-cause chains (stale-rect fullscreen trio, feed-selfmask, stale-coverage opacity, NCHITTEST sizing, transparent-corner alpha).
+- Next: Okami onboarding complete (legs 1–4). NieR Replicant leg 1 — attach windowed first (the picker lists only visible windows), then F11, 10–15 min capture, quit normally — then KH3D → Persona 5 → Yakuza 0, then the beta/alpha release build (flywheel logging + one-command log collection).
+- Outstanding live gates: leg-4 UX trio checks ride NieR leg 1 (fade to 0.75 after drag release; edge + corner resize; `[feed-selfmask]` lines present); batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine); `occlusion-see` adjudication (must NOT go in before a live leg). Open items: P6 shop-play signal, PM glossary EN confirmations, CAT translation disabled (free commit < 11500MB at startup).
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs the reference script
@@ -737,3 +737,102 @@ this machine). Next: Phase 0 onboarding for the five R2-R4 picks (Okami /
 NieR Replicant / KH3D / Persona 5 / Yakuza 0; logger armed), then the
 beta/alpha release build. Open items: P6 shop-play signal +
 PM glossary EN confirmations.
+
+2026-11-15 - fullscreen wave (Okami legs 3-4) + feed-selfmask
+LIVE-CONFIRMED; three leg-4 UX batches committed offline-green (live
+gates ride NieR leg 1). Nine commits since the 11-13 tail; every gate
+green on the final build:
+- `3120ac1` fullscreen-fg (revert: revert fullscreen-fg) - the focus
+  gate held 4145 loops / 0 publishes through 28 min of Okami play:
+  PCSX2 F11 hides the attached MAIN window and renders in a NEW
+  top-level HWND of the same process, so fg==attached never matched.
+  FocusAllowed passes on the fullscreen signature (attached NOT
+  visible + foreground in the attached process); the visible-attached
+  check stays first so a windowed same-process dialog still holds.
+  Gate --fullscreenfg 6/6.
+- `0e894cc` fs-capture (revert: revert fs-capture) - leg-2 cause A
+  proven: capture anchored to the HIDDEN main window's stale windowed
+  rect (slice (529,320)-(1831,1066) vs dialogue ink at y=1152-1200,
+  0/13 rows inside). FullscreenCaptureTarget re-resolves from live
+  USER32 state every loop - largest visible top-level window of the
+  attached process (process-derived, so a dead/recreated HWND reacquires
+  next loop) - and CaptureWindowFull reads that window's OWN rect whole
+  in physical pixels. Gate --fscapture 7 cases incl. foreign-occluder
+  naming.
+- `b21db62` fs-coverage (revert: revert fs-coverage) - leg-2 cause C
+  proven: RefreshDockAffordance fed GameCoversMonitor the HIDDEN main
+  window's stale rect -> coverage edge never fired all leg (docked bars
+  z-paired above the hidden main = BEHIND the fullscreen game, z probe
+  bars 36 / game 30). CoverageWindowFor resolves the surface SHOWING
+  the game right now; dockvis, the pop anchor and (from today)
+  RefreshFeedOpacity all derive from it. Gate --dockvis EXTENDED (not
+  a parallel gate). Live-confirmed leg 3.
+- `560e8e4` case7-env-tolerant (revert: revert case7-env-tolerant) -
+  gate-only env fix, no product code: fscapture case-7 tray pick made
+  Z-order-tolerant for a fullscreen occluder above the taskbar.
+- `96596ac` captureswap-topmost (revert: revert captureswap-topmost) -
+  gate-only env fix, no product code: captureswap's raw-BitBlt test
+  window enforces its own on-screen precondition (Topmost=true).
+- `2be72c8` feed-selfmask (revert: revert feed-selfmask) - leg-3 root
+  cause PROVEN: whole-frame capture saw our own popped-out feed and OCR
+  read its history UI as dialogue (fullwidth suspect-holds, stableCount
+  starved 1-2, rec p50 394ms -> 4877ms by 13 crops/frame). MaskOwnUi
+  black-fills same-process windows out of the frame before any metric
+  or OCR - pixel masking is the root fix because the sidecar merges
+  rawText from the same pixels (a block filter would leave candidates
+  dirty). Gate: fscapture case 8. Live-confirmed leg 4: 370 mask lines,
+  ZERO Macebook garbage, stableCount reaches 27 (leg 3 capped at 2),
+  loop p50 ~5000ms -> 45-48ms (~10x), suspect-hold holds real JP
+  (頭突き/ジャンプ), 367 OCR results / 39 publishes (13 new / 12 salvage /
+  4 scroll / 5 menu / 3 weakhold / 2 growth), autonomous pop->dock
+  cycle, 0 exceptions.
+- `ecc4d8f` opacity-live (revert: revert opacity-live) - leg-4 report
+  item 1: RefreshFeedOpacity intersected the RAW attached handle,
+  hidden/stale in fullscreen -> "no overlap" -> feed stuck solid over
+  the game (proven: `opacity -> 1 (overlaps game=False)` at 16:30:28
+  while the game stayed fullscreen). Reads CoverageWindowFor now;
+  windowed path byte-identical (resolver returns the handle unchanged).
+- `15fa964` opacity-release (revert: revert opacity-release) - leg-4
+  report item 1b: the 250ms LocationChanged throttle can miss the
+  final drop position (user report: the popout "gets stuck in solid
+  mode" after a drag). DragEnded fires once per finished DragMove;
+  AppShell refreshes opacity UNSthrottled at the true drop - feed fades
+  back to its resting 0.75 over the game.
+- `525c991` edge-resize (revert: revert edge-resize) - leg-4 report
+  item 2: zero hit-test machinery existed anywhere in the codebase.
+  Root cause PROVEN empirically (controlled A/B, identical
+  preconditions): a REAL injected edge drag pre-fix ours=True
+  thick=True layered=True dwmInset=0 yet dw=0 - WindowStyle=None WPF
+  answers WM_NCHITTEST itself (HTCLIENT), so the native WS_THICKFRAME
+  sizing border can never engage; post-fix dw=-40 exact. The hook
+  answers the native HT codes via pure EdgeHitTest (corners uniform on
+  both axes, sides single-axis, interior pass-through, 7px band at
+  window DPI) while DETACHED only - docked size stays owned by
+  OnBoundsChanged. --feedresize extended: EdgeHitTest 12-point table +
+  three REAL injected drags (bottom-right corner dW=dH=-30 uniform,
+  top-right corner uniform, side clamp to MinWidth 340 with dH=0) +
+  second-monitor park + HWND_TOP push + WindowFromPoint proof AT THE
+  POINT. Two environment findings, log-only never asserted: (a) this
+  box intermittently refuses WS_EX_TOPMOST (SetWindowPos ok=True
+  lastErr=0, bit unset) so the gate owns z-order by geometry + point
+  proof instead of a style bit; (b) AllowsTransparency + CornerRadius=8
+  leave the outer arc pixels fully transparent and clicks there pass
+  through to the window below (alpha beats z-order) - corner test
+  points sit 3px inside: opaque, in-band, exactly where a cursor
+  lands. Revert-phrase compile check run (revert -> 0 errors ->
+  restore).
+Final-build gate sweep: --feedresize exit 0 twice consecutive;
+  --feeddefer --dockvis --taskbarfeed --autopopout --popanchor
+  --calibcover --fullscreenfg --captureswap --fscapture --simcheck all
+  exit 0; --errortest sequence complete + all PNGs dumped (harness
+  note: that gate NEVER exits by design - taskkill ~20s after start;
+  its earlier exit-1 was a single-instance lock conflict from two
+  parallel gate runs, which also raised the "already running" popup -
+  dismissing it only makes the extra copy back off; gates run
+  strictly one at a time).
+Next: NieR Replicant leg 1 (attach windowed first - the picker lists
+only visible windows - then F11, 10-15 min, quit normally) with three
+live checks riding it (fade to 0.75 after drag release; edge + corner
+resize; [feed-selfmask] lines present), then KH3D -> Persona 5 ->
+Yakuza 0, then the beta/alpha release build (flywheel logging +
+one-command log collection).
