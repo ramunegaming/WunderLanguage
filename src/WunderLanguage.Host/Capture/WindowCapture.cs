@@ -398,6 +398,27 @@ namespace WunderLanguage.Host.Capture
             occluderTitle = occTitle;
             return found && sawTarget;
         }
+        // fscapture case-7 support (revert: revert case7-env-tolerant):
+        // EnumWindows walks Z top->bottom, so whichever of the two handles
+        // appears first is above the other. Lets the gate accept a
+        // fullscreen foreign window that legitimately outranks the taskbar.
+        private static bool IsAboveInZOrder(IntPtr hAbove, IntPtr hBelow)
+        {
+            if (hAbove == IntPtr.Zero || hBelow == IntPtr.Zero || hAbove == hBelow) return false;
+            int iAbove = -1, iBelow = -1, i = 0;
+            try
+            {
+                EnumWindows((h, _) =>
+                {
+                    if (h == hAbove && iAbove < 0) iAbove = i;
+                    if (h == hBelow && iBelow < 0) iBelow = i;
+                    i++;
+                    return iAbove < 0 || iBelow < 0;   // stop once both seen
+                }, IntPtr.Zero);
+            }
+            catch { }
+            return iAbove >= 0 && iBelow >= 0 && iAbove < iBelow;
+        }
         public static Bitmap CaptureWindow(IntPtr hWnd)
         {
             if (!GetWindowRect(hWnd, out RECT rect))
@@ -1148,6 +1169,19 @@ namespace WunderLanguage.Host.Capture
                 // there. Taskbar auto-hidden = invisible to the probe by
                 // design -> log the skip instead of asserting an environment
                 // we don't have.
+                // Pick tolerance (revert: revert case7-env-tolerant): "== the
+                // taskbar" alone assumed nothing fullscreen sits ABOVE the
+                // taskbar in Z-order. On this desktop an F11 browser video
+                // (Brave, whole primary screen, z above the non-topmost
+                // tray) makes the probe return Brave - CORRECTLY: it is the
+                // topmost qualifying occluder (desktop replay: Brave z=28
+                // vs tray far below; case 7 was untouched by feed-selfmask's
+                // diff, so this is pre-existing environment, not a
+                // regression). The property case 7 owns is find+name a
+                // foreign topmost occluder: accept the taskbar OR any
+                // foreign named window ABOVE it in Z-order; a pick below
+                // the tray (or self/zero/unnamed) still fails. return=False
+                // stays as the pre-existing defect noted above.
                 IntPtr hTray = FindWindow("Shell_TrayWnd", null);
                 var trayRect = Rectangle.Empty;
                 bool trayUp = hTray != IntPtr.Zero && IsWindowVisible(hTray) && TryGetUserRect(hTray, out trayRect) && trayRect.Width > 0;
@@ -1162,8 +1196,13 @@ namespace WunderLanguage.Host.Capture
                         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
                     Pump(250);
                     bool occTrue = IsWindowRegionOccluded(hLarge, out IntPtr occWin, out string occTitle);
-                    bool foundIt = occWin == hTray && !string.IsNullOrWhiteSpace(occTitle);
-                    FileLogger.Log($"[fscapture] occluder found={foundIt} handle=0x{occWin:X} (want 0x{hTray:X}) \"{occTitle}\" return={occTrue} (False = pre-existing found&&sawTarget defect, see comment)");
+                    GetWindowThreadProcessId(occWin, out uint occPid);
+                    uint selfPid7 = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+                    bool foreign = occWin != IntPtr.Zero && occPid != 0 && occPid != selfPid7;
+                    bool named = !string.IsNullOrWhiteSpace(occTitle);
+                    bool topPick = occWin == hTray || IsAboveInZOrder(occWin, hTray);
+                    bool foundIt = foreign && named && topPick;
+                    FileLogger.Log($"[fscapture] occluder found={foundIt} handle=0x{occWin:X} (want 0x{hTray:X} or above it in Z) pid={occPid} named={named} topPick={topPick} \"{occTitle}\" return={occTrue} (False = pre-existing found&&sawTarget defect, see comment)");
                     if (!foundIt) ok = false;
                     SetWindowPos(hLarge, IntPtr.Zero, prev.Left, prev.Top, 0, 0,
                         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
