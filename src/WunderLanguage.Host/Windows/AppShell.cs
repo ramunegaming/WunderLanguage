@@ -197,6 +197,12 @@ namespace WunderLanguage.Host.Windows
             _bottomBar.PauseToggled += paused => _sidePanel.SetPauseState(paused);
             _sidePanel.LocationChanged += OnFeedLocationChanged;
             _sidePanel.SizeChanged += OnFeedSizeChanged;
+            // Opacity-release (leg 4): the drag's final LocationChanged can
+            // miss the drop position (250ms throttle) - refresh the moment
+            // the drag actually ends so the feed fades back to its resting
+            // 0.75 over the game instead of sticking solid. Revert: revert
+            // opacity-release.
+            _sidePanel.DragEnded += () => RefreshFeedOpacity();
             _tracker = new EmulatorWindowTracker(emulatorHandle);
             _tracker.BoundsChanged += OnBoundsChanged;
             _tracker.ForegroundChanged += OnForegroundChanged;

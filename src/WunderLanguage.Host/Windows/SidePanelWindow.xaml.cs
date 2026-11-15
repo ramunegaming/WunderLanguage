@@ -139,6 +139,13 @@ namespace WunderLanguage.Host.Windows
         public event Action? PauseRequested;
         public event Action? SettingsRequested;
         public event Action? ShotRequested;
+        // Opacity-release (leg 4): DragMove blocks until the button is let
+        // go, so this fires exactly once per finished drag (and once per
+        // plain header click - harmless). AppShell uses it for the
+        // UNthrottled opacity refresh: the 250ms LocationChanged throttle
+        // can miss the final drop position, leaving the feed solid when it
+        // should fade back over the game. Revert: revert opacity-release.
+        public event Action? DragEnded;
 
         public SidePanelWindow()
         {
@@ -719,6 +726,15 @@ namespace WunderLanguage.Host.Windows
             catch
             {
                 // DragMove throws if the button was already released - benign.
+            }
+            finally
+            {
+                // Opacity-release: DragMove returns (or throws) only once the
+                // button is up, so this is the true end of the drag - refresh
+                // opacity at the FINAL position, unthrottled (the 250ms
+                // LocationChanged throttle can miss the last pixel of travel).
+                // Revert: revert opacity-release.
+                DragEnded?.Invoke();
             }
         }
 
