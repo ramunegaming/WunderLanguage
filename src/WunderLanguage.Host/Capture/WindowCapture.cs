@@ -542,6 +542,61 @@ namespace WunderLanguage.Host.Capture
             }
             return CaptureWindow(hWnd);
         }
+        // feed-selfmask (revert: revert feed-selfmask): our own UI must
+        // never become game text. Whole-frame capture sees whatever sits
+        // ON the game - including our own popped-out feed window, whose
+        // history UI OCR then read as dialogue (leg 3: fullwidth
+        // "Ｍａｃｅｂｏｏｋ" garbage suspect-held for 4+ loops, stableCount
+        // starved at 1-2, rec p50 blown 394ms -> 4877ms by 13 crops per
+        // frame). Mirror of the occlusion probe: that one SKIPS
+        // same-process windows (guests, not occluders); this one MASKS
+        // same-process windows into the captured bitmap - except the
+        // capture targets themselves - before any metric or OCR reads it.
+        // Black-out clipped to the bitmap, +4px pad for border/shadow
+        // fringe. Masking pixels (not filtering blocks host-side) is the
+        // root fix: the sidecar merges rawText from the same pixels, so a
+        // block filter would leave the candidate text dirty; the mask
+        // keeps rawText AND blocks clean, cuts det/rec cost (no feed
+        // boxes), and stops feed churn perturbing the frame-diff too.
+        // bmpScreenRect is the bitmap's own screen rect - same
+        // TryGetWindowBounds source the capture above just used.
+        public static int MaskOwnUi(Bitmap bmp, Rectangle bmpScreenRect, IntPtr[] excludeTargets)
+        {
+            if (bmp is null || bmpScreenRect.Width <= 0 || bmpScreenRect.Height <= 0 || excludeTargets is null)
+                return 0;
+            int masked = 0;
+            uint selfPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            try
+            {
+                EnumWindows((h, _) =>
+                {
+                    try
+                    {
+                        if (!IsWindowVisible(h) || IsIconic(h)) return true;
+                        int hr = DwmGetWindowAttribute(h, DWMWA_CLOAKED, out int cloaked, sizeof(int));
+                        if (hr == 0 && cloaked != 0) return true;
+                        if (Array.IndexOf(excludeTargets, h) >= 0) return true;
+                        GetWindowThreadProcessId(h, out uint pid);
+                        if (pid != selfPid) return true;
+                        if (!TryGetWindowBounds(h, out var r) || r.Width <= 0 || r.Height <= 0) return true;
+                        var padded = new Rectangle(r.Left - 4, r.Top - 4, r.Width + 8, r.Height + 8);
+                        var local = Rectangle.Intersect(padded, bmpScreenRect);
+                        if (local.Width <= 0 || local.Height <= 0) return true;
+                        local.Offset(-bmpScreenRect.Left, -bmpScreenRect.Top);
+                        if (local.Right > bmp.Width) local.Width = bmp.Width - local.X;
+                        if (local.Bottom > bmp.Height) local.Height = bmp.Height - local.Y;
+                        if (local.Width <= 0 || local.Height <= 0) return true;
+                        using (var g = Graphics.FromImage(bmp))
+                            g.FillRectangle(Brushes.Black, local);
+                        masked++;
+                    }
+                    catch { }
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch { }
+            return masked;
+        }
         public static Bitmap CaptureScreenRegion(Rectangle screenRect)
         {
             if (screenRect.Width <= 0 || screenRect.Height <= 0)
@@ -1229,6 +1284,51 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[fscapture] occluder after move back=0x{occWin2:X} \"{occTitle2}\" baseline=0x{occAtRest:X} restored={cleared} (want True)");
                     if (!cleared) ok = false;
                 }
+
+                // Case 8: feed-selfmask (revert: revert feed-selfmask) - a
+                // same-process window composited ON the target's frame is
+                // blanked out of the capture bitmap before OCR, while the
+                // target's own pixels stay byte-identical. This is the
+                // leg-3 garbage fix: OCR was reading the popped-out feed's
+                // history as game text. We move OUR OWN dialog onto the
+                // game window (top of Z, physical px); no foreign window
+                // is ever touched.
+                TryGetWindowBounds(hSmall, out var smallPrev);
+                TryGetWindowBounds(hLarge, out var mLarge0);
+                small.Show();   // case 4 hid it and never re-showed
+                Pump(150);
+                SetWindowPos(hSmall, IntPtr.Zero, mLarge0.Left + 80, mLarge0.Top + 80, 0, 0,
+                    SWP_NOSIZE | SWP_NOACTIVATE);   // no SWP_NOZORDER: HWND_TOP
+                Pump(250);
+                bool hasMaskBmp = TryGetWindowBounds(hLarge, out var mBmp);
+                TryGetWindowBounds(hSmall, out var mSmall);
+                if (!hasMaskBmp || !mSmall.IntersectsWith(mBmp))
+                {
+                    FileLogger.Log($"[fscapture] mask: geometry unavailable (bmp={hasMaskBmp} smallIntersects={mSmall.IntersectsWith(mBmp)}) - FAIL");
+                    ok = false;
+                }
+                else
+                {
+                    using (var pre = CaptureWindowFull(hLarge))
+                    using (var frame = (Bitmap)pre.Clone())
+                    {
+                        int n = MaskOwnUi(frame, mBmp, new[] { hLarge, hAtt });
+                        int spx = (mSmall.Left + mSmall.Width / 2) - mBmp.Left;
+                        int spy = (mSmall.Top + mSmall.Height / 2) - mBmp.Top;
+                        bool inBmp = spx >= 0 && spy >= 0 && spx < frame.Width && spy < frame.Height;
+                        bool preHadContent = inBmp && pre.GetPixel(spx, spy).ToArgb() != unchecked((int)0xFF000000);
+                        bool black = inBmp && frame.GetPixel(spx, spy).ToArgb() == unchecked((int)0xFF000000);
+                        int qpx = (mBmp.Right - 40) - mBmp.Left;
+                        int qpy = (mBmp.Bottom - 40) - mBmp.Top;
+                        bool qIn = qpx >= 0 && qpy >= 0 && qpx < frame.Width && qpy < frame.Height;
+                        bool intact = qIn && pre.GetPixel(qpx, qpy).ToArgb() == frame.GetPixel(qpx, qpy).ToArgb();
+                        FileLogger.Log($"[fscapture] mask: n={n} (want>=1) preHadContent={preHadContent} overlapBlack={black} targetIntact={intact}");
+                        if (n < 1 || !preHadContent || !black || !intact) ok = false;
+                    }
+                }
+                SetWindowPos(hSmall, IntPtr.Zero, smallPrev.Left, smallPrev.Top, 0, 0,
+                    SWP_NOSIZE | SWP_NOACTIVATE);
+                Pump(150);
             }
             catch (Exception ex)
             {

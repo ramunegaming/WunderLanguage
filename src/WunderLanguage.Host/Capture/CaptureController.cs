@@ -3131,6 +3131,36 @@ namespace WunderLanguage.Host.Capture
                     using var bitmap = _fsCaptureTarget != IntPtr.Zero
                         ? WindowCapture.CaptureWindowFull(_fsCaptureTarget)
                         : WindowCapture.CaptureWindowRegion(_hWnd, _gameRegion);
+                    // feed-selfmask (revert: revert feed-selfmask): blank our
+                    // own windows (the popped-out feed above all) out of the
+                    // frame BEFORE any metric or OCR reads it - see
+                    // WindowCapture.MaskOwnUi. The bitmap's screen rect
+                    // mirrors the capture above from the same bounds reads:
+                    // whole-frame = target bounds, slice = window bounds +
+                    // scaled crop.
+                    try
+                    {
+                        Rectangle bmpScreen;
+                        if (_fsCaptureTarget != IntPtr.Zero)
+                        {
+                            if (!WindowCapture.TryGetWindowBounds(_fsCaptureTarget, out bmpScreen))
+                                bmpScreen = Rectangle.Empty;
+                        }
+                        else if (WindowCapture.TryGetWindowBounds(_hWnd, out var wb))
+                        {
+                            var rel = _gameRegion.GetScaledCropRect(wb);
+                            bmpScreen = new Rectangle(wb.Left + rel.Left, wb.Top + rel.Top, rel.Width, rel.Height);
+                        }
+                        else bmpScreen = Rectangle.Empty;
+                        if (bmpScreen.Width > 0)
+                        {
+                            int maskedOwn = WindowCapture.MaskOwnUi(bitmap, bmpScreen,
+                                new[] { _hWnd, _fsCaptureTarget });
+                            if (maskedOwn > 0)
+                                FileLogger.Log($"[feed-selfmask] masked {maskedOwn} own window(s) from the frame");
+                        }
+                    }
+                    catch { }
                     _consecutiveCaptureFailures = 0;
 
                     string frameHash = ComputeFrameHash(bitmap);
