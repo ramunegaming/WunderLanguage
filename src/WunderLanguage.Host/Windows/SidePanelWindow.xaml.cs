@@ -224,6 +224,86 @@ namespace WunderLanguage.Host.Windows
             RefreshDockAffordance();
         }
 
+        // Edge resize (revert: revert edge-resize): the popped-out feed's
+        // HWND already carries WS_THICKFRAME + CanResize (feed-resize,
+        // gate-proven) yet a REAL edge drag moved nothing (--feedresize
+        // edge-drag: ours=True thick=True layered=True dwmInset=0,
+        // dw=0) - a WindowStyle=None WPF window never lets the native
+        // sizing border be hit-tested. Answer WM_NCHITTEST with the
+        // NATIVE HT codes ourselves so DefWindowProc runs the same
+        // sizing loop every resizable Windows window uses: sides resize
+        // from that one side, corners uniformly (both axes), the
+        // interior stays WPF's (pass-through). Only while detached: the
+        // docked panel's size is owned by OnBoundsChanged (SetWindowPos
+        // against the game rect) and must stay fixed.
+        private const int WM_NCHITTEST = 0x0084;
+        private const int HTCLIENT = 1;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+        // Pure edge/corner hit-test - the exact contract the hook applies
+        // and --feedresize asserts. Within t px of a border -> that side's
+        // HT code; a corner (both axes near) wins over its two edges so
+        // corner drags resize uniformly; interior or outside the rect ->
+        // HTCLIENT (pass-through: WPF keeps full control, docked or not).
+        // Physical pixels on both axes - the same units WM_NCHITTEST's
+        // lParam and GetWindowRect speak. Revert: revert edge-resize.
+        internal static int EdgeHitTest(System.Drawing.Rectangle r, int x, int y, int t)
+        {
+            if (t <= 0 || !r.Contains(x, y)) return HTCLIENT;
+            bool l = x - r.Left < t;
+            bool rt = r.Right - x <= t;
+            bool tp = y - r.Top < t;
+            bool b = r.Bottom - y <= t;
+            if (l && tp) return HTTOPLEFT;
+            if (rt && tp) return HTTOPRIGHT;
+            if (l && b) return HTBOTTOMLEFT;
+            if (rt && b) return HTBOTTOMRIGHT;
+            if (l) return HTLEFT;
+            if (rt) return HTRIGHT;
+            if (tp) return HTTOP;
+            if (b) return HTBOTTOM;
+            return HTCLIENT;
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            try
+            {
+                IntPtr h = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                System.Windows.Interop.HwndSource.FromHwnd(h)?.AddHook(EdgeResizeHook);
+            }
+            catch { }
+        }
+
+        private IntPtr EdgeResizeHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (!_detached || msg != WM_NCHITTEST) return IntPtr.Zero;
+            try
+            {
+                int lp = lParam.ToInt32();
+                int x = (short)(lp & 0xFFFF);
+                int y = (short)((lp >> 16) & 0xFFFF);
+                if (!Capture.WindowCapture.TryGetUserRect(hwnd, out var r)) return IntPtr.Zero;
+                int dpi = (int)GetDpiForWindow(hwnd);
+                int ht = EdgeHitTest(r, x, y, Math.Max(7, dpi * 7 / 96));
+                if (ht == HTCLIENT) return IntPtr.Zero;
+                handled = true;
+                return (IntPtr)ht;
+            }
+            catch { return IntPtr.Zero; }
+        }
+
         private void RefreshDockAffordance()
         {
             DockButton.Visibility = _gameCoversMonitor ? Visibility.Collapsed : Visibility.Visible;
@@ -512,10 +592,34 @@ namespace WunderLanguage.Host.Windows
 
         // Gate-only primitive (revert: revert dock-hide): stretch the test
         // window to the monitor rect without going through WPF's DIP math.
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
         private const uint SWP_NOZORDER = 0x4;
         private const uint SWP_NOACTIVATE = 0x10;
+        private const uint SWP_NOMOVE = 0x2;
+        private const uint SWP_NOSIZE = 0x1;
+        private const uint SWP_SHOWWINDOW = 0x40;
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        // Name the window owning a point (captureswap lesson: a failed
+        // precondition must say WHO broke it, not just that it failed).
+        private static string WhoOwns(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return "none";
+            try
+            {
+                GetWindowThreadProcessId(h, out uint pid);
+                string name = "?";
+                try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { }
+                var sb = new System.Text.StringBuilder(128);
+                GetWindowText(h, sb, sb.Capacity);
+                string rect = Capture.WindowCapture.TryGetUserRect(h, out var r) ? $"{r.X},{r.Y},{r.Width}x{r.Height}" : "?";
+                return $"0x{h.ToInt64():X}({name}:'{sb}' @{rect})";
+            }
+            catch { return $"0x{h.ToInt64():X}"; }
+        }
 
         // Gate-only readback (revert: revert taskbar-feed): --taskbarfeed
         // asserts on the REAL window styles/title/visibility, not on WPF
@@ -534,12 +638,42 @@ namespace WunderLanguage.Host.Windows
         private const int WS_EX_NOACTIVATE = 0x08000000;
         private const int WS_EX_WINDOWEDGE = 0x00000100;
 
+        // Edge-drag gate primitives (revert: revert edge-resize): real
+        // injected input - --feedresize's edge phase asserts on the drag a
+        // human would make, not on managed Width/Height writes, and logs
+        // the style provenance so a failure names its own cause.
+        private const int GWL_STYLE = -16;
+        private const int WS_THICKFRAME = 0x00040000;
+        private const int WS_EX_LAYERED = 0x00080000; // AllowsTransparency=True
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int x, int y);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT p);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+        // Mouse-only INPUT: type at 0, MOUSEINPUT at the union offset the
+        // native struct uses (8 on x64) - byte-identical to INPUT+union for
+        // INPUT_MOUSE, which is all this gate ever sends.
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct INPUT { public uint type; public MOUSEINPUT mi; }
+        private const uint INPUT_MOUSE = 0;
+        private const uint MOUSEEVENTF_MOVE = 0x0001;
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
         // Offline gate (2026-11-12): --feedresize proves the resize contract
         // with the REAL panel: docked = NoResize, detached = CanResize, the
         // 340x220 minimums with WPF coercion, SizeChanged carrying the new
         // size (what AppShell persists), and FeedWidth/FeedHeight round-
         // tripping through the exact Save() payload + the exact Load() read
         // block - all without touching the real settings.json.
+        // Edge-drag phase (revert: revert edge-resize): real injected input
+        // on the popped-out feed's edge - the gesture must move the HWND,
+        // with style provenance logged so a failure names its cause.
         // No emulator, no sidecar, no GPU; exit 0 only if every assertion
         // holds. Revert: revert feed-resize (delete this method + the
         // --feedresize block in App.xaml.cs + the AppShell/AppSettings
@@ -597,6 +731,176 @@ namespace WunderLanguage.Host.Windows
                     FileLogger.Log($"[feedresize] payload round-trip FeedWidth/FeedHeight ok={roundTrip}");
                     ok &= roundTrip;
                 }
+
+                // EdgeHitTest table (revert: revert edge-resize): the pure
+                // contract the hook applies - sides one-axis, corners
+                // uniform (both axes), interior untouched, outside the rect
+                // pass-through. rect [100..500) x [200..500), t=7.
+                var er = new System.Drawing.Rectangle(100, 200, 400, 300);
+                bool eTable =
+                    EdgeHitTest(er, 101, 350, 7) == HTLEFT &&
+                    EdgeHitTest(er, 499, 350, 7) == HTRIGHT &&
+                    EdgeHitTest(er, 300, 201, 7) == HTTOP &&
+                    EdgeHitTest(er, 300, 499, 7) == HTBOTTOM &&
+                    EdgeHitTest(er, 101, 201, 7) == HTTOPLEFT &&
+                    EdgeHitTest(er, 499, 201, 7) == HTTOPRIGHT &&
+                    EdgeHitTest(er, 101, 499, 7) == HTBOTTOMLEFT &&
+                    EdgeHitTest(er, 499, 499, 7) == HTBOTTOMRIGHT &&
+                    EdgeHitTest(er, 300, 350, 7) == HTCLIENT &&
+                    EdgeHitTest(er, 106, 350, 7) == HTLEFT &&
+                    EdgeHitTest(er, 493, 350, 7) == HTRIGHT &&
+                    EdgeHitTest(er, 95, 350, 7) == HTCLIENT;
+                FileLogger.Log($"[feedresize] EdgeHitTest table ok={eTable} (sides/corners/interior/outside)");
+                ok &= eTable;
+
+                // --- Edge-drag phase (revert: revert edge-resize): the
+                // exact gesture the user reported as dead - a real drag on
+                // the popped-out feed's edge - with real injected input.
+                // Faithful to production: the XAML styles ARE production's
+                // (WindowStyle=None + AllowsTransparency), SetDetached(true)
+                // above left the window in the detached state (CanResize +
+                // APPWINDOW), and the raw WS_EX_NOACTIVATE mirrors
+                // ApplyDetachedPanelStyle. Topmost = captureswap lesson:
+                // never assume the point is ours - WindowFromPoint proves
+                // the precondition instead of trusting it.
+                //
+                // The drag walks INWARD (left edge +40px): every cursor
+                // point then stays inside the original HWND, so all six
+                // injected inputs hit-test to this queue before any sizing
+                // loop could capture - no race, no hang. Direction is
+                // symmetric for HTLEFT: same hit code, same native loop.
+                w.Left = 400; w.Top = 300; w.Width = 500; w.Height = 480;
+                w.Topmost = true;
+                Pump(250);
+                IntPtr eh = new System.Windows.Interop.WindowInteropHelper(w).EnsureHandle();
+                int exTop = GetWindowLong(eh, GWL_EXSTYLE);
+                FileLogger.Log($"[feedresize] after WPF Topmost=true ex=0x{exTop:X} bit0x8={(exTop & 0x8) != 0}");
+                int exNow = GetWindowLong(eh, GWL_EXSTYLE);
+                SetWindowLong(eh, GWL_EXSTYLE, exNow | WS_EX_NOACTIVATE);
+                // Known anomaly (measured 2026-11-15, post-suite state): BOTH
+                // WPF Topmost and raw SetWindowPos(HWND_TOPMOST) report success
+                // while WS_EX_TOPMOST stays unset (ok=True lastErr=0, exImm
+                // without 0x8, window vis=True) - so z-order cannot be the
+                // precondition here. Own it by GEOMETRY instead (captureswap
+                // lesson): park the window on the SECOND monitor, which no
+                // primary-screen occluder (fullscreen Brave owns the point:
+                // who=brave) can reach, with the proven raw-move + readback
+                // loop (fs-coverage: WPF re-applies its DIP cache after a
+                // cross-DPI-seam move - re-write until it settles).
+                bool spOk = SetWindowPos(eh, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                int spErr = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                FileLogger.Log($"[feedresize] raw topmost ok={spOk} lastErr={spErr} (log-only: bit stays off)");
+                bool parked = false;
+                for (int pass = 1; pass <= 3; pass++)
+                {
+                    SetWindowPos(eh, IntPtr.Zero, 2760, 200, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                    Pump(150);
+                    if (Capture.WindowCapture.TryGetUserRect(eh, out var chk) && chk.X == 2760 && chk.Y == 200) { parked = true; break; }
+                }
+                FileLogger.Log($"[feedresize] park on second monitor ok={parked}");
+                // Push to the TOP of the normal z-band (after=HWND_TOP): diag
+                // shows no app on this box is WS_EX_TOPMOST (only explorer's
+                // tray/taskbars), and a cross-seam WPF re-show left the fresh
+                // window BELOW the screen's existing occupants (OpenCode owns
+                // mon2, fullscreen Brave owns primary). The precondition is
+                // then re-proven AT THE POINT by WindowFromPoint below - not
+                // inferred from a style bit this box refuses to set.
+                SetWindowPos(eh, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                Pump(100);
+
+                int st = GetWindowLong(eh, GWL_STYLE);
+                bool thick = (st & WS_THICKFRAME) != 0;
+                bool layered = (GetWindowLong(eh, GWL_EXSTYLE) & WS_EX_LAYERED) != 0;
+                bool gotB = Capture.WindowCapture.TryGetUserRect(eh, out var uB);
+                bool gotD = Capture.WindowCapture.TryGetWindowBounds(eh, out var dB);
+                int inset = gotD && gotB ? dB.Left - uB.Left : int.MinValue;
+
+                int exPre = GetWindowLong(eh, GWL_EXSTYLE);
+                bool topBit = (exPre & 0x8) != 0;
+
+                // One injected gesture: down + N relative moves + up, all
+                // queued before the pump so a sizing loop entered on the
+                // down finds the whole drag waiting (and every cursor point
+                // stays inside the original HWND - an outward path would
+                // hit-test outside before capture lands: hang).
+                static INPUT[] Batch(int dx, int dy, int steps)
+                {
+                    var a = new INPUT[steps + 2];
+                    a[0] = new INPUT { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTDOWN } };
+                    for (int i = 1; i <= steps; i++)
+                        a[i] = new INPUT { type = INPUT_MOUSE, mi = new MOUSEINPUT { dx = dx, dy = dy, dwFlags = MOUSEEVENTF_MOVE } };
+                    a[steps + 1] = new INPUT { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTUP } };
+                    return a;
+                }
+                static uint Fire(INPUT[] batch) =>
+                    SendInput((uint)batch.Length, batch, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+
+                // --- Drag 1: CORNER (bottom-right, inward) - the reported
+                // "corner = uniform" contract: ONE gesture must move BOTH
+                // axes (DefWindowProc's HTBOTTOMRIGHT loop).
+                // 3px in, NOT 2: AllowsTransparency + CornerRadius=8 leave
+                // the pixels OUTSIDE the rounded arc fully transparent, and
+                // Windows passes clicks on transparent pixels through to the
+                // window below - alpha beats z-order (proven: ours=False at
+                // (Right-2,Bottom-2) with topmostNow=True, center = ours,
+                // side = ours). 3px in is opaque AND inside the 7px band -
+                // exactly where a real user's cursor lands on the corner.
+                int cx0 = uB.Right - 3;
+                int cy0 = uB.Bottom - 3;
+                Capture.WindowCapture.TryGetUserRect(eh, out var uNow);
+                IntPtr underC = WindowFromPoint(new POINT { X = uB.X + uB.Width / 2, Y = uB.Y + uB.Height / 2 });
+                FileLogger.Log($"[feedresize] pre-corner uNow={uNow.X},{uNow.Y},{uNow.Width}x{uNow.Height} center-under={(underC == eh ? "ours" : WhoOwns(underC))} topmostNow={(GetWindowLong(eh, GWL_EXSTYLE) & 8) != 0}");
+                IntPtr under = WindowFromPoint(new POINT { X = cx0, Y = cy0 });
+                bool ours = under == eh;
+                SetCursorPos(cx0, cy0);
+                Pump(100);
+                Fire(Batch(-15, -15, 2));
+                Pump(600);
+                bool gotA = Capture.WindowCapture.TryGetUserRect(eh, out var uA);
+                int dW1 = gotA ? uA.Width - uB.Width : 0;
+                int dH1 = gotA ? uA.Height - uB.Height : 0;
+                bool cornerOk = dW1 <= -20 && dH1 <= -20;
+                FileLogger.Log($"[feedresize] corner-drag ours={ours} uB={uB.X},{uB.Y},{uB.Width}x{uB.Height} pt=({cx0},{cy0}) under={(ours ? "ours" : WhoOwns(under))} dW={dW1} dH={dH1} (want both <= -20)");
+
+                // Fresh rect: drag 1 already shrank the window, so uB's
+                // Right/Top no longer describe it (stale point = mousedown
+                // outside the HWND = drag 2 silently does nothing).
+                bool gotBT = Capture.WindowCapture.TryGetUserRect(eh, out var uBT);
+                int tx0 = uBT.Right - 3;
+                int ty0 = uBT.Top + 3;
+                IntPtr underT = WindowFromPoint(new POINT { X = tx0, Y = ty0 });
+                bool oursT = underT == eh;
+                SetCursorPos(tx0, ty0);
+                Pump(100);
+                Fire(Batch(-15, 15, 2));   // top-right corner, inward: left + down
+                Pump(600);
+                bool gotAT = Capture.WindowCapture.TryGetUserRect(eh, out var uAT);
+                int dWT = gotAT ? uAT.Width - uBT.Width : 0;
+                int dHT = gotAT ? uAT.Height - uBT.Height : 0;
+                bool topCornerOk = dWT <= -20 && dHT <= -20;
+                FileLogger.Log($"[feedresize] topcorner-drag ours={oursT} dW={dWT} dH={dHT} (want both <= -20)");
+
+                // --- Drag 2: SIDE (left edge, big inward) - the reported
+                // "sides from 1 side" contract + the MinWidth floor: from
+                // the corner-dragged size the edge travels +300px (would
+                // land near 170px wide) - MinWidth=340 must clamp the NATIVE
+                // sizing loop, and the height must not move at all.
+                bool gotB2 = Capture.WindowCapture.TryGetUserRect(eh, out var uB2);
+                int x2 = uB2.Left + 1;
+                int y2 = uB2.Top + uB2.Height / 2;
+                IntPtr under2 = WindowFromPoint(new POINT { X = x2, Y = y2 });
+                bool ours2 = under2 == eh;
+                SetCursorPos(x2, y2);
+                Pump(100);
+                Fire(Batch(150, 0, 2));
+                Pump(600);
+                bool gotA2 = Capture.WindowCapture.TryGetUserRect(eh, out var uA2);
+                int dW2 = gotA2 ? uA2.Width - uB2.Width : 0;
+                int dH2 = gotA2 ? uA2.Height - uB2.Height : 0;
+                bool sideOk = gotB2 && gotA2 && uA2.Width >= 340 && uA2.Width <= 400 && dH2 == 0;
+                FileLogger.Log($"[feedresize] side-drag ours={ours2} uB2={uB2.X},{uB2.Y},{uB2.Width}x{uB2.Height} pt=({x2},{y2}) under={(ours2 ? "ours" : WhoOwns(under2))} after={uA2.Width}x{uA2.Height} dW={dW2} dH={dH2} (want width 340..400, dH=0)");
+                FileLogger.Log($"[feedresize] edge-drag ours={ours} top={topBit} under={(ours ? "ours" : WhoOwns(under))} ex=0x{exPre:X} thick={thick} layered={layered} gotB={gotB} dwmInset={inset} park={parked}");
+                ok &= parked && ours && ours2 && oursT && cornerOk && topCornerOk && sideOk;
             }
             catch (Exception ex)
             {
