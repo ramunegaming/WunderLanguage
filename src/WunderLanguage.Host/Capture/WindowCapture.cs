@@ -775,6 +775,23 @@ namespace WunderLanguage.Host.Capture
                         Margin = new System.Windows.Thickness(10),
                     });
                     w.Content = sp;
+                    // captureswap-topmost (revert: revert captureswap-topmost):
+                    // the raw screen-copy primitive asserts "our test window is
+                    // ON SCREEN". A fullscreen foreign window can sit ABOVE a
+                    // freshly shown normal-band window on this desktop (proven
+                    // 2026-11-15: Brave F11 video covering the whole primary
+                    // with a black frame - WindowFromPoint over the gate rect
+                    // returned Brave's renderer, pixels (0,0,0), and the
+                    // resting occluder of a brand-new gate window was Brave).
+                    // Screen-copy then read the occluder's black video ->
+                    // degenerate -> raw primitive failed while production
+                    // survived only via its PrintWindow swap (log:
+                    // "screen-copy frame degenerate - engaging ..."). The
+                    // window is OURS: Topmost enforces the precondition the
+                    // gate already assumes, touches no foreign window, and
+                    // weakens no assertion. Same pre-existing environment as
+                    // fscapture case 7 (untouched code diff-wise).
+                    w.Topmost = true;
                     w.Show();
                     w.Activate();
                     // Same-thread pump until the deadline: BeginInvoke(Background)
