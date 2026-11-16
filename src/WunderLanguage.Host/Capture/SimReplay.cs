@@ -134,6 +134,16 @@ namespace WunderLanguage.Host.Capture
                 catch { }
                 var token = new System.Threading.CancellationToken(false);
                 long blockLines = 0;
+                // Loop-survive gate (2026-11-16, Catherine leg 1): the bool
+                // of ProcessOcrObservationAsync is consumed by live
+                // RunLoopAsync as a LOOP-EXIT signal (if (...) return;), so a
+                // true here means the real capture loop would be dead after
+                // this observation — the leg-1 kill (loop 817, feed frozen
+                // 17:43:44 while the game kept playing). Any signal -> rc 1
+                // (red). Revert: delete this declaration, the two uses, and
+                // the verdict block before return 0.
+                int loopExitSignals = 0;
+                int processedObs = 0;
                 // Slice v4 frame dims: banked per-line fw/fh ONLY (future
                 // corpora). The extents estimator was tried and convicted:
                 // block coords live in detector space (~1522px wide vs a
@@ -160,7 +170,16 @@ namespace WunderLanguage.Host.Capture
                         ctl.SetOcrContextForSim(raw, cw, tw);
                         ctl._simLoop = loop;
                         ctl._simZoneNowMs = wt > 0 ? wt : loop * 400L;
-                        ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
+                        bool loopExit = ctl.ProcessOcrObservationAsync(loop, ja, blocks, token).GetAwaiter().GetResult();
+                        processedObs++;
+                        if (loopExit)
+                        {
+                            // Faithful to live: RunLoopAsync returns here and
+                            // no further observation is ever processed.
+                            loopExitSignals++;
+                            FileLogger.Log($"[simreplay] LOOP-EXIT-SIGNAL loop={loop} (live RunLoopAsync would return here - loop dead)");
+                            break;
+                        }
                     }
                     catch (Exception ex) { FileLogger.Log($"[simreplay] loop {loop} ERROR: {ex.Message}"); break; }
                 }
@@ -298,6 +317,14 @@ namespace WunderLanguage.Host.Capture
                     FileLogger.Log($"[simreplay] extraTotal={shown}");
                 }
                 catch { }
+                // Loop-survive verdict (gate teeth): a capture loop that dies
+                // mid-session — silently, with no supervisor to restart it —
+                // is the defect this gate exists to catch (Catherine leg 1).
+                if (loopExitSignals > 0)
+                {
+                    FileLogger.Log($"[simreplay] LOOP-SURVIVE-FAIL signals={loopExitSignals} processed={processedObs}/{fed.Count} (live loop would be dead)");
+                    return 1;
+                }
                 return 0;
             }
             catch (Exception ex) { try { FileLogger.Log($"[simreplay] ERROR: {ex.Message}"); } catch { } return 9999; }

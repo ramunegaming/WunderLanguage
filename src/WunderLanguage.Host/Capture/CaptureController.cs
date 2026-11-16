@@ -2587,7 +2587,21 @@ namespace WunderLanguage.Host.Capture
                             else if (IsUnterminatedComposite(_candidateText))
                             {
                                 FileLogger.Log($"[translate] suppressed scroll-composite for \"{Truncate(_candidateText)}\"");
-                                return true; // was loop-exit (scroll-composite); caller re-exits to preserve
+                                // Revert: revert loop-survive. Suppression is
+                                // per-publish, never per-loop: this line used
+                                // to emit the loop-exit signal, and live
+                                // RunLoopAsync (fire-and-forget, no supervisor
+                                // to restart it) returned PERMANENTLY —
+                                // Catherine leg 1, loop 817 (2026-11-16): feed
+                                // froze at 17:43:44 and never posted again
+                                // while the game kept playing until quit at
+                                // 17:46:48. The R2 hold itself is unchanged
+                                // (the composite is not published on this
+                                // observation; the next loops re-evaluate and
+                                // a completed line fires normally) — only the
+                                // exit signal is gone. Gate: --simreplay
+                                // LOOP-EXIT-SIGNAL (red before, green after).
+                                return false;
                             }
                             else
                             {
@@ -3593,7 +3607,14 @@ namespace WunderLanguage.Host.Capture
                     }
                     catch { }
                     // M7c slice v2 seam: one step per observation (see ProcessOcrObservationAsync).
-                    if (await ProcessOcrObservationAsync(iteration, extractedText, ocrBlocks, token)) return;
+                    // Loop-survive (revert: revert loop-survive): the bool is
+                    // a RESERVED orderly-stop signal — no road produces it
+                    // today (scroll-composite suppression returns false now).
+                    // break, not return: any future exit must reach
+                    // "CaptureController loop exited" instead of dying
+                    // silently — the old return skipped that log line and hid
+                    // the Catherine leg-1 death (loop 817) from the log.
+                    if (await ProcessOcrObservationAsync(iteration, extractedText, ocrBlocks, token)) break;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
