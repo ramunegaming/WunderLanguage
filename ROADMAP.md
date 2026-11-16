@@ -3,12 +3,12 @@
 Statuses: **Complete** · **Needs play session** (shipped, live proof owed) · **In progress** · **Planned**.
 Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — only M7b/M7c slices are recorded. This tracker supersedes them with the bottleneck/loop/step structure. Revert phrases with each shipped batch.
 
-## Current state (refreshed 2026-11-15)
+## Current state (refreshed 2026-11-16)
 
-- Checkpoint of record: `CHECKPOINT-2026-11-15.md` (local file, gitignored — fullscreen wave + leg-4 UX trio status, revert phrases, environment findings). Superseded: `CHECKPOINT-2026-11-13.md` (batches 8/9/10 status, batch-10 root cause), `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
-- Latest ledger entries: ROADMAP tail = 2026-11-15 — fullscreen wave (`3120ac1`/`0e894cc`/`b21db62`) live-confirmed at Okami leg 3, feed-selfmask (`2be72c8`) live-confirmed at leg 4; three leg-4 UX batches (`ecc4d8f` opacity-live, `15fa964` opacity-release, `525c991` edge-resize) offline-green, live-owed with NieR leg 1. BOOKS tail = same date, root-cause chains (stale-rect fullscreen trio, feed-selfmask, stale-coverage opacity, NCHITTEST sizing, transparent-corner alpha).
-- Next: Okami onboarding complete (legs 1–4). NieR Replicant leg 1 — attach windowed first (the picker lists only visible windows), then F11, 10–15 min capture, quit normally — then KH3D → Persona 5 → Yakuza 0, then the beta/alpha release build (flywheel logging + one-command log collection).
-- Outstanding live gates: leg-4 UX trio checks ride NieR leg 1 (fade to 0.75 after drag release; edge + corner resize; `[feed-selfmask]` lines present); batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine); `occlusion-see` adjudication (must NOT go in before a live leg). Open items: P6 shop-play signal, PM glossary EN confirmations, CAT translation disabled (free commit < 11500MB at startup).
+- Checkpoint of record: `CHECKPOINT-2026-11-15.md` (local file, gitignored — fullscreen wave + leg-4 UX trio status, 2026-11-16 queue change, revert phrases, environment findings). Superseded: `CHECKPOINT-2026-11-13.md` (batches 8/9/10 status, batch-10 root cause), `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
+- Latest ledger entries: ROADMAP tail = 2026-11-16 — onboarding queue change (NieR Replicant → Catherine); before it 2026-11-15 — fullscreen wave (`3120ac1`/`0e894cc`/`b21db62`) live-confirmed at Okami leg 3, feed-selfmask (`2be72c8`) live-confirmed at leg 4, three leg-4 UX batches (`ecc4d8f` opacity-live, `15fa964` opacity-release, `525c991` edge-resize) offline-green, live-owed with Catherine leg 1. BOOKS tail = 2026-11-15, root-cause chains (stale-rect fullscreen trio, feed-selfmask, stale-coverage opacity, NCHITTEST sizing, transparent-corner alpha).
+- Next: Okami onboarding complete (legs 1–4). Queue change 2026-11-16: NieR Replicant blocked (couldn't get it working) → **Catherine** (Atlus, PS3, still 720p) takes the R3 slot and leg 1 — attach windowed first (the picker lists only visible windows), then fullscreen, 10–15 min capture, quit normally — then KH3D → Persona 5 → Yakuza 0, then the beta/alpha release build (flywheel logging + one-command log collection).
+- Outstanding live gates: leg-4 UX trio checks ride Catherine leg 1 (fade to 0.75 after drag release; edge + corner resize; `[feed-selfmask]` lines present); batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine); `occlusion-see` adjudication (must NOT go in before a live leg). Open items: P6 shop-play signal, PM glossary EN confirmations, CAT translation disabled (free commit < 11500MB at startup).
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs the reference script
@@ -79,7 +79,7 @@ Agreed strategy: wrap Zelda, wrap FFVI, focused Paper Mario week, then extend th
 - **R1–R4 — Resolution matrix, 2 games per generation:**
   - R1 240p: Zelda + FFVI (both onboarded ✓)
   - R2 480p: Paper Mario + **Okami** (PICKED 2026-10-29)
-  - R3 720p: **NieR Replicant** + **Kingdom Hearts 3D: Dream Drop Distance** (PICKED 2026-10-29; TWEWY dropped — DS-native 256×192, not 3DS — KH3D chosen for the unique dual-screen capture geometry: 400×240 top + 320×240 bottom in one window = the matrix's only two-text-zone test; watch = bottom-screen UI text entering the capture rectangle, document as a find if it pollutes the feed)
+  - R3 720p: **Catherine** (Atlus, PS3) + **Kingdom Hearts 3D: Dream Drop Distance** (PICKED 2026-10-29; **NieR Replicant REPLACED 2026-11-16** — couldn't get it working, Catherine takes its slot, still 720p; TWEWY dropped — DS-native 256×192, not 3DS — KH3D chosen for the unique dual-screen capture geometry: 400×240 top + 320×240 bottom in one window = the matrix's only two-text-zone test; watch = bottom-screen UI text entering the capture rectangle, document as a find if it pollutes the feed)
   - R4 1080p: Persona 5 + **Yakuza 0** (PICKED 2026-10-29)
   Each generation trains resolution-specific capture/recognition until solid, then feeds gains back into shared systems.
 
@@ -221,7 +221,7 @@ Already covered: instant/typewriter/scroll/fixed/replacement/page/advance/menus/
 - PM battle glossary EN confirmations.
 - Shop-play signal for FFVI (shop UI build waits on it).
 - P2 side-question: true-beam re-OCR on ~36 crops vs declare P2 done — **RESOLVED 2026-10-28: declare done, moved to P3** (recommended option; 0/0 truth-set evidence never convicted the re-OCR build).
-- Resolution matrix picks: **RESOLVED 2026-10-29 (agreed) → R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** — matrix complete, next-game onboarding unblocked.
+- Resolution matrix picks: **RESOLVED 2026-10-29 (agreed) → R2 Okami / R3 NieR Replicant + KH3D Dream Drop Distance / R4 Yakuza 0** — matrix complete, next-game onboarding unblocked. **Superseded 2026-11-16: R3 NieR Replicant → Catherine (Atlus, PS3, 720p)** — NieR blocked (couldn't get it working).
 - Category routing depth: **DECIDED 2026-10-22 on C1 numbers — Option 1 (display tagging)** universal; routing stays evidence-triggered (no new routing architecture). Rationale: content-verified junk ≈0.6% of live publishes (no case for a universal routing layer); the strongest route signal, battle shape, false-positives at scale on non-pack layouts — 14/16 publish-truth flags were CORRECT dialogue that routing would have suppressed; the one real class (menu garbage) is rare + universal → tier-1 engine fix (C2), not category routing.
 - Watch items: two crash-truncated corpus gzips (Snes9x_1.60_20261019_035824 + one Zelda_no_Densetsu tail file; scanners skip them cleanly, not blocking); one orphaned PM miner file under pre-paren versioned id (negligible — but see P4(5): it can defeat the ≥2-file promotion gate if an identical pair lands in both PM files); exact-match metrics understate variant correctness; sim/replay never touch bitmaps, loop, or title path (live-provable only).
 
@@ -836,3 +836,14 @@ live checks riding it (fade to 0.75 after drag release; edge + corner
 resize; [feed-selfmask] lines present), then KH3D -> Persona 5 ->
 Yakuza 0, then the beta/alpha release build (flywheel logging +
 one-command log collection).
+
+2026-11-16 - onboarding queue change: NieR Replicant -> Catherine
+(ledger-only, no code): NieR couldn't get it working (blocked, not
+retired - the slot is Catherine's until NieR runs). **Catherine (Atlus,
+PS3, still 720p)** takes the R3 slot and becomes the NEXT leg: attach
+windowed first (the picker lists only visible windows), then fullscreen,
+10-15 min capture, quit normally, report oddities. The three leg-4 UX
+live checks still ride it (fade to 0.75 after drag release; edge +
+corner resize; [feed-selfmask] lines present). Queue after: KH3D ->
+Persona 5 -> Yakuza 0, then the beta/alpha release build (flywheel
+logging + one-command log collection).
