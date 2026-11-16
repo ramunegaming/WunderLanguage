@@ -3172,3 +3172,83 @@ HARNESS NOTES: --errortest never exits by design (the dispatch comment
   (exit 1) - gates run strictly one at a time. Log rotation is
   per-startup with a 3-file window: mid-suite runs lose their lines -
   trust exit codes, re-run standalone for detail.
+
+2026-11-16 - CATHERINE LEG 1 (5 report items, all root-caused) +
+TWO FIXES (loop-survive `28fe8c2`, punct-1to1 `62f71aa`, both gated
+red->green, both revert-phrase compile-checked, pushed):
+- Session: app.log 17:28:31-17:46:48, 11891 lines; 817 loops / 726
+  OCR / 41 skipped / 50 holds / 59 jp-first publishes / jarate 72% /
+  0 exceptions; detmean 81ms recmean 299ms, loop p50 43-45ms, OCR
+  p50 471-799ms, publish p50 605-659ms.
+- #1 ALT-TAB DEATH - the loop, not focus. Evidence chain:
+  `[17:43:44.762] suppressed scroll-composite` -> IsUnterminatedComposite
+  L5357 -> old `return true` L2590 -> caller L3596 `if (...) return;`
+  exits RunLoopAsync PERMANENTLY (fire-and-forget L1392, no
+  supervisor; the return even skipped the "CaptureController loop
+  exited" L3661 log, hiding the death). Loop frozen at 817 for 3 min
+  while the game kept playing (troubleshoot PNGs 17:44:06 / 17:45:48:
+  game rendering, feed stuck). Focus handling itself PROVEN WORKING
+  (17:35:27 alt-tab -> hold -> refocus catch-up -> resumed). History:
+  kill predates m7c, introduced `856cacc` 2026-09-19. Sole producer
+  verified (L2590 the only `return true` in the observation step;
+  enclosing-loops script: `break` targets the main `while` L2924).
+- FIX A `28fe8c2` (revert: revert loop-survive): suppression returns
+  `false` (skips ONE publish; R2 hold unchanged, next loops
+  re-evaluate), caller `return;` -> `break;` (any future exit reaches
+  the exited log). Gate BUILT FIRST: SimReplay loopExitSignals counter
+  + LOOP-EXIT-SIGNAL log + LOOP-SURVIVE-FAIL verdict -> rc=1. RED =
+  killer corpus `..._174323` (loops 801-817) signaled at loop 817 -
+  the exact live death loop; control corpus 173700 rc=0 (kill class
+  rare, matches live 1/817). GREEN = killer rc=0 with suppression
+  still logged, control identical metrics (simFires=4, overlap=4);
+  re-verified green after batch B.
+- #2 PUNCTUATION - transform proven AND linked to #1:
+  NormalizePunctForStability L1241 `・`/`＂`/`"`->`…`, L1253
+  `．`/`.`->`…`, L1246 mid-`!!`->`…`, L1264 `…+！`->`…`; 0 published
+  lines carried `＂` (raw `こんな＂怖い噂＂をご存知？` -> published
+  `こんな…怖い噂…`). THE KILLER LINK: raw
+  `Ｙａｕｂａ．ｃｏｍｅｎｄａｉｎｏｎｅｃｔｏｐｙ`'s `．`->`…` forge
+  FABRICATED the mid-string `…` that IsUnterminatedComposite saw and
+  that killed loop 817 - raw byte-stable across loops 815-817.
+- FIX B `62f71aa` (revert: revert punct-1to1; gate: revert
+  punct-1to1-gate): remove ALL cross-character substitutions; KEEP
+  same-char repairs (end-doubled `！！`->`！` = OCR doubling of a true
+  single; `…`-run collapses), pack-gated bracket strip, trailing
+  numbers, spaced-Latin join. Data scope (Catherine 700 OCR lines):
+  `・` 17 / `＂` 78 / `．` 63 all fired 100%; ASCII `"`/`.` raw `…！`
+  mid-`!!` firings 0; raw never emits `…` (reads `．`); 0 pure-punct
+  rows in 2094 mined corrections (7 files) - mined data can't undo
+  the batch. Detector forge-parity: terminal set +`．`/`.`; mid-scan =
+  min-position over `{'…','・','＂','"','．','.'}` + adjacent `!!`
+  run with p>0 && p<len-1, then `。` >=0 - byte-identical detection
+  vs pre-B (position-0 blocker quirk mirrored; FFVI loop-804 leading
+  `・` trip-new exposed the order-0 asymmetry that the rewrite fixed).
+- Gate B (ReplayChecker Trip() + trip-equality): rc = tripNew +
+  tripLostGenuine; rawGenuine = raw has `…。．.` else loss is
+  fabricated-`…` relief. Baseline: Zelda/Catherine rc=0; FFVI rc=1
+  trip-lost={426,1805} (pre-existing recorded-era bracket drift) +
+  relief=1. RED after B1: killer lost=3, Zelda +1, FFVI 11/11/8
+  (Zelda mined 0->706 = pure-punct now==raw, expected). FINAL:
+  FFVI IDENTICAL to baseline (lost={426,1805}, relief=1, new=0);
+  Zelda/killer/Catherine rc=0, all trip counters 0.
+- 1:1 PROOF: 552 drift lines across 4 captured logs
+  (gate/{zelda,ffvi,cat173214,cat173237}_postB.log) = 0 violations
+  (no output punct raw never had); money lines now==raw byte-identical
+  (`これからで、皆さんはこんな＂怖い噂＂をご存知？` loops 190-192
+  file ..._173214; `今宵、ご紹介する＂キャサリン＂は異色の＂恋愛ホラー＂作品。`
+  loops 205-208 file ..._173237) - both sit in the mined bucket
+  (now==raw = 1:1 by definition).
+- #3 four hallucination candidates (log-only): この世は１つの部員に
+  すぎぬ… 17:31:23 / ゴールデさん、こんばんか… 17:32:19 / テレビの施末は
+  ホレヒの前… 17:33:21 (self-corrected 2s) / ローグウォーン遊、岐川劇場
+  17:35:53. #4 menu finding (EN options + black JP explanation boxes)
+  deferred until after all onboarding. #5 latency: jp->EN bimodal
+  ~60s (pending-EN retry pump) vs 0.4-0.8s fast path - tune later.
+- UX live on leg 1: [feed-selfmask] CONFIRMED, 0.75 opacity CONFIRMED;
+  drag-release fade + edge/corner resize NOT EXERCISED (owed to KH3D
+  leg 1). CAT translation disabled confirmed (`CAT stage failed` +
+  DLL ImportError; `/v1/models 404` spam) - release-build queue.
+- Revert-phrase compile checks: `revert loop-survive` reverse-edits
+  -> 0 errors; `revert punct-1to1` (checkout 28fe8c2 file) -> 0
+  errors; restore to HEAD -> final build green + sanity gates
+  (--simreplay rc=0 suppression fires; --replay rc=0 trip 0/0/0).

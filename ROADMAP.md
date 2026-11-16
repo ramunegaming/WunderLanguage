@@ -5,10 +5,10 @@ Note: pre-bottleneck milestone definitions (M1–M7) predate this ledger — onl
 
 ## Current state (refreshed 2026-11-16)
 
-- Checkpoint of record: `CHECKPOINT-2026-11-15.md` (local file, gitignored — fullscreen wave + leg-4 UX trio status, 2026-11-16 queue change, revert phrases, environment findings). Superseded: `CHECKPOINT-2026-11-13.md` (batches 8/9/10 status, batch-10 root cause), `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
-- Latest ledger entries: ROADMAP tail = 2026-11-16 — onboarding queue change (NieR Replicant → Catherine); before it 2026-11-15 — fullscreen wave (`3120ac1`/`0e894cc`/`b21db62`) live-confirmed at Okami leg 3, feed-selfmask (`2be72c8`) live-confirmed at leg 4, three leg-4 UX batches (`ecc4d8f` opacity-live, `15fa964` opacity-release, `525c991` edge-resize) offline-green, live-owed with Catherine leg 1. BOOKS tail = 2026-11-15, root-cause chains (stale-rect fullscreen trio, feed-selfmask, stale-coverage opacity, NCHITTEST sizing, transparent-corner alpha).
-- Next: Okami onboarding complete (legs 1–4). Queue change 2026-11-16: NieR Replicant blocked (couldn't get it working) → **Catherine** (Atlus, PS3, still 720p) takes the R3 slot and leg 1 — attach windowed first (the picker lists only visible windows), then fullscreen, 10–15 min capture, quit normally — then KH3D → Persona 5 → Yakuza 0, then the beta/alpha release build (flywheel logging + one-command log collection).
-- Outstanding live gates: leg-4 UX trio checks ride Catherine leg 1 (fade to 0.75 after drag release; edge + corner resize; `[feed-selfmask]` lines present); batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine); `occlusion-see` adjudication (must NOT go in before a live leg). Open items: P6 shop-play signal, PM glossary EN confirmations, CAT translation disabled (free commit < 11500MB at startup).
+- Checkpoint of record: `CHECKPOINT-2026-11-15.md` (local file, gitignored — fullscreen wave + leg-4 UX trio status, Catherine leg 1 forensics + loop-survive/punct-1to1 batches, 2026-11-16 queue change, revert phrases, environment findings). Superseded: `CHECKPOINT-2026-11-13.md` (batches 8/9/10 status, batch-10 root cause), `CHECKPOINT-2026-11-09.md` (issue-1 phantom-fire closure, offline complete, live gate still owed — ledgers deliberately not updated for it until live confirmation), `CHECKPOINT-2026-10-26.md`, `CHECKPOINT-2026-10-21.md`, `CHECKPOINT-2026-10-20.md`.
+- Latest ledger entries: ROADMAP tail = 2026-11-16 — Catherine leg 1 (5 report items root-caused) + two fixes `28fe8c2` loop-survive and `62f71aa` punct-1to1, both gated red→green; before it the 2026-11-16 queue change (NieR Replicant → Catherine) and 2026-11-15 fullscreen wave (`3120ac1`/`0e894cc`/`b21db62`) + feed-selfmask (`2be72c8`) + leg-4 UX trio (`ecc4d8f`/`15fa964`/`525c991`). BOOKS tail = 2026-11-16, root-cause chains (loop-817 kill, punct 1:1, forge-parity detector), before it 2026-11-15 (stale-rect fullscreen trio, feed-selfmask, stale-coverage opacity, NCHITTEST sizing, transparent-corner alpha).
+- Next: Okami onboarding complete (legs 1–4); Catherine leg 1 complete (forensics done, loop-survive + punct-1to1 shipped). Queue: **KH3D** leg 1 (ride the two outstanding UX live checks — drag-release fade to 0.75, edge/corner resize) → Persona 5 → Yakuza 0, then the beta/alpha release build (flywheel logging + one-command log collection). Menu finding (#4) and latency tuning (#5) revisited after all onboarding.
+- Outstanding live gates: drag-release fade to 0.75 + edge/corner resize NOT EXERCISED at Catherine leg 1 (user didn't drag/resize) — ride KH3D leg 1; `[feed-selfmask]` + 0.75 opacity CONFIRMED at Catherine leg 1; batch 10 relaunch-into-fullscreen check; batches 2/3 HDR proofs (no HDR on this machine); `occlusion-see` adjudication (must NOT go in before a live leg). Open items: P6 shop-play signal, PM glossary EN confirmations, CAT translation disabled (confirmed leg-1: `CAT stage failed` + DLL ImportError at startup; `/v1/models 404` spam) — release-build queue.
 
 ### ✅ Z1 WRAPPED (live run 2026-10-21 08:27)
 - **11/11 blocks, one bubble each**, byte-identical vs the reference script
@@ -847,3 +847,40 @@ live checks still ride it (fade to 0.75 after drag release; edge +
 corner resize; [feed-selfmask] lines present). Queue after: KH3D ->
 Persona 5 -> Yakuza 0, then the beta/alpha release build (flywheel
 logging + one-command log collection).
+
+2026-11-16 - Catherine leg 1 (DONE) + two fixes: loop-survive
+`28fe8c2`, punct-1to1 `62f71aa` (both gated red->green, pushed).
+Leg: session 17:28:31-17:46:48, 817 loops / 726 OCR / 59 jp-first
+publishes / 0 exceptions. All five report items root-caused with
+hard evidence (chains in BOOKS + checkpoint):
+- #1 alt-tab death PROVEN = the capture loop itself was killed by
+  scroll-composite suppression (`return true` -> live `if (...) return;`
+  exits the fire-and-forget RunLoopAsync permanently at loop 817,
+  17:43:44; focus handling itself worked - 17:35 alt-tab recovered).
+  Fixed by `28fe8c2` (revert: revert loop-survive): suppression now
+  skips ONE publish, never the loop; caller `return;` -> `break;` so
+  any future exit lands in the log. Gate: SimReplay LOOP-EXIT-SIGNAL
+  red at loop 817 -> green (suppression still fires; metrics identical).
+- #2 punctuation PROVEN = NormalizePunctForStability rewrote
+  `・`/`＂`/`"`/`．`/`.` -> `…` (0 published lines carried `＂`);
+  LINKED to #1 - the `．`->`…` forge fabricated the mid-string `…`
+  in `Ｙａｕｂａ．ｃｏｍｅｎｄａｉｎｏｎｅｃｔｏｐｙ` that tripped the
+  killer suppression. Fixed by `62f71aa` (revert: revert punct-1to1;
+  gate: revert punct-1to1-gate): published Japanese keeps the game's
+  punctuation exactly, and IsUnterminatedComposite reads the raw
+  boundary forms with forge-parity (min-position scan) so detection
+  behavior is byte-identical. Gates: 4 corpora red->green (FFVI rc=1
+  IDENTICAL to its pre-existing baseline: trip-lost={426,1805},
+  relief=1, new=0); 1:1 proof = 552 drift lines, 0 violations; money
+  lines (`こんな＂怖い噂＂をご存知？`, `今宵、ご紹介する＂キャサリン＂…`)
+  now publish byte-identical to raw.
+- #3 four hallucination candidates logged (report-only);
+  #4 menu finding deferred until after all onboarding;
+  #5 latency measured (jp->EN bimodal ~60s retry pump vs <1s fast;
+  detmean 81ms / recmean 299ms) - tuning revisited post-onboarding.
+UX live checks: [feed-selfmask] + 0.75 opacity CONFIRMED; drag-release
+fade and edge/corner resize NOT EXERCISED (user didn't drag/resize) -
+still owed, rides KH3D leg 1. Revert-phrase compile checks run for
+both batches (revert -> 0 errors -> restore -> final green build +
+gates). Next: KH3D -> Persona 5 -> Yakuza 0 -> beta/alpha release
+build (CAT translation fix + /v1/models 404 + folder cleanup in it).
