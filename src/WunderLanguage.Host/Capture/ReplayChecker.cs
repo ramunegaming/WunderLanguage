@@ -15,6 +15,11 @@ namespace WunderLanguage.Host.Capture
         public static int Run(string path)
         {
             int checked_ = 0, match = 0, drift = 0, minedOrStale = 0, holds = 0;
+            // Trip-equality counters (revert: revert punct-1to1-gate —
+            // delete these + Trip() + the classification block + revert
+            // the done-line/return): rc now reports scroll-composite
+            // detection regressions, chain-drift stays informational.
+            int tripNew = 0, tripLostGenuine = 0, tripRelief = 0;
             try
             {
                 var t = typeof(CaptureController);
@@ -29,6 +34,12 @@ namespace WunderLanguage.Host.Capture
                     var m = t.GetMethod("HasUntrustedLatinRun", BindingFlags.NonPublic | BindingFlags.Static);
                     if (m == null) return false;
                     return (bool)m.Invoke(null, new object[] { arg })!;
+                }
+                bool Trip(string arg)
+                {
+                    var m = t.GetMethod("IsUnterminatedComposite", BindingFlags.NonPublic | BindingFlags.Static);
+                    if (m == null) return false;
+                    try { return (bool)m.Invoke(null, new object[] { arg })!; } catch { return false; }
                 }
                 foreach (var line in ReadCorpusLines(path))
                 {
@@ -53,12 +64,47 @@ namespace WunderLanguage.Host.Capture
                         else if (recomputed == raw) { minedOrStale++; FileLogger.Log($"[replay] loop {loop} mined-or-stale (code no-op, recorded fixed): raw=\"{raw}\""); }
                         else { drift++; FileLogger.Log($"[replay] loop {loop} DRIFT: raw=\"{raw}\" recorded=\"{recorded}\" now=\"{recomputed}\""); }
                         try { if (Hold(recomputed)) holds++; } catch { }
+                        // Trip-equality classification: recorded was made by
+                        // the OLD normalize chain, recomputed by the current
+                        // one. A scroll-composite trip must survive chain
+                        // rewrites (detection reads the same evidence the
+                        // rewrite used to canonicalize): a NEW trip = false
+                        // suppression (red); a LOST trip = red unless raw
+                        // carries no genuine boundary (… 。 ． .) — that loss
+                        // is fabricated-… relief (old rewrite manufactured
+                        // scroll evidence from quotes/middots, suppressing
+                        // real lines — intended to stop).
+                        try
+                        {
+                            bool tRec = Trip(recorded), tNow = Trip(recomputed);
+                            if (tRec != tNow)
+                            {
+                                bool rawGenuine = raw.IndexOf('…') >= 0 || raw.IndexOf('。') >= 0
+                                    || raw.IndexOf('．') >= 0 || raw.IndexOf('.') >= 0;
+                                if (tNow && !tRec)
+                                {
+                                    tripNew++;
+                                    FileLogger.Log($"[replay] loop {loop} TRIP-NEW (false suppression): raw=\"{raw}\"");
+                                }
+                                else if (rawGenuine)
+                                {
+                                    tripLostGenuine++;
+                                    FileLogger.Log($"[replay] loop {loop} TRIP-LOST-GENUINE: raw=\"{raw}\" recorded=\"{recorded}\" now=\"{recomputed}\"");
+                                }
+                                else
+                                {
+                                    tripRelief++;
+                                    if (tripRelief <= 8) FileLogger.Log($"[replay] loop {loop} TRIP-RELIEF (fabricated … dropped, real line may publish): raw=\"{raw}\"");
+                                }
+                            }
+                        }
+                        catch { }
                     }
                 }
             }
             catch (Exception ex) { FileLogger.Log($"[replay] ERROR: {ex.Message}"); return 9999; }
-            FileLogger.Log($"[replay] done checked={checked_} match={match} drift={drift} mined-or-stale={minedOrStale} holds={holds}");
-            return drift;
+            FileLogger.Log($"[replay] done checked={checked_} match={match} drift={drift} mined-or-stale={minedOrStale} holds={holds} trip-new={tripNew} trip-lost-genuine={tripLostGenuine} trip-relief={tripRelief}");
+            return tripNew + tripLostGenuine;
         }
         // Transparent reader: .gz (current) and legacy plaintext side by
         // side, so old sessions replay without migration pressure.

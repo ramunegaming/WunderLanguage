@@ -275,7 +275,7 @@ namespace WunderLanguage.Host
                     {
                         FileLogger.ReplayMode = true; // synthetic runs never mirror to app2.log
                         int mism = Capture.ReplayChecker.Run(args[i + 1]);
-                        FileLogger.Log($"[replay] exit mismatches={mism}");
+                        FileLogger.Log($"[replay] exit rc={mism} (scroll-composite trip regressions; chain-drift is informational — see done line)");
                         Shutdown(mism == 0 ? 0 : 1);
                         return;
                     }

@@ -1238,19 +1238,33 @@ namespace WunderLanguage.Host.Capture
 
         private static string NormalizePunctForStability(string text)
         {
-            string s = text.Replace('・', '…').Replace('＂', '…').Replace('"', '…');
-            // Doubled ！ is OCR doubling a true single (boomerang/MAP/cell):
-            // collapse at line end, never convert to …. Mid-line runs are
-            // dot-confusion → … (Zelda-4, uncle 剣よくきけ).
+            // Punct 1:1 (revert: revert punct-1to1): punctuation is never
+            // rewritten into different punctuation — the translation model
+            // reads exactly what the game drew (user doctrine: if the game
+            // shows " it must show "). This line used to canonicalize
+            // ・/＂/" → …; Catherine leg 1 proved the cost: raw
+            // こんな＂怖い噂＂をご存知？ published as こんな…怖い噂…, and the
+            // ．→… twin fabricated the mid-string scroll evidence that
+            // entangled the loop-817 suppression. Same-char repairs below
+            // stay (OCR doubling of one glyph is not punctuation rewriting).
+            string s = text;
+            // Doubled ！ at line end is OCR doubling a true single
+            // (boomerang/MAP/cell): collapse to one, never to ….
             s = Regex.Replace(s, @"[!！]{2,}$", "！");
-            s = Regex.Replace(s, @"[!！]{2,}", "…");
-            // JA 1:1 — ? runs stay verbatim (??? is real punctuation, never dot-confusion).
+            // JA 1:1 — ? runs AND mid-line ! runs stay verbatim (real
+            // punctuation, never dot-confusion: Zelda-4 uncle 剣よくきけ's
+            // mid-run is published as the OCR read it; forging … hid the
+            // true screen text from the translation model).
                         if (!Packs.PackRegistry.Current.KeepSpeakerBrackets)
                             s = s.Replace("「", "").Replace("」", "").Replace("〈", "").Replace("〉", "").Replace("『", "").Replace("』", "").Replace("【", "").Replace("】", "");
             // Trailing bare numbers (universal, FFVI battle artifacts ９２２５２５): damage/HP figures
             // glued to speech are never dialogue. Dates/coords carry non-digits, untouched.
             s = Regex.Replace(s, @"\s+[0-9０-９ ]{2,}\s*$", "");
-            s = s.Replace('．', '…').Replace('.', '…');
+            // Punct 1:1 tombstone: ．/. used to rewrite to … here — the
+            // Catherine killer's only mid-boundary was that forged …
+            // (Ｙａｕｂａ．ｃｏｍｅｎｄａｉｎｏｎｅｃｔｏｐｙ). Detection now
+            // reads the raw forms (IsUnterminatedComposite); revert:
+            // revert punct-1to1.
             // Spaced fullwidth Latin is one token (Ｍ Ａ Ｐ → ＭＡＰ).
             string prev;
             do { prev = s; s = Regex.Replace(s, @"(?<=[Ａ-Ｚ]) (?=[Ａ-Ｚ])", ""); } while (s != prev);
@@ -1260,8 +1274,10 @@ namespace WunderLanguage.Host.Capture
             s = Regex.Replace(s, @"…{3}", "…");
             s = Regex.Replace(s, @"…{2,}(?=。)", "…");
             s = Regex.Replace(s, @"…{2,}$", "…");
-            // … eats a following ！ (なかった……！ → なかった…); true ！ untouched.
-            s = Regex.Replace(s, @"…+！", "…");
+            // Punct 1:1 tombstone: "… eats a following ！" (なかった……！ →
+            // なかった…) is gone — …！ on screen must publish …！. Raw …！
+            // never occurred in leg-1 corpora; the rule's real victims were
+            // genuine …！ sequences. Revert: revert punct-1to1.
             // Sentence-double collapse (cited 2026-10-07 Zelda live: 4/54
             // fires carried an internal double from overlapping box reads —
             // "X。 X。" posted twice; seen-but-never-fired candidates show
@@ -5380,16 +5396,35 @@ namespace WunderLanguage.Host.Capture
             string t = text.TrimEnd();
             if (t.Length == 0) return false;
             char last = t[t.Length - 1];
-            if (last == '。' || last == '！' || last == '？' || last == '…' || last == '!' || last == '?') return false;
+            if (last == '。' || last == '！' || last == '？' || last == '…' || last == '!' || last == '?' || last == '．' || last == '.') return false; // punct-1to1: ．/. are terminal boundaries (used to arrive as …)
             // R2 refined: hiragana endings (verb/continuation forms, complete-at-boundary words) are genuine.
             // Mid-word cuts strand on katakana/kanji (アグニ) or bare tails. Stated hole: hiragana-cut blends
             // pass — indistinguishable from continuations host-side.
             if (last >= 'ぁ' && last <= 'ん') return false;
             if (StripForOverlap(text).Length < 24) return false;
-            int ell = t.IndexOf('…');
-            if (ell > 0 && ell < t.Length - 1) return true;
             int per = t.IndexOf('。');
             if (per >= 0 && per < t.Length - 1) return true;
+            // Punct 1:1 companion (revert: revert punct-1to1): normalize no
+            // longer forges … from ・/＂/"/．/./!!, so the detector locates
+            // the first boundary candidate itself in RAW ORDER — exactly
+            // what the old IndexOf('…') saw after the forge (position-0
+            // blockers like a leading ・ still block; end-of-string still
+            // can't trip; …-form >0 semantics carry over). Detection
+            // behavior is byte-parity with pre-1to1; only published text
+            // changed. Catherine killer loop 817 was detected solely via
+            // Ｙａｕｂａ．ｃｏｍｅｎｄａｉｎｏｎｅｃｔｏｐｙ.
+            int p = -1;
+            foreach (char c in new[] { '…', '・', '＂', '"', '．', '.' })
+            {
+                int i = t.IndexOf(c);
+                if (i >= 0 && (p < 0 || i < p)) p = i;
+            }
+            for (int i = 0; i + 1 < t.Length; i++)
+            {
+                if ((t[i] == '!' || t[i] == '！') && (t[i + 1] == '!' || t[i + 1] == '！'))
+                { if (p < 0 || i < p) p = i; break; }
+            }
+            if (p > 0 && p < t.Length - 1) return true;
             return false;
         }
 
